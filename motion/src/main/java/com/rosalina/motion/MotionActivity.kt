@@ -30,7 +30,7 @@ class MotionActivity:AppCompatActivity() {
     private lateinit var status:TextView;private lateinit var elapsed:TextView;private lateinit var summary:TextView
     private lateinit var progress:ProgressBar;private lateinit var photo:ImageView;private lateinit var prompt:EditText
     private lateinit var video:VideoView;private lateinit var generate:MaterialButton;private lateinit var details:MaterialButton
-    private lateinit var attach:MaterialButton;private lateinit var models:MaterialButton;private lateinit var controls:MaterialButton
+    private lateinit var attach:MaterialButton;private lateinit var models:MaterialButton;private lateinit var device:MaterialButton;private lateinit var controls:MaterialButton
     private lateinit var save:MaterialButton;private lateinit var share:MaterialButton;private lateinit var play:MaterialButton
     private lateinit var recent:LinearLayout
     private val durations=mutableListOf<MaterialButton>()
@@ -52,7 +52,8 @@ class MotionActivity:AppCompatActivity() {
         lifecycleScope.launch{repeatOnLifecycle(Lifecycle.State.STARTED){
             launch{MotionSession.state.collect{update(it)}}
             launch{while(isActive){val s=MotionSession.state.value
-                elapsed.text=if(s.busy&&s.started>0){val n=(SystemClock.elapsedRealtime()-s.started)/1000;"Time spent ${n/60}:${String.format(Locale.US,"%02d",n%60)} · clip length ${seconds}s"}else "On-device CPU · experimental draft"
+                val thermal=SamsungSupport.thermalName(MotionSession.currentThermalStatus())
+                elapsed.text=if(s.busy&&s.started>0){val n=(SystemClock.elapsedRealtime()-s.started)/1000;"Time spent ${n/60}:${String.format(Locale.US,"%02d",n%60)} · clip length ${seconds}s · $thermal"}else "On-device CPU · background ready · $thermal"
                 delay(1000)
             }}
         }}
@@ -79,8 +80,10 @@ class MotionActivity:AppCompatActivity() {
         ViewCompat.setOnApplyWindowInsetsListener(outer){v,i->val a=i.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime());v.setPadding(a.left,a.top,a.right,a.bottom);i}
         val title=column().apply{addView(label("ROSALINA",25f).apply{typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)});addView(label("PRIVATE  ·  MOTION LAB",11f,accent).apply{letterSpacing=.10f})}
         models=button("Models"){modelDialog()}
+        device=button("Device"){deviceDialog()}
+        val headerActions=row(models,device)
         root.addView(LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL
-            addView(title,LinearLayout.LayoutParams(0,-2,1f));addView(models,LinearLayout.LayoutParams(dp(100),dp(54)))})
+            addView(title,LinearLayout.LayoutParams(0,-2,1f));addView(headerActions,LinearLayout.LayoutParams(dp(220),-2))})
         root.addView(gap(10))
         status=label("Preparing…",14f).apply{maxLines=3}
         elapsed=label("",12f,muted)
@@ -107,7 +110,8 @@ class MotionActivity:AppCompatActivity() {
         generate=button("Generate 6-second video",true){
             if(MotionSession.state.value.busy)MotionSession.cancel() else startRender()
         };body.addView(generate,LinearLayout.LayoutParams(-1,dp(60)))
-        body.addView(label("First test: low-resolution, 8 fps draft—not HD or smooth 24 fps. CPU video can take a long time. Motion and faces are not guaranteed to match instructions exactly. No audio is generated.",12f,muted).apply{setPadding(dp(2),dp(8),dp(2),dp(14))})
+        body.addView(label("First test: low-resolution, 8 fps draft—not HD or smooth 24 fps. CPU video can take a long time. Motion and faces are not guaranteed to match instructions exactly. No audio is generated.",12f,muted).apply{setPadding(dp(2),dp(8),dp(2),dp(4))})
+        body.addView(label("Background rendering is enabled. After generation starts, you can leave Motion Lab or turn the screen off; keep the foreground notification running. Samsung users should add Motion Lab to Never sleeping apps from Device.",12f,accent).apply{setPadding(dp(2),0,dp(2),dp(14))})
         body.addView(label("Your video",18f));body.addView(gap(6))
         video=VideoView(this).apply{visibility=View.GONE;contentDescription="Generated video preview";setOnPreparedListener{it.isLooping=false;seekTo(1)}
             setOnErrorListener{_,what,extra->MotionSession.notice("Preview error $what/$extra. You can still save or share the MP4.");true}}
@@ -145,6 +149,25 @@ class MotionActivity:AppCompatActivity() {
         if(Build.VERSION.SDK_INT>=33)notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         video.pause();play.text="Play clip"
         MotionSession.requestRender(prompt.text.toString(),spec())
+    }
+    private fun deviceDialog(){
+        val body=column().apply{setPadding(dp(20),dp(8),dp(20),dp(8))}
+        val thermal=SamsungSupport.thermalGuardianInstalled(this)
+        body.addView(label("Background rendering",17f))
+        body.addView(label("Motion Lab renders in a foreground media-processing service. Leaving the app does not intentionally stop an active render, and the notification keeps Stop available.",13f,muted))
+        body.addView(gap(12))
+        body.addView(label("Samsung thermal integration",17f))
+        body.addView(label(if(thermal)"Thermal Guardian detected. Rosalina follows Samsung/Android thermal status, reduces CPU load at moderate heat, pauses the native renderer at severe heat, and resumes after cooling. Critical heat still stops the render." else "Thermal Guardian is not detected. Rosalina still uses Android thermal status. You can install Samsung Thermal Guardian for Samsung's own temperature-threshold controls.",13f,muted))
+        body.addView(gap(6))
+        body.addView(button(if(thermal)"Open Thermal Guardian" else "Get Thermal Guardian"){
+            if(!SamsungSupport.openThermalGuardian(this))Toast.makeText(this,"Could not open Thermal Guardian",Toast.LENGTH_SHORT).show()
+        })
+        body.addView(gap(6))
+        body.addView(button("Open Never sleeping apps"){
+            if(!SamsungSupport.openNeverSleepingApps(this))Toast.makeText(this,"Could not open background settings",Toast.LENGTH_SHORT).show()
+        })
+        body.addView(label("Samsung does not expose Thermal Guardian's threshold slider as a public third-party app API, so Rosalina does not change that setting directly. It responds to the system thermal state Samsung provides.",12f,muted).apply{setPadding(0,dp(8),0,0)})
+        AlertDialog.Builder(this).setTitle("Device · thermal & background").setView(ScrollView(this).apply{addView(body)}).setPositiveButton("Done",null).show()
     }
     private fun modelDialog(){
         val body=column().apply{setPadding(dp(20),dp(8),dp(20),dp(8))}
