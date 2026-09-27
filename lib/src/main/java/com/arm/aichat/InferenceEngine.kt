@@ -86,4 +86,4 @@ val State.isModelLoaded: Boolean
         this is State.ProcessingUserPrompt ||
         this is State.Generating
 
-class UnsupportedArchitectureException : Exception()
+class UnsupportedArchitectureException(message: String = "The selected GGUF could not be loaded by the native engine.") : Exception(message)
