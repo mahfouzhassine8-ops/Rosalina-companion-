@@ -1,0 +1,133 @@
+name: Rosalina Motion Lab V3
+on:
+  push:
+    branches: [motion-lab-v3]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: motion-lab-v3
+  cancel-in-progress: true
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify both locked applications remain unchanged
+        run: git diff --exit-code 37bb610977054fe20626acbdc3ba14483354d578 HEAD -- app lib studio image-engine
+      - uses: actions/checkout@v4
+        with:
+          repository: leejet/stable-diffusion.cpp
+          ref: 3f8527a46c54ecf4cb4ed6003da8e8982283c73c
+          path: third_party/stable-diffusion.cpp
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install Android toolchain
+        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;29.0.13113456" "cmake;3.31.6"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: rosalina-motion-lab-debug-signing-v1
+      - name: Build isolated ARM64 video worker
+        run: |
+          cmake -S motion-engine -B native-motion -G Ninja -DCMAKE_BUILD_TYPE=Release -DSD_SOURCE="$PWD/third_party/stable-diffusion.cpp" -DCMAKE_TOOLCHAIN_FILE="$ANDROID_HOME/ndk/29.0.13113456/build/cmake/android.toolchain.cmake" -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-30 -DANDROID_STL=c++_static
+          cmake --build native-motion --target rosalina-motion --parallel 2
+          mkdir -p motion/src/main/jniLibs/arm64-v8a
+          cp native-motion/rosalina-motion motion/src/main/jniLibs/arm64-v8a/librosalina-motion.so
+          "$ANDROID_HOME/ndk/29.0.13113456/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" motion/src/main/jniLibs/arm64-v8a/librosalina-motion.so
+          chmod 755 motion/src/main/jniLibs/arm64-v8a/librosalina-motion.so
+      - name: Bundle pinned lightweight decoder and license notices
+        run: |
+          mkdir -p motion/src/main/assets/licenses
+          curl -fL --retry 4 "https://raw.githubusercontent.com/madebyollin/taehv/011dfc2112197741c540e0bdd5b7b67bcc930771/safetensors/taew2_2.safetensors" -o motion/src/main/assets/taew2_2.safetensors
+          sha256sum motion/src/main/assets/taew2_2.safetensors | cut -d' ' -f1 > motion/src/main/assets/tae.sha256
+          curl -fL --retry 4 "https://raw.githubusercontent.com/madebyollin/taehv/011dfc2112197741c540e0bdd5b7b67bcc930771/LICENSE" -o motion/src/main/assets/licenses/TAEHV.txt
+          python3 - <<'PY'
+          import pathlib,shutil
+          root=pathlib.Path('third_party/stable-diffusion.cpp')
+          for p in root.rglob('*'):
+              if p.is_file() and p.name.lower() in ['license','license.md','license.txt','copying']:
+                  shutil.copyfile(p,pathlib.Path('motion/src/main/assets/licenses')/str(p.relative_to(root)).replace('/','_'))
+          assert pathlib.Path('motion/src/main/assets/taew2_2.safetensors').stat().st_size>1000000
+          PY
+      - name: Build APK and run unit tests
+        run: gradle :motion:testDebugUnitTest :motion:assembleDebug --max-workers=2 --stacktrace
+      - name: Validate package and preserve source
+        run: |
+          mkdir -p delivery
+          APK=motion/build/outputs/apk/debug/motion-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK" > delivery/signature.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > delivery/package.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$APK" > delivery/permissions.txt
+          if grep -q android.permission.INTERNET delivery/permissions.txt; then exit 1; fi
+          cp "$APK" delivery/Rosalina-Motion-Lab-V3-rc1-arm64.apk
+          cp MOTION_LAB_V3.md delivery/
+          cp motion/src/main/assets/tae.sha256 delivery/
+          git rev-parse HEAD > delivery/commit.txt
+          git archive --format=zip HEAD -o delivery/Rosalina-Motion-Lab-V3-source.zip
+          sha256sum delivery/*.apk > delivery/SHA256SUMS.txt
+          python3 - <<'PY'
+          import zipfile,struct,pathlib
+          with zipfile.ZipFile('delivery/Rosalina-Motion-Lab-V3-rc1-arm64.apk') as z:
+              libs=[n for n in z.namelist() if n.endswith('.so')]
+              assert libs==['lib/arm64-v8a/librosalina-motion.so'],libs
+              b=z.read(libs[0]); assert b[:4]==b'\x7fELF' and struct.unpack('<H',b[18:20])[0]==183
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Rosalina-Motion-Lab-V3-arm64
+          path: delivery/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Motion-Lab-unit-tests
+          path: motion/build/test-results/
+  android-codec:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Enable emulator KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Android MP4 encoding instrumentation
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_5
+          disable-animations: true
+          script: gradle :motion:connectedDebugAndroidTest --max-workers=2 --stacktrace
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Motion-Lab-Android-codec-tests
+          path: motion/build/outputs/androidTest-results/
