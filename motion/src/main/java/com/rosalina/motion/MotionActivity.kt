@@ -8,6 +8,7 @@ import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.*
 import android.provider.MediaStore
+import android.provider.Settings
 import android.text.InputFilter
 import android.text.InputType
 import android.view.*
@@ -30,7 +31,7 @@ class MotionActivity:AppCompatActivity() {
     private lateinit var status:TextView;private lateinit var elapsed:TextView;private lateinit var summary:TextView
     private lateinit var progress:ProgressBar;private lateinit var photo:ImageView;private lateinit var prompt:EditText
     private lateinit var video:VideoView;private lateinit var generate:MaterialButton;private lateinit var details:MaterialButton
-    private lateinit var attach:MaterialButton;private lateinit var models:MaterialButton;private lateinit var controls:MaterialButton
+    private lateinit var attach:MaterialButton;private lateinit var models:MaterialButton;private lateinit var controls:MaterialButton;private lateinit var systemTools:MaterialButton
     private lateinit var save:MaterialButton;private lateinit var share:MaterialButton;private lateinit var play:MaterialButton
     private lateinit var recent:LinearLayout
     private val durations=mutableListOf<MaterialButton>()
@@ -103,6 +104,7 @@ class MotionActivity:AppCompatActivity() {
         listOf(6,8,10).forEach{n->durations+=button("${n}s"){seconds=n;store();updateSummary()}}
         body.addView(row(*durations.toTypedArray()))
         controls=button("Framing, steps & seed"){controlsDialog()};body.addView(controls)
+        systemTools=button("Samsung thermal & background"){systemToolsDialog()};body.addView(systemTools)
         summary=label("",13f,accent);body.addView(summary);body.addView(gap(6))
         generate=button("Generate 6-second video",true){
             if(MotionSession.state.value.busy)MotionSession.cancel() else startRender()
@@ -130,7 +132,7 @@ class MotionActivity:AppCompatActivity() {
         status.text=s.status;progress.visibility=if(s.busy)View.VISIBLE else View.GONE
         progress.isIndeterminate=s.progress==null;s.progress?.let{progress.progress=it}
         details.visibility=if(s.details.isNotEmpty())View.VISIBLE else View.GONE
-        listOf(attach,models,controls,prompt).forEach{it.isEnabled=!s.busy};durations.forEach{it.isEnabled=!s.busy}
+        listOf(attach,models,controls,systemTools,prompt).forEach{it.isEnabled=!s.busy};durations.forEach{it.isEnabled=!s.busy}
         generate.text=if(s.busy)"Stop" else "Generate $seconds-second video"
         save.isEnabled=s.result.isNotEmpty()&&!s.busy&&exportJob?.isActive!=true;share.isEnabled=s.result.isNotEmpty()&&!s.busy;play.isEnabled=s.result.isNotEmpty()&&!s.busy
         if(s.photo!=lastPhoto){lastPhoto=s.photo;photo.setImageURI(if(s.photo.isEmpty())null else Uri.fromFile(File(s.photo)));photo.visibility=if(s.photo.isEmpty())View.GONE else View.VISIBLE;attach.text="Choose / change gallery photo"}
@@ -160,6 +162,40 @@ class MotionActivity:AppCompatActivity() {
         body.addView(gap(8));body.addView(label("Keep the original Rosalina and Image Lab installed, but close them before rendering so their models do not occupy RAM.",12f,muted))
         dialog=AlertDialog.Builder(this).setTitle("Motion models").setView(ScrollView(this).apply{addView(body)}).setPositiveButton("Done",null).create();dialog.show()
     }
+    private fun systemToolsDialog(){
+        val body=column().apply{setPadding(dp(20),dp(8),dp(20),0)}
+        val thermalInstalled=runCatching{
+            packageManager.getLaunchIntentForPackage("com.samsung.android.thermalguardian")!=null
+        }.getOrDefault(false)
+        body.addView(label(
+            if(thermalInstalled)
+                "Samsung Thermal Guardian is installed. Motion Lab cannot silently change Samsung's thermal threshold, but it cooperates with Android/Samsung thermal throttling and stops at severe heat."
+            else
+                "Thermal Guardian is optional. Motion Lab already reads Android thermal status and protects the phone; Samsung's app can separately tune the system threshold.",
+            13f,muted
+        ))
+        body.addView(gap(8))
+        val thermalButton=button(if(thermalInstalled)"Open Thermal Guardian" else "Get Thermal Guardian"){
+            if(thermalInstalled){
+                packageManager.getLaunchIntentForPackage("com.samsung.android.thermalguardian")?.let{startActivity(it)}
+            }else{
+                runCatching{
+                    startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://galaxystore.samsung.com/detail/com.samsung.android.thermalguardian")))
+                }.onFailure{MotionSession.notice("Could not open Galaxy Store")}
+            }
+        }
+        body.addView(thermalButton)
+        body.addView(gap(8))
+        body.addView(label(
+            "Background rendering uses an ongoing foreground-service notification and a partial wake lock. For the most reliable long render, set Motion Lab to Unrestricted battery use in Android/Samsung app settings.",
+            13f,muted
+        ))
+        body.addView(button("Open Motion Lab app settings"){
+            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:$packageName")))
+        })
+        AlertDialog.Builder(this).setTitle("Thermal & background").setView(body).setPositiveButton("Done",null).show()
+    }
+
     private fun controlsDialog(){
         val body=column().apply{setPadding(dp(20),dp(8),dp(20),0)}
         body.addView(label("The whole photo is fitted inside the selected shape. Extra borders may be reinterpreted by the model.",13f,muted))
