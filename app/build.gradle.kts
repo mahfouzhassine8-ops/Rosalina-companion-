@@ -7,7 +7,7 @@ android {
     compileSdk = 35
     defaultConfig {
         applicationId = "com.rosalina.localai"
-        minSdk = 26
+        minSdk = 30
         targetSdk = 35
         versionCode = 2
         versionName = "0.2.0-local-ai1"
