@@ -157,7 +157,7 @@ class MotionActivity:AppCompatActivity() {
         body.addView(label("Motion Lab renders in a foreground media-processing service. Leaving the app does not intentionally stop an active render, and the notification keeps Stop available.",13f,muted))
         body.addView(gap(12))
         body.addView(label("Samsung thermal integration",17f))
-        body.addView(label(if(thermal)"Thermal Guardian detected. Rosalina follows Samsung/Android thermal status, reduces CPU load at moderate heat, pauses the native renderer at severe heat, and resumes after cooling. Critical heat still stops the render." else "Thermal Guardian is not detected. Rosalina still uses Android thermal status. You can install Samsung Thermal Guardian for Samsung's own temperature-threshold controls.",13f,muted))
+        body.addView(label(if(thermal)"Thermal Guardian detected. Rosalina follows Samsung/Android thermal status, starts with fewer worker threads if the phone is already moderately warm, pauses the native renderer at severe heat, and resumes after cooling. Critical heat still stops the render." else "Thermal Guardian is not detected. Rosalina still uses Android thermal status. You can install Samsung Thermal Guardian for Samsung's own temperature-threshold controls.",13f,muted))
         body.addView(gap(6))
         body.addView(button(if(thermal)"Open Thermal Guardian" else "Get Thermal Guardian"){
             if(!SamsungSupport.openThermalGuardian(this))Toast.makeText(this,"Could not open Thermal Guardian",Toast.LENGTH_SHORT).show()
