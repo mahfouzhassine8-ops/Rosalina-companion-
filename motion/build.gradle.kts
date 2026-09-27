@@ -1,4 +1,6 @@
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
+// Emulator-only tests contain no inference worker; shipped APK always uses ARM64.
+val codecTest = providers.gradleProperty("motionCodecTest").orNull == "true"
 android {
     namespace = "com.rosalina.motion"
     compileSdk = 35
@@ -8,7 +10,7 @@ android {
         targetSdk = 35
         versionCode = 30001
         versionName = "3.0.0-motion-lab-rc1"
-        ndk { abiFilters += "arm64-v8a" }
+        ndk { abiFilters += if(codecTest) "x86_64" else "arm64-v8a" }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { buildConfig = true }
