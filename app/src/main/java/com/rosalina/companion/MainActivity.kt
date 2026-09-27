@@ -194,7 +194,8 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 val modelDir = File(filesDir, "models").apply { mkdirs() }
-                destination = File(modelDir, name)
+                val target = File(modelDir, name)
+                destination = target
 
                 if (
                     sourceSize > 0 &&
@@ -211,7 +212,7 @@ class MainActivity : AppCompatActivity() {
                 var lastUi = 0L
 
                 contentResolver.openInputStream(uri)?.use { input ->
-                    FileOutputStream(destination).use { output ->
+                    FileOutputStream(target).use { output ->
                         val buffer = ByteArray(8 * 1024 * 1024)
 
                         while (true) {
@@ -244,7 +245,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 } ?: error("Android could not open the selected file.")
 
-                copiedSize = destination.length()
+                copiedSize = target.length()
                 computedSha = digest.digest().joinToString("") { "%02x".format(it) }
 
                 stage = "VERIFY COPY"
@@ -261,7 +262,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
-                verifyGgufHeader(destination)
+                verifyGgufHeader(target)
 
                 if (name.equals(RECOMMENDED_MODEL_NAME, ignoreCase = true)) {
                     require(copiedSize == RECOMMENDED_MODEL_BYTES) {
@@ -277,14 +278,14 @@ class MainActivity : AppCompatActivity() {
 
                 stage = "LOAD MODEL"
                 setStatus("LOAD • verified ${formatBytes(copiedSize)} • starting native engine…")
-                loadModel(destination)
+                loadModel(target)
 
                 stage = "FINALIZE"
                 prefs.edit()
-                    .putString(KEY_MODEL_PATH, destination.absolutePath)
+                    .putString(KEY_MODEL_PATH, target.absolutePath)
                     .apply()
 
-                setStatus("LOCAL • ${destination.name} • 8K context • VERIFIED")
+                setStatus("LOCAL • ${target.name} • 8K context • VERIFIED")
             } catch (t: Throwable) {
                 if (stage != "LOAD MODEL") {
                     destination?.let { if (it.exists()) it.delete() }
