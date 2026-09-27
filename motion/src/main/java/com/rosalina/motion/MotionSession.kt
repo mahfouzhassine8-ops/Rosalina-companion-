@@ -11,6 +11,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import org.json.JSONObject
 import java.io.*
+import java.lang.Process
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -28,6 +29,7 @@ internal object MotionSession {
     private var job:Job?=null
     private var pending:Pair<String,MotionSpec>?=null
     private var stopMessage="Stopped by you"
+    private const val DECODER_SHA="b84609b2a133d48434bd9636bfcb44bf05168dc436e2d3cecf26256faa1f5325"
     private val prefs get()=app.getSharedPreferences("motion",Context.MODE_PRIVATE)
     fun init(c:Context) {
         if(::app.isInitialized) return
@@ -50,6 +52,7 @@ internal object MotionSession {
     }
     fun importModel(uri:Uri,part:ModelPart) {
         if(state.value.busy)return
+        stopMessage="Stopped by you"
         mutable.update{it.copy(busy=true,work="import",status="Inspecting ${part.label}",progress=0,details="",started=SystemClock.elapsedRealtime())}
         job=scope.launch {
             var temp:File?=null
@@ -88,6 +91,7 @@ internal object MotionSession {
     }
     fun selectPhoto(uri:Uri) {
         if(state.value.busy)return
+        stopMessage="Stopped by you"
         mutable.update{it.copy(busy=true,work="photo",status="Preparing your gallery photo…",details="")}
         job=scope.launch {
             try {
@@ -105,7 +109,7 @@ internal object MotionSession {
                 val old=state.value.photo;prefs.edit().putString("photo",p.path).apply()
                 mutable.update{it.copy(photo=p.path,status="Photo ready · describe what should move")}
                 if(old.isNotEmpty())withContext(Dispatchers.IO){File(old).delete()}
-            }catch(e:CancellationException){throw e}catch(e:Exception){fail("PHOTO",e)}
+            }catch(e:CancellationException){notice(stopMessage);throw e}catch(e:Exception){fail("PHOTO",e)}
             finally{mutable.update{it.copy(busy=false,work="")};job=null}
         }
     }
@@ -127,6 +131,11 @@ internal object MotionSession {
             val (prompt,spec)=request
             val dir=File(app.filesDir,"jobs/"+UUID.randomUUID()).apply{mkdirs()}
             val log=File(dir,"native.log");var committed=false;var stage="PREPARE";var tmpMp4:File?=null
+            // Separate watchdog kills a native process even if it stops emitting output.
+            val watchdog=scope.launch {
+                delay(120*60*1000L)
+                MotionSession.cancel("Stopped after two hours to avoid an unbounded phone render")
+            }
             try{
                 withTimeout(120*60*1000L){withContext(Dispatchers.IO){
                     val mem=ActivityManager.MemoryInfo().also{app.getSystemService(ActivityManager::class.java).getMemoryInfo(it)}
@@ -137,11 +146,10 @@ internal object MotionSession {
                     require(exe.isFile&&exe.canExecute()){ "Video worker was not extracted during installation" }
                     stage="DECODER CHECK"
                     val tae=File(app.filesDir,"taew2_2.safetensors")
-                    val expected=app.assets.open("tae.sha256").bufferedReader().use{it.readText().trim()}
                     fun digest(f:File):String{val md=MessageDigest.getInstance("SHA-256");f.inputStream().use{i->val b=ByteArray(1024*1024);while(true){val n=i.read(b);if(n<0)break;md.update(b,0,n)}};return MotionMath.hex(md.digest())}
-                    if(!tae.isFile || digest(tae)!=expected){
+                    if(!tae.isFile || digest(tae)!=DECODER_SHA){
                         app.assets.open("taew2_2.safetensors").use{i->FileOutputStream(tae).use{o->i.copyTo(o);o.fd.sync()}}
-                        require(digest(tae)==expected){"Bundled video decoder is damaged"}
+                        require(digest(tae)==DECODER_SHA){"Bundled video decoder is damaged"}
                     }
                     val ref=File(dir,"reference.rgb");referenceRgb(File(state.value.photo),ref,spec)
                     File(dir,"prompt.txt").writeText(prompt)
@@ -151,13 +159,22 @@ internal object MotionSession {
                     val raw=File(dir,"frames.rvf")
                     val args=listOf(exe.path,state.value.videoModel,state.value.textModel,tae.path,File(dir,"prompt.txt").path,File(dir,"negative.txt").path,
                         ref.path,raw.path,spec.width.toString(),spec.height.toString(),spec.modelFrames.toString(),spec.steps.toString(),spec.seed.toString(),"4")
+                    ensureActive()
                     val p=ProcessBuilder(args).directory(dir).redirectErrorStream(true).start();process.set(p)
+                    var sampling=false
                     try{
                         log.bufferedWriter().use{writer->p.inputStream.bufferedReader().useLines{lines->lines.forEach{line->
                             ensureActive();writer.appendLine(line);writer.flush()
-                            if(line.startsWith("@@STAGE "))notice(line.removePrefix("@@STAGE "))
-                            else if(line.startsWith("@@STEP ")){val a=line.split(' ');val n=a.getOrNull(1)?.toIntOrNull();val total=a.getOrNull(2)?.toIntOrNull()
-                                if(n!=null&&total!=null&&total>0)mutable.update{it.copy(status="Generating motion · step $n of $total",progress=(n*100/total).coerceIn(0,100))}
+                            if(line.startsWith("@@STAGE "))mutable.update{it.copy(status=line.removePrefix("@@STAGE "),progress=null)}
+                            else if(line.contains(" - generate_video ")&&line.contains("x${spec.modelFrames}")){
+                                sampling=true;notice("Generating motion frames…")
+                            }else if(line.contains(" - generating latent video completed")){
+                                sampling=false;mutable.update{it.copy(status="Decoding generated video frames…",progress=null)}
+                            }else if(line.contains(" - encode_first_stage completed")){
+                                notice("Reading your motion description…")
+                            }else if(line.startsWith("@@STEP ")&&sampling){
+                                val a=line.split(' ');val n=a.getOrNull(1)?.toIntOrNull();val total=a.getOrNull(2)?.toIntOrNull()
+                                if(n!=null&&total==spec.steps)mutable.update{it.copy(status="Generating motion · step $n of $total",progress=(n*100/total).coerceIn(0,100))}
                             }
                         }}}
                         ensureActive();check(p.waitFor()==0){"Video worker stopped before completing the clip"}
@@ -177,6 +194,7 @@ internal object MotionSession {
             catch(e:CancellationException){notice(stopMessage);throw e}
             catch(e:Exception){fail(stage,e,tail(log))}
             finally{
+                watchdog.cancel()
                 withContext(NonCancellable+Dispatchers.IO){
                     process.getAndSet(null)?.let{it.destroyForcibly();it.waitFor(10,TimeUnit.SECONDS)}
                     if(log.isFile)runCatching{log.copyTo(File(app.filesDir,"last-native.log"),overwrite=true)}
@@ -195,7 +213,6 @@ internal object MotionSession {
             val canvas=Canvas(target);canvas.drawColor(Color.BLACK)
             val scale=minOf(s.width.toFloat()/original.width,s.height.toFloat()/original.height)
             val w=original.width*scale;val h=original.height*scale
-            // Preserve the entire input image. Letterboxing may be reinterpreted by the generative model.
             canvas.drawBitmap(original,null,RectF((s.width-w)/2,(s.height-h)/2,(s.width+w)/2,(s.height+h)/2),Paint(Paint.FILTER_BITMAP_FLAG))
             val pixels=IntArray(s.width*s.height);target.getPixels(pixels,0,s.width,0,0,s.width,s.height)
             FileOutputStream(destination).buffered().use{o->for(p in pixels){o.write((p shr 16) and 255);o.write((p shr 8) and 255);o.write(p and 255)}}
