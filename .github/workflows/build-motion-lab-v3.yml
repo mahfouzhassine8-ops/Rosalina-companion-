@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: motion-lab-v3-1-background-thermal-rc2-final
+  group: motion-lab-v3-1-background-thermal-rc2-release
   cancel-in-progress: true
 jobs:
   android:
