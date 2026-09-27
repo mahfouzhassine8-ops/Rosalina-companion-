@@ -92,6 +92,9 @@ internal class InferenceEngineImpl private constructor(
     private external fun systemInfo(): String
 
     @FastNative
+    private external fun lastNativeError(): String
+
+    @FastNative
     private external fun benchModel(pp: Int, tg: Int, pl: Int, nr: Int): String
 
     @FastNative
@@ -164,12 +167,27 @@ internal class InferenceEngineImpl private constructor(
                 Log.i(TAG, "Loading model... \n$pathToModel")
                 _readyForSystemPrompt = false
                 _state.value = InferenceEngine.State.LoadingModel
-                load(pathToModel).let {
-                    // TODO-han.yin: find a better way to pass other error codes
-                    if (it != 0) throw UnsupportedArchitectureException()
+                load(pathToModel).let { result ->
+                    if (result != 0) {
+                        val native = lastNativeError().trim()
+                        val detail = if (native.isBlank()) {
+                            "llama.cpp returned error code $result while reading the GGUF."
+                        } else {
+                            native.takeLast(4000)
+                        }
+                        throw UnsupportedArchitectureException("Native model load failed. $detail")
+                    }
                 }
-                prepare().let {
-                    if (it != 0) throw IOException("Failed to prepare resources")
+                prepare().let { result ->
+                    if (result != 0) {
+                        val native = lastNativeError().trim()
+                        val detail = if (native.isBlank()) {
+                            "llama.cpp could not allocate or prepare the 8K context."
+                        } else {
+                            native.takeLast(4000)
+                        }
+                        throw IOException("Model opened, but context preparation failed. $detail")
+                    }
                 }
                 Log.i(TAG, "Model loaded!")
                 _readyForSystemPrompt = true
