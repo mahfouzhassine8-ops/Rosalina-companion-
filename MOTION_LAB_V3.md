@@ -1,9 +1,16 @@
-# Rosalina Motion Lab V3 RC1 — experimental local photo-to-video
+# Rosalina Motion Lab V3.1 RC2 — background + Samsung thermal pass
 
 Base: Image Lab V2 RC1 commit 37bb610977054fe20626acbdc3ba14483354d578.
 Preserved snapshots: locked-image-lab-v2-rc1 and locked-local-chat-v1.2-device-passed.
 The existing app/, lib/, studio/, and image-engine/ trees are unchanged and checked in CI.
 This is a separate package, com.rosalina.motionlab. Keep the original apps installed.
+
+## RC2 scoped changes
+- Fix intentional renderer shutdown so a native stdout stream closing during Stop/service/thermal cancellation is treated as cancellation instead of the misleading `InterruptedIOException: read interrupted by close() on another thread`.
+- Keep generation in the foreground media-processing service when the Activity is backgrounded, the task is swiped away, or the screen is off. A persistent notification exposes Stop.
+- Add a Device panel for Samsung Thermal Guardian and Samsung's Never sleeping apps screen.
+- Thermal Guardian is not controlled through Samsung private/signature permissions. Motion Lab observes Android's system thermal status: normal/light starts at 4 worker threads, moderate starts at 3, severe heat pauses the native child process, cooling resumes it, and critical-or-higher heat aborts.
+- The native renderer keeps the existing parent-death guard, so it cannot remain orphaned if Android kills the Motion Lab process.
 
 ## Actual flow
 Models > download and import both video files. Choose gallery photo > describe motion > select 6, 8 or 10 seconds > Generate video > Play > Save or Share MP4.
