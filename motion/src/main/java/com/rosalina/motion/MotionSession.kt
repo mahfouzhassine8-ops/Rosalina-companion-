@@ -139,7 +139,7 @@ internal object MotionSession {
             try{
                 withTimeout(120*60*1000L){withContext(Dispatchers.IO){
                     val mem=ActivityManager.MemoryInfo().also{app.getSystemService(ActivityManager::class.java).getMemoryInfo(it)}
-                    require(!mem.lowMemory && mem.availMem>3L*1024*1024*1024){"Available RAM is low. Close the original Qwen/Image Lab apps, then retry."}
+                    require(!mem.lowMemory && mem.availMem>3L*1024*1024*1024){"Available RAM is low. Close Qwen/Image Lab, then retry. Motion Lab can continue in the background once generation starts."}
                     val pm=app.getSystemService(PowerManager::class.java)
                     require(pm.currentThermalStatus<PowerManager.THERMAL_STATUS_SEVERE){"Let the phone cool down before rendering"}
                     val exe=File(app.applicationInfo.nativeLibraryDir,"librosalina-motion.so")
@@ -157,28 +157,57 @@ internal object MotionSession {
                     stage="VIDEO GENERATION"
                     notice("Loading video models · ${spec.seconds}s clip · CPU draft")
                     val raw=File(dir,"frames.rvf")
-                    val args=listOf(exe.path,state.value.videoModel,state.value.textModel,tae.path,File(dir,"prompt.txt").path,File(dir,"negative.txt").path,
+                    val args=mutableListOf(exe.path,state.value.videoModel,state.value.textModel,tae.path,File(dir,"prompt.txt").path,File(dir,"negative.txt").path,
                         ref.path,raw.path,spec.width.toString(),spec.height.toString(),spec.modelFrames.toString(),spec.steps.toString(),spec.seed.toString(),"4")
                     ensureActive()
-                    val p=ProcessBuilder(args).directory(dir).redirectErrorStream(true).start();process.set(p)
+                    val thermalStatus=pm.currentThermalStatus
+                    val workerThreads=if(thermalStatus>=PowerManager.THERMAL_STATUS_MODERATE)3 else 4
+                    args[args.lastIndex]=workerThreads.toString()
+                    notice("Loading video models · ${spec.seconds}s clip · ${workerThreads} CPU threads")
+                    val p=ProcessBuilder(args)
+                        .directory(dir)
+                        .redirectErrorStream(true)
+                        .redirectOutput(ProcessBuilder.Redirect.appendTo(log))
+                        .start()
+                    process.set(p)
+
+                    // Do not read Process.inputStream directly. Android can close that pipe from a
+                    // different process-management thread, which caused RC1's
+                    // InterruptedIOException: read interrupted by close() on another thread.
+                    var logOffset=0L
                     var sampling=false
-                    try{
-                        log.bufferedWriter().use{writer->p.inputStream.bufferedReader().useLines{lines->lines.forEach{line->
-                            ensureActive();writer.appendLine(line);writer.flush()
-                            if(line.startsWith("@@STAGE "))mutable.update{it.copy(status=line.removePrefix("@@STAGE "),progress=null)}
-                            else if(line.contains(" - generate_video ")&&line.contains("x${spec.modelFrames}")){
-                                sampling=true;notice("Generating motion frames…")
-                            }else if(line.contains(" - generating latent video completed")){
-                                sampling=false;mutable.update{it.copy(status="Decoding generated video frames…",progress=null)}
-                            }else if(line.contains(" - encode_first_stage completed")){
-                                notice("Reading your motion description…")
-                            }else if(line.startsWith("@@STEP ")&&sampling){
-                                val a=line.split(' ');val n=a.getOrNull(1)?.toIntOrNull();val total=a.getOrNull(2)?.toIntOrNull()
-                                if(n!=null&&total==spec.steps)mutable.update{it.copy(status="Generating motion · step $n of $total",progress=(n*100/total).coerceIn(0,100))}
+                    fun consume(line:String){
+                        if(line.startsWith("@@STAGE ")){
+                            mutable.update{it.copy(status=line.removePrefix("@@STAGE "),progress=null)}
+                        }else if(line.contains(" - generate_video ")&&line.contains("x${spec.modelFrames}")){
+                            sampling=true;notice("Generating motion frames…")
+                        }else if(line.contains(" - generating latent video completed")){
+                            sampling=false;mutable.update{it.copy(status="Decoding generated video frames…",progress=null)}
+                        }else if(line.contains(" - encode_first_stage completed")){
+                            notice("Reading your motion description…")
+                        }else if(line.startsWith("@@STEP ")&&sampling){
+                            val a=line.split(' ')
+                            val n=a.getOrNull(1)?.toIntOrNull()
+                            val total=a.getOrNull(2)?.toIntOrNull()
+                            if(n!=null&&total!=null&&total>0&&n<=total){
+                                mutable.update{it.copy(status="Generating motion · step $n of $total",progress=(n*100/total).coerceIn(0,100))}
                             }
-                        }}}
-                        ensureActive();check(p.waitFor()==0){"Video worker stopped before completing the clip"}
-                    }finally{if(p.isAlive)p.destroyForcibly();p.waitFor(10,TimeUnit.SECONDS);process.compareAndSet(p,null)}
+                        }
+                    }
+                    try{
+                        while(p.isAlive){
+                            ensureActive()
+                            logOffset=consumeLog(log,logOffset,::consume)
+                            p.waitFor(500,TimeUnit.MILLISECONDS)
+                        }
+                        logOffset=consumeLog(log,logOffset,::consume)
+                        ensureActive()
+                        check(p.exitValue()==0){"Video worker exited with code ${p.exitValue()}"}
+                    }finally{
+                        if(p.isAlive)p.destroyForcibly()
+                        p.waitFor(10,TimeUnit.SECONDS)
+                        process.compareAndSet(p,null)
+                    }
                     stage="MP4 ENCODING";notice("Encoding ${spec.seconds}-second MP4…")
                     val videos=File(app.filesDir,"videos").apply{mkdirs()};val name="Rosalina-${System.currentTimeMillis()}"
                     val part=File(videos,"$name.mp4.part");tmpMp4=part
@@ -203,6 +232,18 @@ internal object MotionSession {
                 mutable.update{it.copy(busy=false,work="",progress=null)};job=null
                 app.stopService(Intent(app,MotionService::class.java))
             }
+        }
+    }
+    private fun consumeLog(file:File,start:Long,consumer:(String)->Unit):Long {
+        if(!file.exists()) return start
+        return RandomAccessFile(file,"r").use { r ->
+            val safeStart=start.coerceAtMost(r.length())
+            r.seek(safeStart)
+            while(true){
+                val line=r.readLine()?:break
+                consumer(line)
+            }
+            r.filePointer
         }
     }
     private fun tail(f:File):String=runCatching{RandomAccessFile(f,"r").use{r->r.seek(max(0L,r.length()-16000));val b=ByteArray((r.length()-r.filePointer).toInt());r.readFully(b);String(b)}}.getOrDefault("")
