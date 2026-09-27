@@ -59,6 +59,7 @@ Java_com_arm_aichat_internal_InferenceEngineImpl_init(JNIEnv *env, jobject /*unu
 extern "C"
 JNIEXPORT jint JNICALL
 Java_com_arm_aichat_internal_InferenceEngineImpl_load(JNIEnv *env, jobject, jstring jmodel_path) {
+    ai_clear_recent_error_log();
     llama_model_params model_params = llama_model_default_params();
 
     const auto *model_path = env->GetStringUTFChars(jmodel_path, 0);
@@ -67,6 +68,9 @@ Java_com_arm_aichat_internal_InferenceEngineImpl_load(JNIEnv *env, jobject, jstr
     auto *model = llama_model_load_from_file(model_path, model_params);
     env->ReleaseStringUTFChars(jmodel_path, model_path);
     if (!model) {
+        if (ai_get_recent_error_log().empty()) {
+            ai_record_native_error("llama_model_load_from_file returned null without a detailed llama.cpp error.");
+        }
         return 1;
     }
     g_model = model;
@@ -113,8 +117,12 @@ static common_sampler *new_sampler(float temp) {
 extern "C"
 JNIEXPORT jint JNICALL
 Java_com_arm_aichat_internal_InferenceEngineImpl_prepare(JNIEnv * /*env*/, jobject /*unused*/) {
+    ai_clear_recent_error_log();
     auto *context = init_context(g_model);
-    if (!context) { return 1; }
+    if (!context) {
+        ai_record_native_error("llama_init_from_model returned null while creating the 8K context.");
+        return 1;
+    }
     g_context = context;
     g_batch = llama_batch_init(BATCH_SIZE, 0, 1);
     g_chat_templates = common_chat_templates_init(g_model, "");
@@ -138,6 +146,13 @@ extern "C"
 JNIEXPORT jstring JNICALL
 Java_com_arm_aichat_internal_InferenceEngineImpl_systemInfo(JNIEnv *env, jobject /*unused*/) {
     return env->NewStringUTF(llama_print_system_info());
+}
+
+extern "C"
+JNIEXPORT jstring JNICALL
+Java_com_arm_aichat_internal_InferenceEngineImpl_lastNativeError(JNIEnv *env, jobject /*unused*/) {
+    const auto recent = ai_get_recent_error_log();
+    return env->NewStringUTF(recent.c_str());
 }
 
 extern "C"
