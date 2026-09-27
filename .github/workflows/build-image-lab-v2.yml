@@ -1,0 +1,146 @@
+name: Rosalina Image Lab V2
+on:
+  workflow_dispatch:
+  push:
+    branches: [ image-lab-v2 ]
+concurrency:
+  group: rosalina-image-lab-v2
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify original chat source is unchanged
+        run: git diff --exit-code 2b4dbd048484e67fcc745c30ce1622cb095d3519 HEAD -- app lib
+      - uses: actions/checkout@v4
+        with:
+          repository: ggml-org/llama.cpp
+          ref: a97cce86a8addeb9f40cba7a261c94b1f0c576cb
+          path: third_party/llama.cpp
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: leejet/stable-diffusion.cpp
+          ref: 3f8527a46c54ecf4cb4ed6003da8e8982283c73c
+          path: third_party/stable-diffusion.cpp
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install Android toolchain
+        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;29.0.13113456" "cmake;3.31.6"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Retain development signing identity between test builds
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: rosalina-image-lab-v2-debug-signing-v1
+      - name: Build isolated ARM64 image worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S image-engine -B native-arm64 -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_HOME/ndk/29.0.13113456/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-30 -DANDROID_STL=c++_static \
+            -DCMAKE_BUILD_TYPE=Release -DSD_SOURCE="$PWD/third_party/stable-diffusion.cpp"
+          cmake --build native-arm64 --target rosalina-image --parallel 2
+          WORKER=$(find native-arm64 -type f -name rosalina-image -perm -111 | head -n 1)
+          test -n "$WORKER"
+          mkdir -p studio/src/main/jniLibs/arm64-v8a
+          cp "$WORKER" studio/src/main/jniLibs/arm64-v8a/librosalina-image.so
+          chmod 755 studio/src/main/jniLibs/arm64-v8a/librosalina-image.so
+          READELF="$ANDROID_HOME/ndk/29.0.13113456/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          "$READELF" -h "$WORKER"
+          "$READELF" -d "$WORKER" | tee image-worker-dependencies.txt
+          if grep -E 'NEEDED.*(ggml|stable-diffusion|c\+\+_shared|omp)' image-worker-dependencies.txt; then
+            echo "Image worker must not depend on chat GGML or external C++/OpenMP libraries"; exit 1
+          fi
+      - name: Include upstream license notices
+        run: |
+          python3 - <<'PY'
+          import pathlib, shutil
+          out=pathlib.Path('studio/src/main/assets/licenses'); out.mkdir(parents=True,exist_ok=True)
+          for root in ['third_party/llama.cpp','third_party/stable-diffusion.cpp']:
+              for p in pathlib.Path(root).rglob('*'):
+                  if p.is_file() and p.name.lower() in ['license','license.md','license.txt','copying']:
+                      shutil.copyfile(p,out/str(p).replace('/','_'))
+          PY
+      - name: Kotlin unit tests and ARM64 APK
+        run: gradle :studio:testDebugUnitTest :studio:assembleDebug --max-workers=2 --stacktrace
+      - name: Verify and package APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p deliverables
+          cp studio/build/outputs/apk/debug/studio-debug.apk deliverables/Rosalina-Image-Lab-V2-rc1-arm64.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs deliverables/*.apk > deliverables/signature-check.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging deliverables/*.apk > deliverables/apk-info.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions deliverables/*.apk > deliverables/permissions.txt
+          ! grep -q android.permission.INTERNET deliverables/permissions.txt
+          python3 tests/verify_apk.py deliverables/Rosalina-Image-Lab-V2-rc1-arm64.apk
+          sha256sum deliverables/*.apk > deliverables/SHA256SUMS.txt
+          cp IMAGE_LAB_V2.md deliverables/
+          cp image-worker-dependencies.txt deliverables/
+          git archive --format=zip HEAD -o deliverables/Rosalina-Image-Lab-V2-source.zip
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: Rosalina-Image-Lab-V2-arm64
+          path: deliverables/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Image-Lab-unit-tests
+          path: studio/build/test-results/
+  native-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: leejet/stable-diffusion.cpp
+          ref: 3f8527a46c54ecf4cb4ed6003da8e8982283c73c
+          path: third_party/stable-diffusion.cpp
+          submodules: recursive
+          persist-credentials: false
+      - name: Build host worker from same source
+        run: |
+          cmake -S image-engine -B native-host -G Ninja -DCMAKE_BUILD_TYPE=Release -DSD_SOURCE="$PWD/third_party/stable-diffusion.cpp"
+          cmake --build native-host --target rosalina-image --parallel 2
+      - name: Verify model download and exercise both image paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p smoke
+          curl --fail --location --retry 3 -o smoke/sd15.gguf 'https://huggingface.co/second-state/stable-diffusion-v1-5-GGUF/resolve/main/stable-diffusion-v1-5-pruned-emaonly-Q4_0.gguf'
+          echo 'b8944e9fe0b69b36ae1b5bb0185b3a7b8ef14347fe0fa9af6c64c4829022261f  smoke/sd15.gguf' | sha256sum --check
+          WORKER=$(find native-host -type f -name rosalina-image -perm -111 | head -n 1)
+          python3 tests/native_smoke.py "$WORKER" smoke/sd15.gguf smoke
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Image-Lab-native-smoke
+          path: |
+            smoke/*.txt
+            smoke/*.json
+            smoke/*.png
+          if-no-files-found: warn

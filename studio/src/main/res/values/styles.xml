@@ -1,0 +1,17 @@
+<resources>
+    <style name="Theme.Studio" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowBackground">#0D0A13</item>
+        <item name="android:statusBarColor">#0D0A13</item>
+        <item name="android:navigationBarColor">#0D0A13</item>
+        <item name="colorPrimary">#C2A6FF</item>
+        <item name="colorSecondary">#C2A6FF</item>
+        <item name="colorOnPrimary">#1C102D</item>
+        <item name="colorSurface">#211B2D</item>
+        <item name="colorOnSurface">#F7F1FF</item>
+        <item name="android:colorAccent">#C2A6FF</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+</resources>
