@@ -1,0 +1,56 @@
+name: Motion Lab Android native launch validation
+on:
+  push:
+    branches: [motion-native-android-validation]
+permissions:
+  contents: read
+jobs:
+  native-android-launch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: leejet/stable-diffusion.cpp
+          ref: 3f8527a46c54ecf4cb4ed6003da8e8982283c73c
+          path: third_party/stable-diffusion.cpp
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install matching native toolchain
+        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;29.0.13113456"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build same worker and lifecycle guard for Android emulator
+        run: |
+          cmake -S motion-engine -B native-test -G Ninja -DCMAKE_BUILD_TYPE=Release -DSD_SOURCE="$PWD/third_party/stable-diffusion.cpp" -DCMAKE_TOOLCHAIN_FILE="$ANDROID_HOME/ndk/29.0.13113456/build/cmake/android.toolchain.cmake" -DANDROID_ABI=x86_64 -DANDROID_PLATFORM=android-30 -DANDROID_STL=c++_static
+          cmake --build native-test --target rosalina-motion --parallel 2
+          mkdir -p motion/src/main/jniLibs/x86_64
+          cp native-test/rosalina-motion motion/src/main/jniLibs/x86_64/librosalina-motion.so
+          chmod 755 motion/src/main/jniLibs/x86_64/librosalina-motion.so
+      - name: Enable emulator KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Exercise real installed executable, photo UI and MP4 encoder on Android
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_5
+          disable-animations: true
+          script: gradle :motion:connectedDebugAndroidTest -PmotionCodecTest=true --max-workers=2 --stacktrace
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Motion-Lab-Android-native-launch-tests
+          path: motion/build/outputs/androidTest-results/
