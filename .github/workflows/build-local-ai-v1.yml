@@ -1,0 +1,38 @@
+name: Build Rosalina Local AI V1
+on:
+  workflow_dispatch:
+  push:
+    branches: [ local-ai-v1 ]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout Rosalina
+        uses: actions/checkout@v4
+      - name: Checkout pinned llama.cpp
+        uses: actions/checkout@v4
+        with:
+          repository: ggml-org/llama.cpp
+          ref: a97cce86a8addeb9f40cba7a261c94b1f0c576cb
+          path: third_party/llama.cpp
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install native toolchain
+        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;29.0.13113456" "cmake;3.31.6"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build arm64 debug APK
+        run: gradle :app:assembleDebug --stacktrace
+      - name: Upload Rosalina Local AI APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rosalina-Local-AI-V1-arm64
+          path: app/build/outputs/apk/debug/app-debug.apk
