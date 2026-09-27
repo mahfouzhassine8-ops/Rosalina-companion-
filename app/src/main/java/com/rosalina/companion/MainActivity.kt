@@ -502,6 +502,14 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_SYSTEM_PROMPT = "system_prompt"
         private const val KEY_MAX_TOKENS = "max_tokens"
         private const val KEY_TRANSCRIPT = "transcript"
+
+        private const val RECOMMENDED_MODEL_NAME =
+            "Qwen3.5-9B-abliterated-Q4_K_M.gguf"
+        private const val RECOMMENDED_MODEL_BYTES = 5_627_044_704L
+        private const val RECOMMENDED_MODEL_SHA256 =
+            "dba64d0e5cce0739e27535ee0a6b75249eb8006ce8b2d6c060e20750035c4695"
+        private const val EXTRA_FREE_SPACE_BYTES = 1_073_741_824L
+
         private const val DEFAULT_SYSTEM_PROMPT =
             "You are Rosalina, a private on-device assistant. Be helpful, practical, direct, and clear. " +
             "The user controls this device and may customize your behavior. Do not pretend to have internet access " +
