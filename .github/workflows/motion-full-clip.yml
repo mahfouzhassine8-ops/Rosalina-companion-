@@ -1,0 +1,38 @@
+name: Motion Lab actual default six-second validation
+on:
+  push:
+    branches: [motion-six-second-validation]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  full-six-second:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: leejet/stable-diffusion.cpp
+          ref: 3f8527a46c54ecf4cb4ed6003da8e8982283c73c
+          path: third_party/stable-diffusion.cpp
+          submodules: recursive
+      - name: Install video test dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y python3-pil ffmpeg time
+      - name: Build exact production video worker
+        run: |
+          cmake -S motion-engine -B native-motion -G Ninja -DCMAKE_BUILD_TYPE=Release -DSD_SOURCE="$PWD/third_party/stable-diffusion.cpp"
+          cmake --build native-motion --target rosalina-motion --parallel 2
+      - name: Generate 49 real video frames at default phone-candidate settings
+        run: python3 motion-tests/full_clip.py native-motion/rosalina-motion
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Motion-Lab-actual-six-second-validation
+          path: |
+            motion-full-clip/*.png
+            motion-full-clip/*.json
+            motion-full-clip/*.log
+            motion-full-clip/*.mp4
