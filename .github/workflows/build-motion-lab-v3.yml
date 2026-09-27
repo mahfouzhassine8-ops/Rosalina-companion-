@@ -1,12 +1,12 @@
 name: Rosalina Motion Lab V3
 on:
   push:
-    branches: [motion-lab-v3]
+    branches: [motion-lab-v3-rc2-background-thermal]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: motion-lab-v3
+  group: motion-lab-v3-rc2
   cancel-in-progress: true
 jobs:
   android:
@@ -75,7 +75,7 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > delivery/package.txt
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$APK" > delivery/permissions.txt
           if grep -q android.permission.INTERNET delivery/permissions.txt; then exit 1; fi
-          cp "$APK" delivery/Rosalina-Motion-Lab-V3-rc1-arm64.apk
+          cp "$APK" delivery/Rosalina-Motion-Lab-V3-rc2-arm64.apk
           cp MOTION_LAB_V3.md delivery/
           cp motion/src/main/assets/tae.sha256 delivery/
           git rev-parse HEAD > delivery/commit.txt
@@ -90,7 +90,7 @@ jobs:
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: Rosalina-Motion-Lab-V3-arm64
+          name: Rosalina-Motion-Lab-V3-RC2-arm64
           path: delivery/
       - uses: actions/upload-artifact@v4
         if: always()
