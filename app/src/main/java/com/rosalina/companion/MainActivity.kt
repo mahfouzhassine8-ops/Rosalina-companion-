@@ -25,7 +25,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.security.MessageDigest
 import kotlin.math.roundToInt
 
 class MainActivity : AppCompatActivity() {
@@ -57,7 +59,10 @@ class MainActivity : AppCompatActivity() {
             val savedPath = prefs.getString(KEY_MODEL_PATH, null)
             if (!savedPath.isNullOrBlank() && File(savedPath).isFile) {
                 try { loadModel(File(savedPath)) }
-                catch (t: Throwable) { setStatus("Model needs reload: ${t.message}") }
+                catch (t: Throwable) {
+                    prefs.edit().remove(KEY_MODEL_PATH).apply()
+                    setStatus("Saved model failed to load: ${friendlyError(t)}")
+                }
             } else {
                 setStatus("Ready. Import a GGUF model.")
             }
@@ -159,41 +164,146 @@ class MainActivity : AppCompatActivity() {
     private fun importModel(uri: Uri) {
         modelButton.isEnabled = false
         sendButton.isEnabled = false
+        modelReady = false
+
         lifecycleScope.launch(Dispatchers.IO) {
+            var stage = "INSPECT SOURCE"
+            var sourceSize = -1L
+            var copiedSize = -1L
+            var computedSha = ""
+            var destination: File? = null
+
             try {
                 val name = displayName(uri).ifBlank { "model.gguf" }
-                require(name.endsWith(".gguf", true)) { "Please select a .gguf model file." }
-                val modelDir = File(filesDir, "models").apply { mkdirs() }
-                val destination = File(modelDir, name)
-                val totalBytes = querySize(uri)
-                if (totalBytes > 0 && filesDir.usableSpace < totalBytes + 1_073_741_824L) {
-                    error("Not enough free space. Keep at least 1 GB beyond model size.")
+                require(name.endsWith(".gguf", ignoreCase = true)) {
+                    "That file is not a .gguf model."
                 }
+
+                sourceSize = querySize(uri)
+
+                if (
+                    name.equals(RECOMMENDED_MODEL_NAME, ignoreCase = true) &&
+                    sourceSize > 0L &&
+                    sourceSize != RECOMMENDED_MODEL_BYTES
+                ) {
+                    error(
+                        "The Qwen download is incomplete or is the wrong file. " +
+                            "Expected ${formatBytes(RECOMMENDED_MODEL_BYTES)}, " +
+                            "got ${formatBytes(sourceSize)}."
+                    )
+                }
+
+                val modelDir = File(filesDir, "models").apply { mkdirs() }
+                destination = File(modelDir, name)
+
+                if (
+                    sourceSize > 0 &&
+                    filesDir.usableSpace < sourceSize + EXTRA_FREE_SPACE_BYTES
+                ) {
+                    error("Not enough free internal space for the model plus 1 GB headroom.")
+                }
+
+                stage = "COPY + SHA-256"
+                setStatus("COPY • ${name} • starting…")
+
+                val digest = MessageDigest.getInstance("SHA-256")
+                var copied = 0L
+                var lastUi = 0L
+
                 contentResolver.openInputStream(uri)?.use { input ->
                     FileOutputStream(destination).use { output ->
                         val buffer = ByteArray(8 * 1024 * 1024)
-                        var copied = 0L
-                        var lastUi = 0L
+
                         while (true) {
                             val count = input.read(buffer)
                             if (count < 0) break
+
                             output.write(buffer, 0, count)
+                            digest.update(buffer, 0, count)
                             copied += count
+
                             val now = System.currentTimeMillis()
-                            if (now - lastUi > 700L && totalBytes > 0) {
+                            if (now - lastUi > 650L) {
                                 lastUi = now
-                                val pct = ((copied.toDouble() / totalBytes) * 100.0).coerceIn(0.0, 100.0).roundToInt()
-                                setStatus("Importing ${name}: ${pct}%")
+                                if (sourceSize > 0L) {
+                                    val pct =
+                                        ((copied.toDouble() / sourceSize.toDouble()) * 100.0)
+                                            .coerceIn(0.0, 100.0)
+                                            .roundToInt()
+                                    setStatus(
+                                        "COPY • ${pct}% • " +
+                                            "${formatBytes(copied)} / ${formatBytes(sourceSize)}"
+                                    )
+                                } else {
+                                    setStatus("COPY • ${formatBytes(copied)}")
+                                }
                             }
                         }
+
+                        output.fd.sync()
                     }
-                } ?: error("Unable to open selected model.")
-                prefs.edit().putString(KEY_MODEL_PATH, destination.absolutePath).apply()
+                } ?: error("Android could not open the selected file.")
+
+                copiedSize = destination.length()
+                computedSha = digest.digest().joinToString("") { "%02x".format(it) }
+
+                stage = "VERIFY COPY"
+                setStatus("VERIFY • GGUF header, size and checksum…")
+
+                require(copiedSize > 1024L * 1024L) {
+                    "Copied file is far too small: ${formatBytes(copiedSize)}."
+                }
+
+                if (sourceSize > 0L) {
+                    require(copiedSize == sourceSize) {
+                        "Copy was incomplete. Source=${formatBytes(sourceSize)}, " +
+                            "copied=${formatBytes(copiedSize)}."
+                    }
+                }
+
+                verifyGgufHeader(destination)
+
+                if (name.equals(RECOMMENDED_MODEL_NAME, ignoreCase = true)) {
+                    require(copiedSize == RECOMMENDED_MODEL_BYTES) {
+                        "Qwen file size does not match the known-good model."
+                    }
+                    require(
+                        computedSha.equals(RECOMMENDED_MODEL_SHA256, ignoreCase = true)
+                    ) {
+                        "Qwen checksum does not match the known-good model. " +
+                            "The download is corrupt or incomplete."
+                    }
+                }
+
+                stage = "LOAD MODEL"
+                setStatus("LOAD • verified ${formatBytes(copiedSize)} • starting native engine…")
                 loadModel(destination)
+
+                stage = "FINALIZE"
+                prefs.edit()
+                    .putString(KEY_MODEL_PATH, destination.absolutePath)
+                    .apply()
+
+                setStatus("LOCAL • ${destination.name} • 8K context • VERIFIED")
             } catch (t: Throwable) {
-                setStatus("Import failed: ${t.message}")
+                if (stage != "LOAD MODEL") {
+                    destination?.let { if (it.exists()) it.delete() }
+                }
+
+                prefs.edit().remove(KEY_MODEL_PATH).apply()
+                modelReady = false
+
+                val detail = friendlyError(t)
+                setStatus("FAILED • ${stage} • ${detail}")
+
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, t.message ?: "Import failed", Toast.LENGTH_LONG).show()
+                    showFailureDialog(
+                        stage = stage,
+                        error = t,
+                        sourceSize = sourceSize,
+                        copiedSize = copiedSize,
+                        sha256 = computedSha
+                    )
                 }
             } finally {
                 withContext(Dispatchers.Main) {
@@ -250,6 +360,73 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun verifyGgufHeader(file: File) {
+        val header = ByteArray(4)
+        FileInputStream(file).use { input ->
+            require(input.read(header) == 4) { "Could not read the GGUF header." }
+        }
+
+        val magic = String(header, Charsets.US_ASCII)
+        require(magic == "GGUF") {
+            "Selected file does not contain a valid GGUF header. Found '${magic}'."
+        }
+    }
+
+    private fun friendlyError(t: Throwable): String {
+        val raw = t.message?.trim().orEmpty()
+        return if (raw.isNotBlank()) raw else "${t::class.java.simpleName} (no message)"
+    }
+
+    private fun showFailureDialog(
+        stage: String,
+        error: Throwable,
+        sourceSize: Long,
+        copiedSize: Long,
+        sha256: String
+    ) {
+        val details = buildString {
+            append("Stage: ").append(stage)
+            append("\nError: ").append(error::class.java.simpleName)
+            append("\n\n").append(friendlyError(error))
+
+            if (sourceSize > 0L) {
+                append("\n\nSource: ").append(formatBytes(sourceSize))
+            }
+            if (copiedSize > 0L) {
+                append("\nCopied: ").append(formatBytes(copiedSize))
+            }
+            if (sha256.isNotBlank()) {
+                append("\nSHA-256: ").append(sha256)
+            }
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Rosalina model import failed")
+            .setMessage(details)
+            .setPositiveButton("OK", null)
+            .setNeutralButton("Copy details") { _, _ ->
+                val clipboard =
+                    getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(
+                    android.content.ClipData.newPlainText("Rosalina diagnostics", details)
+                )
+                Toast.makeText(this, "Diagnostics copied.", Toast.LENGTH_SHORT).show()
+            }
+            .show()
+    }
+
+    private fun formatBytes(bytes: Long): String {
+        if (bytes < 0L) return "unknown"
+
+        val gib = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+        return if (gib >= 1.0) {
+            String.format("%.2f GB", gib)
+        } else {
+            val mib = bytes.toDouble() / (1024.0 * 1024.0)
+            String.format("%.1f MB", mib)
+        }
+    }
+
     private fun showSettings() {
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -287,7 +464,7 @@ class MainActivity : AppCompatActivity() {
     private fun restoreTranscript() {
         transcriptView.text = prefs.getString(
             KEY_TRANSCRIPT,
-            "Rosalina Local AI V1\n\nImport a GGUF model to begin. Your chat stays on this phone.\n"
+            "Rosalina Local AI V1.1\n\nImport a GGUF model to begin. Your chat stays on this phone.\n"
         )
     }
 
