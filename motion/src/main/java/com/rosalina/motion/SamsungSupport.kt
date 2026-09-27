@@ -13,7 +13,6 @@ internal object ThermalPolicy {
         status>=PowerManager.THERMAL_STATUS_MODERATE -> 3
         else -> 4
     }
-    fun shouldPause(status:Int)=status>=PowerManager.THERMAL_STATUS_SEVERE && status<PowerManager.THERMAL_STATUS_CRITICAL
     fun shouldAbort(status:Int)=status>=PowerManager.THERMAL_STATUS_CRITICAL
 }
 
