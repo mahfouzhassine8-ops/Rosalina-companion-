@@ -9,6 +9,8 @@
 
 #pragma once
 #include <android/log.h>
+#include <mutex>
+#include <string>
 
 #ifndef LOG_TAG
 #define LOG_TAG "ai-chat"
@@ -21,6 +23,32 @@
 #define LOG_MIN_LEVEL ANDROID_LOG_VERBOSE
 #endif
 #endif
+
+static std::mutex ai_recent_error_mutex;
+static std::string ai_recent_error_log;
+
+static inline void ai_clear_recent_error_log() {
+    std::lock_guard<std::mutex> lock(ai_recent_error_mutex);
+    ai_recent_error_log.clear();
+}
+
+static inline void ai_record_native_error(const char *text) {
+    if (!text || !*text) return;
+    std::lock_guard<std::mutex> lock(ai_recent_error_mutex);
+    ai_recent_error_log.append(text);
+    if (ai_recent_error_log.empty() || ai_recent_error_log.back() != '\n') {
+        ai_recent_error_log.push_back('\n');
+    }
+    constexpr size_t MAX_NATIVE_ERROR_BYTES = 8192;
+    if (ai_recent_error_log.size() > MAX_NATIVE_ERROR_BYTES) {
+        ai_recent_error_log.erase(0, ai_recent_error_log.size() - MAX_NATIVE_ERROR_BYTES);
+    }
+}
+
+static inline std::string ai_get_recent_error_log() {
+    std::lock_guard<std::mutex> lock(ai_recent_error_mutex);
+    return ai_recent_error_log;
+}
 
 static inline int ai_should_log(int prio) {
     return __android_log_is_loggable(prio, LOG_TAG, LOG_MIN_LEVEL);
@@ -56,6 +84,9 @@ static inline void aichat_android_log_callback(enum ggml_log_level level,
                                               const char* text,
                                               void* /*user*/) {
     const int prio = android_log_prio_from_ggml(level);
+    if (prio >= ANDROID_LOG_WARN) {
+        ai_record_native_error(text);
+    }
     if (!ai_should_log(prio)) return;
     __android_log_write(prio, LOG_TAG, text);
 }
