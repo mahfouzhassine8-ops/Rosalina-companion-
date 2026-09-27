@@ -6,8 +6,6 @@ import android.graphics.*
 import android.net.Uri
 import android.os.*
 import android.provider.OpenableColumns
-import android.system.Os
-import android.system.OsConstants
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -31,7 +29,6 @@ internal object MotionSession {
     val state:StateFlow<MotionState> = mutable.asStateFlow()
     private val process=AtomicReference<Process?>(null)
     private val cancelRequested=AtomicBoolean(false)
-    private val thermalPaused=AtomicBoolean(false)
     private val serviceStopExpected=AtomicBoolean(false)
     private val thermalStatus=AtomicInteger(PowerManager.THERMAL_STATUS_NONE)
     private var job:Job?=null
@@ -58,19 +55,12 @@ internal object MotionSession {
     fun onThermalStatus(status:Int){
         thermalStatus.set(status)
         if(!state.value.busy || state.value.work!="render")return
-        val p=process.get()
         if(ThermalPolicy.shouldAbort(status)){
             cancel("Thermal protection stopped rendering at ${SamsungSupport.thermalName(status)}. Let the phone cool down.")
-            return
-        }
-        if(p!=null && ThermalPolicy.shouldPause(status) && thermalPaused.compareAndSet(false,true)){
-            runCatching{Os.kill(p.pid().toInt(),OsConstants.SIGSTOP)}
-                .onSuccess{notice("Thermal pause · ${SamsungSupport.thermalName(status)} · generation will resume after cooling")}
-                .onFailure{cancel("Thermal protection could not pause the renderer safely")}
-        }else if(p!=null && !ThermalPolicy.shouldPause(status) && thermalPaused.compareAndSet(true,false)){
-            runCatching{Os.kill(p.pid().toInt(),OsConstants.SIGCONT)}
-                .onSuccess{notice("Thermals recovered · resuming video generation")}
-                .onFailure{cancel("Renderer could not resume after thermal pause")}
+        }else if(status>=PowerManager.THERMAL_STATUS_SEVERE){
+            // Deliberately do not kill/pause the worker here. Samsung's thermal controller
+            // (including Thermal Guardian threshold tuning) remains in charge of throttling.
+            notice("Samsung thermal management active · ${SamsungSupport.thermalName(status)} · rendering continues throttled")
         }
     }
     fun fail(stage:String,t:Throwable,tail:String="") {
@@ -87,7 +77,6 @@ internal object MotionSession {
         job?.cancel(CancellationException(reason))
         val p=process.get()
         if(p!=null){
-            runCatching{if(thermalPaused.getAndSet(false))Os.kill(p.pid().toInt(),OsConstants.SIGCONT)}
             runCatching{p.destroy()}
             scope.launch(Dispatchers.IO){
                 runCatching{if(!p.waitFor(1500,TimeUnit.MILLISECONDS))p.destroyForcibly()}
@@ -169,7 +158,6 @@ internal object MotionSession {
             pending=prompt.trim() to spec
             stopMessage="Stopped by you"
             cancelRequested.set(false)
-            thermalPaused.set(false)
             serviceStopExpected.set(false)
             mutable.update{it.copy(busy=true,work="render",progress=null,status="Starting local video renderer…",details="",started=SystemClock.elapsedRealtime())}
             ContextCompat.startForegroundService(app,Intent(app,MotionService::class.java))
@@ -253,7 +241,6 @@ internal object MotionSession {
                         if(p.isAlive)p.destroyForcibly()
                         p.waitFor(10,TimeUnit.SECONDS)
                         process.compareAndSet(p,null)
-                        thermalPaused.set(false)
                     }
                     stage="MP4 ENCODING";notice("Encoding ${spec.seconds}-second MP4…")
                     val videos=File(app.filesDir,"videos").apply{mkdirs()};val name="Rosalina-${System.currentTimeMillis()}"
