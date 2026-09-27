@@ -20,6 +20,10 @@ jobs:
           ref: 3f8527a46c54ecf4cb4ed6003da8e8982283c73c
           path: third_party/stable-diffusion.cpp
           submodules: recursive
+      - name: Install probe dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y python3-pil ffmpeg
       - name: Build isolated video worker
         run: |
           cmake -S motion-engine -B build-motion -G Ninja -DCMAKE_BUILD_TYPE=Release -DSD_SOURCE="$PWD/third_party/stable-diffusion.cpp"
