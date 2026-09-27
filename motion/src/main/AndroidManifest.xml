@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <queries>
+        <package android:name="com.samsung.android.thermalguardian" />
+        <package android:name="com.samsung.android.lool" />
+    </queries>
     <!-- No INTERNET permission: only explicit browser downloads and Android sharing. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
@@ -14,7 +18,7 @@
             android:windowSoftInputMode="adjustResize" android:resizeableActivity="true">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity>
-        <service android:name=".MotionService" android:exported="false" android:foregroundServiceType="mediaProcessing|specialUse">
+        <service android:name=".MotionService" android:exported="false" android:stopWithTask="false" android:foregroundServiceType="mediaProcessing|specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-started offline AI photo-to-video rendering on Android versions before mediaProcessing was introduced" />
         </service>
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.files" android:exported="false" android:grantUriPermissions="true">

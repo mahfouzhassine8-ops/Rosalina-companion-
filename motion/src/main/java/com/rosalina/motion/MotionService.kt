@@ -14,17 +14,22 @@ class MotionService:Service(){
   getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel("motion","Local video generation",NotificationManager.IMPORTANCE_LOW))
   val pm=getSystemService(PowerManager::class.java)
   lock=pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"Rosalina:Motion").apply{acquire(121*60*1000L)}
-  thermal=PowerManager.OnThermalStatusChangedListener{if(it>=PowerManager.THERMAL_STATUS_SEVERE)MotionSession.cancel("Rendering stopped because the phone is too hot. Let it cool down.")}.also{pm.addThermalStatusListener(it)}
+  MotionSession.onThermalStatus(pm.currentThermalStatus)
+  thermal=PowerManager.OnThermalStatusChangedListener{MotionSession.onThermalStatus(it)}.also{pm.addThermalStatusListener(it)}
  }
  private fun notification(text:String):Notification{
   val flags=PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
   val open=PendingIntent.getActivity(this,0,Intent(this,MotionActivity::class.java),flags)
   val stop=PendingIntent.getService(this,1,Intent(this,MotionService::class.java).setAction("STOP"),flags)
-  return NotificationCompat.Builder(this,"motion").setSmallIcon(R.drawable.ic_motion).setContentTitle("Rosalina · making your video").setContentText(text).setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).addAction(0,"Stop",stop).build()
+  return NotificationCompat.Builder(this,"motion").setSmallIcon(R.drawable.ic_motion).setContentTitle("Rosalina · making your video").setContentText(text)
+   .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)
+   .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+   .addAction(0,"Stop",stop).build()
  }
  override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int{
   if(intent?.action=="STOP"){MotionSession.cancel();stopSelf();return START_NOT_STICKY}
   val type=if(Build.VERSION.SDK_INT>=35)ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING else if(Build.VERSION.SDK_INT>=34)ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
+  MotionSession.onServiceStarted()
   startForeground(30,notification("Preparing local video renderer"),type)
   val s=MotionSession.state.value
   if(!s.busy||s.work!="render"){stopSelf();return START_NOT_STICKY}
@@ -33,8 +38,12 @@ class MotionService:Service(){
   return START_NOT_STICKY
  }
  override fun onTimeout(startId:Int,fgsType:Int){MotionSession.cancel("Android ended the rendering time window");stopSelf()}
+ override fun onTaskRemoved(rootIntent:Intent?){
+  // Backgrounding or swiping away the UI does not intentionally end a render.
+  super.onTaskRemoved(rootIntent)
+ }
  override fun onDestroy(){
-  if(MotionSession.state.value.busy&&MotionSession.state.value.work=="render")MotionSession.cancel("Rendering service stopped; memory released")
+  MotionSession.onServiceDestroyed()
   scope.cancel();thermal?.let{getSystemService(PowerManager::class.java).removeThermalStatusListener(it)}
   if(lock?.isHeld==true)lock?.release();super.onDestroy()
  }

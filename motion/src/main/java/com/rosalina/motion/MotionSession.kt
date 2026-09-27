@@ -6,6 +6,8 @@ import android.graphics.*
 import android.net.Uri
 import android.os.*
 import android.provider.OpenableColumns
+import android.system.Os
+import android.system.OsConstants
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -15,6 +17,8 @@ import java.lang.Process
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.max
 
@@ -26,6 +30,10 @@ internal object MotionSession {
     private val mutable=MutableStateFlow(MotionState())
     val state:StateFlow<MotionState> = mutable.asStateFlow()
     private val process=AtomicReference<Process?>(null)
+    private val cancelRequested=AtomicBoolean(false)
+    private val thermalPaused=AtomicBoolean(false)
+    private val serviceStopExpected=AtomicBoolean(false)
+    private val thermalStatus=AtomicInteger(PowerManager.THERMAL_STATUS_NONE)
     private var job:Job?=null
     private var pending:Pair<String,MotionSpec>?=null
     private var stopMessage="Stopped by you"
@@ -34,10 +42,37 @@ internal object MotionSession {
     fun init(c:Context) {
         if(::app.isInitialized) return
         app=c.applicationContext
+        thermalStatus.set(app.getSystemService(PowerManager::class.java).currentThermalStatus)
         fun path(key:String)=prefs.getString(key,"").orEmpty().takeIf{it.isNotEmpty()&&File(it).isFile}.orEmpty()
         mutable.value=MotionState(videoModel=path("video"),textModel=path("text"),photo=path("photo"),result=path("result"))
     }
     fun notice(s:String){mutable.update{it.copy(status=s)}}
+    fun currentThermalStatus():Int=thermalStatus.get()
+    fun onServiceStarted(){serviceStopExpected.set(false)}
+    fun onServiceDestroyed(){
+        val expected=serviceStopExpected.getAndSet(false)
+        if(!expected && state.value.busy && state.value.work=="render"){
+            cancel("Android stopped the background rendering service")
+        }
+    }
+    fun onThermalStatus(status:Int){
+        thermalStatus.set(status)
+        if(!state.value.busy || state.value.work!="render")return
+        val p=process.get()
+        if(ThermalPolicy.shouldAbort(status)){
+            cancel("Thermal protection stopped rendering at ${SamsungSupport.thermalName(status)}. Let the phone cool down.")
+            return
+        }
+        if(p!=null && ThermalPolicy.shouldPause(status) && thermalPaused.compareAndSet(false,true)){
+            runCatching{Os.kill(p.pid().toInt(),OsConstants.SIGSTOP)}
+                .onSuccess{notice("Thermal pause · ${SamsungSupport.thermalName(status)} · generation will resume after cooling")}
+                .onFailure{cancel("Thermal protection could not pause the renderer safely")}
+        }else if(p!=null && !ThermalPolicy.shouldPause(status) && thermalPaused.compareAndSet(true,false)){
+            runCatching{Os.kill(p.pid().toInt(),OsConstants.SIGCONT)}
+                .onSuccess{notice("Thermals recovered · resuming video generation")}
+                .onFailure{cancel("Renderer could not resume after thermal pause")}
+        }
+    }
     fun fail(stage:String,t:Throwable,tail:String="") {
         val mem=ActivityManager.MemoryInfo().also{app.getSystemService(ActivityManager::class.java).getMemoryInfo(it)}
         val d="Stage: $stage\n${t.javaClass.simpleName}: ${MotionMath.error(t)}\nBuild: ${BuildConfig.VERSION_NAME}\n"+
@@ -46,7 +81,18 @@ internal object MotionSession {
         scope.launch(Dispatchers.IO){runCatching{File(app.filesDir,"last-diagnostic.txt").writeText(d)}}
     }
     fun cancel(reason:String="Stopped by you") {
-        stopMessage=reason;pending=null;process.get()?.destroyForcibly();job?.cancel()
+        stopMessage=reason
+        cancelRequested.set(true)
+        pending=null
+        job?.cancel(CancellationException(reason))
+        val p=process.get()
+        if(p!=null){
+            runCatching{if(thermalPaused.getAndSet(false))Os.kill(p.pid().toInt(),OsConstants.SIGCONT)}
+            runCatching{p.destroy()}
+            scope.launch(Dispatchers.IO){
+                runCatching{if(!p.waitFor(1500,TimeUnit.MILLISECONDS))p.destroyForcibly()}
+            }
+        }
         if(job==null) mutable.update{it.copy(busy=false,work="",progress=null,status=reason)}
         else notice("Stopping and releasing video memory…")
     }
@@ -120,7 +166,11 @@ internal object MotionSession {
             require(prompt.toByteArray().size<=16000){"Motion description is too long"}
             require(state.value.photo.isNotBlank()){ "Choose a gallery photo first" }
             require(state.value.videoModel.isNotBlank()&&state.value.textModel.isNotBlank()){ "Import both video model files under Models" }
-            pending=prompt.trim() to spec;stopMessage="Stopped by you"
+            pending=prompt.trim() to spec
+            stopMessage="Stopped by you"
+            cancelRequested.set(false)
+            thermalPaused.set(false)
+            serviceStopExpected.set(false)
             mutable.update{it.copy(busy=true,work="render",progress=null,status="Starting local video renderer…",details="",started=SystemClock.elapsedRealtime())}
             ContextCompat.startForegroundService(app,Intent(app,MotionService::class.java))
         }catch(e:Exception){pending=null;mutable.update{it.copy(busy=false,work="")};fail("START",e)}
@@ -141,7 +191,10 @@ internal object MotionSession {
                     val mem=ActivityManager.MemoryInfo().also{app.getSystemService(ActivityManager::class.java).getMemoryInfo(it)}
                     require(!mem.lowMemory && mem.availMem>3L*1024*1024*1024){"Available RAM is low. Close the original Qwen/Image Lab apps, then retry."}
                     val pm=app.getSystemService(PowerManager::class.java)
-                    require(pm.currentThermalStatus<PowerManager.THERMAL_STATUS_SEVERE){"Let the phone cool down before rendering"}
+                    val startThermal=pm.currentThermalStatus
+                    thermalStatus.set(startThermal)
+                    require(startThermal<PowerManager.THERMAL_STATUS_SEVERE){"Let the phone cool down before rendering"}
+                    val workerThreads=ThermalPolicy.workerThreads(startThermal)
                     val exe=File(app.applicationInfo.nativeLibraryDir,"librosalina-motion.so")
                     require(exe.isFile&&exe.canExecute()){ "Video worker was not extracted during installation" }
                     stage="DECODER CHECK"
@@ -158,27 +211,50 @@ internal object MotionSession {
                     notice("Loading video models · ${spec.seconds}s clip · CPU draft")
                     val raw=File(dir,"frames.rvf")
                     val args=listOf(exe.path,state.value.videoModel,state.value.textModel,tae.path,File(dir,"prompt.txt").path,File(dir,"negative.txt").path,
-                        ref.path,raw.path,spec.width.toString(),spec.height.toString(),spec.modelFrames.toString(),spec.steps.toString(),spec.seed.toString(),"4")
+                        ref.path,raw.path,spec.width.toString(),spec.height.toString(),spec.modelFrames.toString(),spec.steps.toString(),spec.seed.toString(),workerThreads.toString())
                     ensureActive()
-                    val p=ProcessBuilder(args).directory(dir).redirectErrorStream(true).start();process.set(p)
+                    val p=ProcessBuilder(args).directory(dir).redirectErrorStream(true).start()
+                    process.set(p)
                     var sampling=false
+                    var readFailure:IOException?=null
                     try{
-                        log.bufferedWriter().use{writer->p.inputStream.bufferedReader().useLines{lines->lines.forEach{line->
-                            ensureActive();writer.appendLine(line);writer.flush()
-                            if(line.startsWith("@@STAGE "))mutable.update{it.copy(status=line.removePrefix("@@STAGE "),progress=null)}
-                            else if(line.contains(" - generate_video ")&&line.contains("x${spec.modelFrames}")){
-                                sampling=true;notice("Generating motion frames…")
-                            }else if(line.contains(" - generating latent video completed")){
-                                sampling=false;mutable.update{it.copy(status="Decoding generated video frames…",progress=null)}
-                            }else if(line.contains(" - encode_first_stage completed")){
-                                notice("Reading your motion description…")
-                            }else if(line.startsWith("@@STEP ")&&sampling){
-                                val a=line.split(' ');val n=a.getOrNull(1)?.toIntOrNull();val total=a.getOrNull(2)?.toIntOrNull()
-                                if(n!=null&&total==spec.steps)mutable.update{it.copy(status="Generating motion · step $n of $total",progress=(n*100/total).coerceIn(0,100))}
+                        log.bufferedWriter().use{writer->
+                            p.inputStream.bufferedReader().use{reader->
+                                while(true){
+                                    val line=try{reader.readLine()}catch(e:InterruptedIOException){
+                                        if(cancelRequested.get() || !currentCoroutineContext().isActive)throw CancellationException(stopMessage)
+                                        throw e
+                                    }catch(e:IOException){
+                                        if(cancelRequested.get() || !currentCoroutineContext().isActive)throw CancellationException(stopMessage)
+                                        readFailure=e
+                                        null
+                                    } ?: break
+                                    ensureActive()
+                                    writer.appendLine(line);writer.flush()
+                                    if(line.startsWith("@@STAGE "))mutable.update{it.copy(status=line.removePrefix("@@STAGE "),progress=null)}
+                                    else if(line.contains(" - generate_video ")&&line.contains("x${spec.modelFrames}")){
+                                        sampling=true;notice("Generating motion frames · ${SamsungSupport.thermalName(thermalStatus.get())}")
+                                    }else if(line.contains(" - generating latent video completed")){
+                                        sampling=false;mutable.update{it.copy(status="Decoding generated video frames…",progress=null)}
+                                    }else if(line.contains(" - encode_first_stage completed")){
+                                        notice("Reading your motion description…")
+                                    }else if(line.startsWith("@@STEP ")&&sampling){
+                                        val a=line.split(' ');val n=a.getOrNull(1)?.toIntOrNull();val total=a.getOrNull(2)?.toIntOrNull()
+                                        if(n!=null&&total==spec.steps)mutable.update{it.copy(status="Generating motion · step $n of $total · ${SamsungSupport.thermalName(thermalStatus.get())}",progress=(n*100/total).coerceIn(0,100))}
+                                    }
+                                }
                             }
-                        }}}
-                        ensureActive();check(p.waitFor()==0){"Video worker stopped before completing the clip"}
-                    }finally{if(p.isAlive)p.destroyForcibly();p.waitFor(10,TimeUnit.SECONDS);process.compareAndSet(p,null)}
+                        }
+                        val exit=p.waitFor()
+                        if(cancelRequested.get() || !currentCoroutineContext().isActive)throw CancellationException(stopMessage)
+                        readFailure?.let{throw it}
+                        check(exit==0){"Video worker stopped before completing the clip (exit $exit)"}
+                    }finally{
+                        if(p.isAlive)p.destroyForcibly()
+                        p.waitFor(10,TimeUnit.SECONDS)
+                        process.compareAndSet(p,null)
+                        thermalPaused.set(false)
+                    }
                     stage="MP4 ENCODING";notice("Encoding ${spec.seconds}-second MP4…")
                     val videos=File(app.filesDir,"videos").apply{mkdirs()};val name="Rosalina-${System.currentTimeMillis()}"
                     val part=File(videos,"$name.mp4.part");tmpMp4=part
@@ -201,6 +277,7 @@ internal object MotionSession {
                     if(!committed)tmpMp4?.delete();dir.deleteRecursively()
                 }
                 mutable.update{it.copy(busy=false,work="",progress=null)};job=null
+                serviceStopExpected.set(true)
                 app.stopService(Intent(app,MotionService::class.java))
             }
         }
