@@ -8,8 +8,8 @@ android {
         applicationId = "com.rosalina.motionlab"
         minSdk = 30
         targetSdk = 35
-        versionCode = 30001
-        versionName = "3.0.0-motion-lab-rc1"
+        versionCode = 30002
+        versionName = "3.0.1-motion-lab-rc2"
         ndk { abiFilters += if(codecTest) "x86_64" else "arm64-v8a" }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
