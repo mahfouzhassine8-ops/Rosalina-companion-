@@ -1,10 +1,12 @@
 package com.rosalina.motion
 
+import android.content.ContentValues
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.net.Uri
+import android.provider.MediaStore
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
@@ -45,12 +47,19 @@ class ScreenTest {
                 assertEquals("A red ball bounces gently, static camera.",all(a.window.decorView).filterIsInstance<EditText>().first().text.toString())
                 assertTrue(File(MotionSession.state.value.photo).isFile)
             }
-            instrumentation.waitForIdleSync()
-            Thread.sleep(500)
-            val out=File(context.filesDir,"qa").apply{mkdirs()}
+            instrumentation.waitForIdleSync();Thread.sleep(600)
             val screenshot=instrumentation.uiAutomation.takeScreenshot()
             assertNotNull(screenshot)
-            File(out,"motion-photo-screen.png").outputStream().use{screenshot.compress(Bitmap.CompressFormat.PNG,100,it)}
+            // Public emulator-only QA output survives Gradle uninstalling the test package.
+            val values=ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME,"motion-photo-screen.png")
+                put(MediaStore.Images.Media.MIME_TYPE,"image/png")
+                put(MediaStore.Images.Media.RELATIVE_PATH,"Pictures/RosalinaQA")
+                put(MediaStore.Images.Media.IS_PENDING,1)
+            }
+            val uri=context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,values)!!
+            context.contentResolver.openOutputStream(uri)!!.use{assertTrue(screenshot.compress(Bitmap.CompressFormat.PNG,100,it))}
+            context.contentResolver.update(uri,ContentValues().apply{put(MediaStore.Images.Media.IS_PENDING,0)},null,null)
             screenshot.recycle();f.delete()
         }
     }

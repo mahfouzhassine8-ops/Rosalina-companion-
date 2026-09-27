@@ -26,7 +26,7 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Test photo import, prompt preservation and MP4 encoding
+      - name: Test exact candidate UI and codec; retain screenshot after test uninstall
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -34,9 +34,10 @@ jobs:
           profile: pixel_5
           disable-animations: true
           script: |
-            gradle :motion:connectedDebugAndroidTest --max-workers=2 --stacktrace
+            gradle :motion:connectedDebugAndroidTest -PmotionCodecTest=true --max-workers=2 --stacktrace
             mkdir -p motion-ui-output
-            adb exec-out run-as com.rosalina.motionlab cat files/qa/motion-photo-screen.png > motion-ui-output/motion-photo-screen.png
+            adb exec-out cat /sdcard/Pictures/RosalinaQA/motion-photo-screen.png > motion-ui-output/motion-photo-screen.png
+            python3 -c "import pathlib; p=pathlib.Path('motion-ui-output/motion-photo-screen.png'); assert p.read_bytes().startswith(b'\x89PNG\r\n\x1a\n')"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

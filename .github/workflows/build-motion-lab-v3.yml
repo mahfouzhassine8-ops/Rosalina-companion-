@@ -55,6 +55,7 @@ jobs:
         run: |
           mkdir -p motion/src/main/assets/licenses
           curl -fL --retry 4 "https://raw.githubusercontent.com/madebyollin/taehv/011dfc2112197741c540e0bdd5b7b67bcc930771/safetensors/taew2_2.safetensors" -o motion/src/main/assets/taew2_2.safetensors
+          echo 'b84609b2a133d48434bd9636bfcb44bf05168dc436e2d3cecf26256faa1f5325  motion/src/main/assets/taew2_2.safetensors' | sha256sum -c -
           sha256sum motion/src/main/assets/taew2_2.safetensors | cut -d' ' -f1 > motion/src/main/assets/tae.sha256
           curl -fL --retry 4 "https://raw.githubusercontent.com/madebyollin/taehv/011dfc2112197741c540e0bdd5b7b67bcc930771/LICENSE" -o motion/src/main/assets/licenses/TAEHV.txt
           python3 - <<'PY'
@@ -63,7 +64,6 @@ jobs:
           for p in root.rglob('*'):
               if p.is_file() and p.name.lower() in ['license','license.md','license.txt','copying']:
                   shutil.copyfile(p,pathlib.Path('motion/src/main/assets/licenses')/str(p.relative_to(root)).replace('/','_'))
-          assert pathlib.Path('motion/src/main/assets/taew2_2.safetensors').stat().st_size>1000000
           PY
       - name: Build APK and run unit tests
         run: gradle :motion:testDebugUnitTest :motion:assembleDebug --max-workers=2 --stacktrace
@@ -118,16 +118,21 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Android MP4 encoding instrumentation
+      - name: Android MP4 encoding, photo import and screen recreation
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           arch: x86_64
           profile: pixel_5
           disable-animations: true
-          script: gradle :motion:connectedDebugAndroidTest --max-workers=2 --stacktrace
+          script: |
+            gradle :motion:connectedDebugAndroidTest -PmotionCodecTest=true --max-workers=2 --stacktrace
+            mkdir -p motion-ui-output
+            adb exec-out run-as com.rosalina.motionlab cat files/qa/motion-photo-screen.png > motion-ui-output/motion-photo-screen.png
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: Motion-Lab-Android-codec-tests
-          path: motion/build/outputs/androidTest-results/
+          path: |
+            motion/build/outputs/androidTest-results/
+            motion-ui-output/
