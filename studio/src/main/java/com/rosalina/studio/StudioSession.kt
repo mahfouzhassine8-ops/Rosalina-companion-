@@ -4,7 +4,9 @@ import android.app.ActivityManager
 import android.content.Context
 import android.graphics.*
 import android.net.Uri
-import android.os.*
+import android.os.Build
+import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.OpenableColumns
 import com.arm.aichat.AiChat
 import com.arm.aichat.InferenceEngine
@@ -37,10 +39,11 @@ internal object StudioSession {
     val state: StateFlow<StudioState> = mutable.asStateFlow()
     private var job: Job? = null
     private var engine: InferenceEngine? = null
-    private val worker = AtomicReference<Process?>(null)
+    private val worker = AtomicReference<java.lang.Process?>(null)
     private var request: RenderRequest? = null
-    private var stopReason = ""
+    @Volatile private var stopReason = ""
     private val prefs get() = app.getSharedPreferences("studio", Context.MODE_PRIVATE)
+
     fun init(context: Context) {
         if (::app.isInitialized) return
         app = context.applicationContext
@@ -49,9 +52,10 @@ internal object StudioSession {
             (0 until a.length()).map { ChatLine(a.getJSONObject(it).getBoolean("user"), a.getJSONObject(it).getString("text")) }
         }.getOrDefault(emptyList())
         fun valid(key: String) = prefs.getString(key, "").orEmpty().takeIf { it.isNotEmpty() && File(it).isFile }.orEmpty()
-        mutable.value = StudioState(chatPath=valid("chat"), imagePath=valid("image"),
+        val image=valid("image")
+        mutable.value = StudioState(chatPath=valid("chat"), imagePath=image,
             reference=valid("reference"), result=valid("result"), messages=messages,
-            status="Offline studio · import an image model to begin")
+            status=if(image.isBlank()) "Offline studio · import an image model to begin" else "Image model verified · ready to create")
     }
     fun notice(text: String) { mutable.update { it.copy(status=text) } }
     fun clearDetails() { mutable.update { it.copy(details="") } }
@@ -60,9 +64,11 @@ internal object StudioSession {
     fun saveSystemPrompt(text: String) {
         if (state.value.busy) return
         prefs.edit().putString("system", text.take(6000)).apply()
+        mutable.update { it.copy(busy=true, work="load", status="Applying chat settings…") }
         job = scope.launch {
-            mutable.update { it.copy(busy=true, work="load", status="Applying chat settings…") }
-            try { releaseChat() } catch (e: Exception) { failure("CHAT SETTINGS",e) }
+            try { releaseChat(); notice("Chat settings saved · next reply starts a fresh context") }
+            catch(e: CancellationException) { notice("Settings saved; unloading interrupted"); throw e }
+            catch(e: Exception) { failure("CHAT SETTINGS",e) }
             finally { mutable.update { it.copy(busy=false, work="") } }
         }
     }
@@ -75,15 +81,16 @@ internal object StudioSession {
         mutable.update { it.copy(status="$stage: ${Limits.error(t)}", details=details) }
     }
     private suspend fun persistChat() = withContext(Dispatchers.IO) {
-        val lines=state.value.messages.takeLast(60)
         val a=JSONArray()
-        lines.forEach { a.put(JSONObject().put("user",it.user).put("text",it.text.take(20000))) }
+        state.value.messages.takeLast(60).forEach { a.put(JSONObject().put("user",it.user).put("text",it.text.take(20000))) }
         atomicText(File(app.filesDir,"chat.json"),a.toString())
     }
     private fun atomicText(file: File, text: String) {
         val tmp=File(file.path+".part")
-        FileOutputStream(tmp).use { it.write(text.toByteArray()); it.fd.sync() }
-        check(tmp.renameTo(file)) { "Could not commit ${file.name}" }
+        try {
+            FileOutputStream(tmp).use { it.write(text.toByteArray()); it.fd.sync() }
+            check(tmp.renameTo(file)) { "Could not commit ${file.name}" }
+        } finally { tmp.delete() }
     }
     private suspend fun chatEngine(): InferenceEngine {
         val path=state.value.chatPath
@@ -114,8 +121,9 @@ internal object StudioSession {
     fun send(text: String, improveImagePrompt: Boolean = false) {
         if (state.value.busy || text.isBlank()) return
         if (state.value.chatPath.isBlank()) { notice("Import Qwen under Models to use chat or the prompt helper"); return }
+        if(text.length>12000) { notice("Keep this first chat test under 12,000 characters per message"); return }
         val actual=if (improveImagePrompt) "Rewrite this description as a concise Stable Diffusion image prompt. Return only the improved prompt, no commentary. Description: $text" else text
-        mutable.update { it.copy(busy=true, work="chat", progress=null, status="Preparing local reply…",
+        mutable.update { it.copy(busy=true, work="chat", progress=null, status="Preparing local reply…", details="",
             messages=(it.messages + ChatLine(true, if(improveImagePrompt) "Improve image prompt: $text" else text) + ChatLine(false,"" )).takeLast(60)) }
         job=scope.launch {
             try {
@@ -134,7 +142,9 @@ internal object StudioSession {
             } catch(e: CancellationException) { notice("Reply stopped"); throw e }
             catch(e: Exception) { failure("CHAT",e) }
             finally {
-                withContext(NonCancellable) { persistChat() }
+                withContext(NonCancellable) {
+                    try { persistChat() } catch(e: Exception) { failure("SAVE CHAT",e) }
+                }
                 mutable.update { it.copy(busy=false, work="",progress=null) }
             }
         }
@@ -144,15 +154,22 @@ internal object StudioSession {
         mutable.update { it.copy(busy=true, work="load",status="Starting a fresh chat…") }
         job=scope.launch {
             try { releaseChat(); mutable.update { it.copy(messages=emptyList()) }; persistChat(); notice("New chat ready") }
+            catch(e: CancellationException) { notice("New chat interrupted"); throw e }
             catch(e: Exception) { failure("NEW CHAT",e) }
             finally { mutable.update { it.copy(busy=false,work="") } }
         }
     }
     fun cancel() {
+        if(!state.value.busy) return
         stopReason="Stopped by you"
+        if(request!=null) {
+            request=null
+            mutable.update { it.copy(busy=false,work="",progress=null,status="Generation cancelled before it started") }
+            return
+        }
         worker.get()?.destroyForcibly()
-        job?.cancel()
         notice("Stopping…")
+        job?.cancel()
     }
     fun importModel(uri: Uri, image: Boolean) {
         if(state.value.busy) return
@@ -161,6 +178,8 @@ internal object StudioSession {
             var stage="MODEL IMPORT"
             var tmp: File?=null
             try {
+                // Never overwrite a memory-mapped chat file while it is loaded.
+                if(!image) releaseChat()
                 val file=withContext(Dispatchers.IO) {
                     val expected=if(image) Limits.IMAGE_SHA else Limits.CHAT_SHA
                     var total=-1L
@@ -168,10 +187,9 @@ internal object StudioSession {
                         if(c.moveToFirst() && !c.isNull(0)) total=c.getLong(0)
                     }
                     val dir=File(app.filesDir,"models").apply { check(mkdirs() || isDirectory) }
-                    require(total <= 0 || dir.usableSpace > total + 536870912L) { "Not enough space to import this model" }
                     val target=File(dir,(if(image) "sd15-" else "qwen-")+expected.take(12)+".gguf")
                     if(target.isFile && prefs.getString(if(image) "image.sha" else "chat.sha","")==expected) {
-                        // Still verify the existing bytes before reusing an interrupted setup.
+                        mutable.update { it.copy(status="Rechecking the existing model…",progress=null) }
                         val old=MessageDigest.getInstance("SHA-256")
                         target.inputStream().use { input ->
                             val b=ByteArray(1024*1024)
@@ -179,6 +197,7 @@ internal object StudioSession {
                         }
                         if(hex(old.digest())==expected) return@withContext target
                     }
+                    require(total <= 0 || dir.usableSpace > total + 536870912L) { "Not enough space to import this model" }
                     val part=File(dir,UUID.randomUUID().toString()+".part"); tmp=part
                     val digest=MessageDigest.getInstance("SHA-256")
                     var copied=0L; var tick=0L
@@ -203,7 +222,9 @@ internal object StudioSession {
                         if(image) "This is not the verified SD 1.5 Q4 image model. Use Get image model under Models; do not select the Qwen file."
                         else "This is not the verified Qwen Q4_K_M chat model. Select your original working download."
                     }
-                    require(part.inputStream().use { String(it.readNBytes(4),Charsets.US_ASCII) }=="GGUF") { "Invalid GGUF header" }
+                    val magic=ByteArray(4)
+                    DataInputStream(part.inputStream()).use { it.readFully(magic) }
+                    require(String(magic,Charsets.US_ASCII)=="GGUF") { "Invalid GGUF header" }
                     check(part.renameTo(target)) { "Could not commit verified model" }
                     target
                 }
@@ -221,6 +242,7 @@ internal object StudioSession {
         mutable.update { it.copy(busy=true,work="import",status="Preparing reference photo…") }
         job=scope.launch {
             try {
+                val old=state.value.reference
                 val f=withContext(Dispatchers.IO) {
                     val source=ImageDecoder.createSource(app.contentResolver,uri)
                     val bitmap=ImageDecoder.decodeBitmap(source) { d, info, _ ->
@@ -229,15 +251,17 @@ internal object StudioSession {
                         d.allocator=ImageDecoder.ALLOCATOR_SOFTWARE
                         if(scale<1) d.setTargetSize((info.size.width*scale).toInt().coerceAtLeast(1),(info.size.height*scale).toInt().coerceAtLeast(1))
                     }
-                    val file=File(app.filesDir,"reference.png")
-                    val part=File(app.filesDir,"reference.part")
+                    val file=File(app.filesDir,"reference-${UUID.randomUUID()}.png")
+                    val part=File(file.path+".part")
                     try { FileOutputStream(part).use { check(bitmap.compress(Bitmap.CompressFormat.PNG,100,it)); it.fd.sync() }; check(part.renameTo(file)) }
                     finally { bitmap.recycle(); part.delete() }
                     file
                 }
                 prefs.edit().putString("reference",f.path).apply()
                 mutable.update { it.copy(reference=f.path,status="Reference ready · output uses a centered crop") }
-            } catch(e: Exception) { failure("REFERENCE PHOTO",e) }
+                if(old.isNotBlank()) File(old).delete()
+            } catch(e: CancellationException) { notice("Reference import stopped"); throw e }
+            catch(e: Exception) { failure("REFERENCE PHOTO",e) }
             finally { mutable.update { it.copy(busy=false,work="") } }
         }
     }
@@ -245,6 +269,7 @@ internal object StudioSession {
         if(state.value.busy) return false
         try {
             Limits.validate(r.width,r.height,r.steps,r.strength)
+            require(r.seed>=0) { "Seed must be a non-negative number" }
             require(r.prompt.isNotBlank() && r.prompt.length<=4000 && r.negative.length<=2000) { "Enter an image prompt (up to 4,000 characters)" }
             require(state.value.imagePath.isNotBlank()) { "Import the SD 1.5 image model under Models first" }
             require(!r.edit || state.value.reference.isNotBlank()) { "Choose a reference photo for Edit" }
@@ -288,6 +313,7 @@ internal object StudioSession {
                     val output=File(dir,"output.rimg")
                     val command=listOf(exe.path,selectedModel,File(dir,"prompt.txt").path,File(dir,"negative.txt").path,input,output.path,
                         r.width.toString(),r.height.toString(),r.steps.toString(),r.seed.toString(),r.strength.toString(),minOf(4,Runtime.getRuntime().availableProcessors()).coerceAtLeast(1).toString())
+                    ensureActive()
                     val p=ProcessBuilder(command).directory(dir).redirectErrorStream(true).start()
                     worker.set(p)
                     if(!isActive) p.destroyForcibly()
@@ -321,11 +347,13 @@ internal object StudioSession {
                     ensureActive()
                     if(stopReason.isNotBlank()) throw IOException(stopReason)
                     require(code==0) { "Image engine exited with code $code. Open Details for the native error." }
+                    val expectedLength=16L+r.width.toLong()*r.height*3
+                    require(output.isFile && output.length()==expectedLength) { "Image output is missing or has an invalid length" }
                     val bytes=output.readBytes()
-                    require(bytes.size>=16 && String(bytes,0,4,Charsets.US_ASCII)=="RIMG") { "Invalid native output" }
+                    require(String(bytes,0,4,Charsets.US_ASCII)=="RIMG") { "Invalid native output" }
                     val header=ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
                     val w=header.getInt(4); val h=header.getInt(8); val ch=header.getInt(12)
-                    require(w==r.width && h==r.height && ch==3 && bytes.size==16+w*h*3) { "Incomplete image output" }
+                    require(w==r.width && h==r.height && ch==3) { "Incomplete image output" }
                     val pixels=IntArray(w*h) { i -> val o=16+i*3; Color.rgb(bytes[o].toInt() and 255,bytes[o+1].toInt() and 255,bytes[o+2].toInt() and 255) }
                     val bitmap=Bitmap.createBitmap(pixels,w,h,Bitmap.Config.ARGB_8888)
                     val results=File(app.filesDir,"results").apply { check(mkdirs() || isDirectory) }
@@ -339,7 +367,7 @@ internal object StudioSession {
                     result
                 }
                 prefs.edit().putString("result",file.path).apply()
-                mutable.update { it.copy(result=file.path,status="Image ready · saved privately in Rosalina") }
+                mutable.update { it.copy(result=file.path,status="Image ready · saved privately · seed ${r.seed}") }
             } catch(e: CancellationException) { notice("Generation stopped · chat and models preserved"); throw e }
             catch(e: Exception) { failure("IMAGE GENERATION",e,tail.toString()) }
             finally {
