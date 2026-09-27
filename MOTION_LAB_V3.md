@@ -9,7 +9,7 @@ This is a separate package, com.rosalina.motionlab. Keep the original apps insta
 - Fix intentional renderer shutdown so a native stdout stream closing during Stop/service/thermal cancellation is treated as cancellation instead of the misleading `InterruptedIOException: read interrupted by close() on another thread`.
 - Keep generation in the foreground media-processing service when the Activity is backgrounded, the task is swiped away, or the screen is off. A persistent notification exposes Stop.
 - Add a Device panel for Samsung Thermal Guardian and Samsung's Never sleeping apps screen.
-- Thermal Guardian is not controlled through Samsung private/signature permissions. Motion Lab observes Android's system thermal status: normal/light starts at 4 worker threads, moderate starts at 3, severe heat pauses the native child process, cooling resumes it, and critical-or-higher heat aborts.
+- Thermal Guardian is not controlled through Samsung private/signature permissions. Motion Lab observes Android's system thermal status: normal/light starts at 4 worker threads, moderate starts at 3, Samsung's own thermal controller remains responsible for throttling at severe heat, and critical-or-higher heat aborts.
 - The native renderer keeps the existing parent-death guard, so it cannot remain orphaned if Android kills the Motion Lab process.
 
 ## Actual flow
