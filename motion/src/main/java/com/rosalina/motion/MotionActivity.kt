@@ -43,11 +43,12 @@ class MotionActivity:AppCompatActivity() {
     private val notificationPermission=registerForActivityResult(ActivityResultContracts.RequestPermission()){}
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState);MotionSession.init(applicationContext)
-        seconds=savedInstanceState?.getInt("seconds")?:form.getInt("seconds",6)
-        shape=savedInstanceState?.getInt("shape")?:form.getInt("shape",0)
-        steps=savedInstanceState?.getInt("steps")?:form.getInt("steps",12)
+        selectedPart=runCatching { ModelPart.valueOf(savedInstanceState?.getString("selectedPart") ?: form.getString("selectedPart",ModelPart.VIDEO.name).orEmpty()) }.getOrDefault(ModelPart.VIDEO)
+        seconds=(savedInstanceState?.getInt("seconds")?:form.getInt("seconds",6)).takeIf{it in listOf(6,8,10)}?:6
+        shape=(savedInstanceState?.getInt("shape")?:form.getInt("shape",0)).coerceIn(0,2)
+        steps=(savedInstanceState?.getInt("steps")?:form.getInt("steps",12)).coerceIn(8,30)
         seed=savedInstanceState?.getLong("seed")?:form.getLong("seed",42)
-        buildUi();prompt.setText(savedInstanceState?.getString("prompt")?:form.getString("prompt",""));updateSummary()
+        buildUi();prompt.setText(savedInstanceState?.getString("prompt")?:form.getString("prompt",""));updateSummary();refreshHistory()
         lifecycleScope.launch{repeatOnLifecycle(Lifecycle.State.STARTED){
             launch{MotionSession.state.collect{update(it)}}
             launch{while(isActive){val s=MotionSession.state.value
@@ -154,7 +155,7 @@ class MotionActivity:AppCompatActivity() {
             body.addView(gap(14));body.addView(label(part.label,16f));body.addView(label(if(ready)"VERIFIED · imported" else "Not imported",12f,if(ready)accent else muted))
             body.addView(label(part.fileName,12f,muted))
             body.addView(row(button("Get file"){runCatching{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(part.url)))}.onFailure{MotionSession.notice("No browser is available")}},
-                button("Import file"){selectedPart=part;dialog?.dismiss();pickModel.launch(arrayOf("*/*"))}))
+                button("Import file"){selectedPart=part;form.edit().putString("selectedPart",part.name).apply();dialog?.dismiss();pickModel.launch(arrayOf("*/*"))}))
         }
         body.addView(gap(8));body.addView(label("Keep the original Rosalina and Image Lab installed, but close them before rendering so their models do not occupy RAM.",12f,muted))
         dialog=AlertDialog.Builder(this).setTitle("Motion models").setView(ScrollView(this).apply{addView(body)}).setPositiveButton("Done",null).create();dialog.show()
@@ -187,11 +188,12 @@ class MotionActivity:AppCompatActivity() {
                     contentResolver.update(u,ContentValues().apply{put(MediaStore.Video.Media.IS_PENDING,0)},null,null)
                 }catch(e:Exception){contentResolver.delete(u,null,null);throw e}
             };MotionSession.notice("Saved in Gallery · Movies/Rosalina")}
+            catch(e:CancellationException){throw e}
             catch(e:Exception){MotionSession.fail("SAVE VIDEO",e)}finally{save.isEnabled=!MotionSession.state.value.busy}
         }
     }
-    private fun store(){if(::prompt.isInitialized)form.edit().putString("prompt",prompt.text.toString()).putInt("seconds",seconds).putInt("shape",shape).putInt("steps",steps).putLong("seed",seed).apply()}
-    override fun onSaveInstanceState(out:Bundle){out.putString("prompt",prompt.text.toString());out.putInt("seconds",seconds);out.putInt("shape",shape);out.putInt("steps",steps);out.putLong("seed",seed);super.onSaveInstanceState(out)}
-    override fun onStop(){store();if(::video.isInitialized)video.pause();super.onStop()}
+    private fun store(){if(::prompt.isInitialized)form.edit().putString("prompt",prompt.text.toString()).putString("selectedPart",selectedPart.name).putInt("seconds",seconds).putInt("shape",shape).putInt("steps",steps).putLong("seed",seed).apply()}
+    override fun onSaveInstanceState(out:Bundle){out.putString("prompt",prompt.text.toString());out.putString("selectedPart",selectedPart.name);out.putInt("seconds",seconds);out.putInt("shape",shape);out.putInt("steps",steps);out.putLong("seed",seed);super.onSaveInstanceState(out)}
+    override fun onStop(){store();if(::video.isInitialized)video.pause();if(::play.isInitialized)play.text="Play clip";super.onStop()}
     override fun onDestroy(){if(::video.isInitialized)video.stopPlayback();super.onDestroy()}
 }
