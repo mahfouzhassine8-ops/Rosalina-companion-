@@ -9,8 +9,8 @@ android {
         applicationId = "com.rosalina.localai"
         minSdk = 30
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0-local-ai1"
+        versionCode = 3
+        versionName = "0.2.1-local-ai-import-fix"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
