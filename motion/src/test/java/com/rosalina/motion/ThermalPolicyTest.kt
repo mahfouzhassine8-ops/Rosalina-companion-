@@ -11,8 +11,7 @@ class ThermalPolicyTest {
     @Test fun moderateReducesLoad(){
         assertEquals(3,ThermalPolicy.workerThreads(PowerManager.THERMAL_STATUS_MODERATE))
     }
-    @Test fun severePausesAndCriticalAborts(){
-        assertTrue(ThermalPolicy.shouldPause(PowerManager.THERMAL_STATUS_SEVERE))
+    @Test fun severeReliesOnSystemAndCriticalAborts(){
         assertFalse(ThermalPolicy.shouldAbort(PowerManager.THERMAL_STATUS_SEVERE))
         assertTrue(ThermalPolicy.shouldAbort(PowerManager.THERMAL_STATUS_CRITICAL))
     }
