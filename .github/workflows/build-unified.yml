@@ -1,7 +1,7 @@
 name: Rosalina Unified Candidate
 on:
   push:
-    branches: [rosalina-unified-v1-candidate, rosalina-voice-v2-expressive-candidate, rosalina-live-voice-candidate, rosalina-hybrid-live-candidate, rosalina-voice-c1.2-speech-repair]
+    branches: [rosalina-unified-v1-candidate, rosalina-voice-v2-expressive-candidate, rosalina-live-voice-candidate, rosalina-hybrid-live-candidate, rosalina-voice-c1.2-speech-repair, rosalina-c1.3-live-companion-polish]
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,7 +26,7 @@ jobs:
           mkdir -p source-backup
           git archive --format=zip HEAD -o source-backup/Rosalina-Unified-source.zip
           git rev-parse HEAD > source-backup/commit.txt
-          cp UNIFIED_AUDIT.md UNIFIED_SCOPE_CHANGE.md SIGNING.md VOICE_V2.md VOICE_V2_1_REPAIR.md LIVE_VOICE.md HYBRID_LIVE.md VOICE_C1_2_SPEECH_REPAIR.md source-backup/
+          cp UNIFIED_AUDIT.md UNIFIED_SCOPE_CHANGE.md SIGNING.md VOICE_V2.md VOICE_V2_1_REPAIR.md LIVE_VOICE.md HYBRID_LIVE.md VOICE_C1_2_SPEECH_REPAIR.md VOICE_C1_3_LIVE_COMPANION.md source-backup/
       - uses: actions/upload-artifact@v4
         with: {name: Rosalina-Unified-source, path: source-backup/}
   native:
@@ -120,7 +120,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p deliverables/signing-tools
-          cp unified/build/outputs/apk/release/unified-release-unsigned.apk deliverables/Rosalina-Unified-Adaptive-Hybrid-C1.2-arm64-UNSIGNED.apk
+          cp unified/build/outputs/apk/release/unified-release-unsigned.apk deliverables/Rosalina-Unified-Adaptive-Hybrid-C1.3-arm64-UNSIGNED.apk
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions deliverables/*.apk | tee qa/permissions.txt
           grep -q android.permission.INTERNET qa/permissions.txt
           grep -q android.permission.ACCESS_NETWORK_STATE qa/permissions.txt
@@ -129,11 +129,11 @@ jobs:
           ! grep -q android.permission.ACCESS_FINE_LOCATION qa/permissions.txt
           ! grep -R -E "sk-[A-Za-z0-9_-]{16,}" unified/src/main || false
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging deliverables/*.apk > qa/package.txt
-          python3 tools/verify_unified_apk.py deliverables/Rosalina-Unified-Adaptive-Hybrid-C1.2-arm64-UNSIGNED.apk
+          python3 tools/verify_unified_apk.py deliverables/Rosalina-Unified-Adaptive-Hybrid-C1.3-arm64-UNSIGNED.apk
           cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" deliverables/signing-tools/
           cp "$ANDROID_HOME/build-tools/35.0.0/zipalign" deliverables/signing-tools/
           cp -r qa deliverables/
-          cp UNIFIED_AUDIT.md UNIFIED_SCOPE_CHANGE.md SIGNING.md VOICE_C1_2_SPEECH_REPAIR.md deliverables/
+          cp UNIFIED_AUDIT.md UNIFIED_SCOPE_CHANGE.md SIGNING.md VOICE_C1_2_SPEECH_REPAIR.md VOICE_C1_3_LIVE_COMPANION.md deliverables/
           git rev-parse HEAD > deliverables/commit.txt
           sha256sum deliverables/*.apk > deliverables/SHA256SUMS-UNSIGNED.txt
       - uses: actions/upload-artifact@v4
