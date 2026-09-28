@@ -1,0 +1,56 @@
+name: Rosalina Mac Accelerator
+on:
+  push:
+    branches: [rosalina-mac-accelerator-v0.1]
+    paths:
+      - 'mac-accelerator/**'
+      - '.github/workflows/build-mac-accelerator.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rosalina-mac-accelerator-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-mac:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0, persist-credentials: false}
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Unit tests
+        run: swift test --package-path mac-accelerator
+
+      - name: Build Apple Silicon release
+        run: swift build --package-path mac-accelerator -c release --arch arm64
+
+      - name: Package ad-hoc signed app bundle
+        run: bash mac-accelerator/scripts/package_app.sh
+
+      - name: Verify app identity and architecture
+        run: |
+          APP="mac-accelerator/dist/Rosalina Accelerator.app"
+          test -x "$APP/Contents/MacOS/RosalinaAccelerator"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist" | grep -x 'com.rosalina.accelerator'
+          lipo -info "$APP/Contents/MacOS/RosalinaAccelerator" | grep -q arm64
+          codesign --verify --deep --strict "$APP"
+          cat mac-accelerator/dist/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Rosalina-Accelerator-Mac-v0.1-arm64
+          path: |
+            mac-accelerator/dist/Rosalina-Accelerator-v0.1-arm64.zip
+            mac-accelerator/dist/SHA256SUMS.txt
+            MAC_ACCELERATOR_V0_1.md
+          if-no-files-found: error

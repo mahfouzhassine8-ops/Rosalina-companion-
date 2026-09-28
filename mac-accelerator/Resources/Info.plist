@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleExecutable</key><string>RosalinaAccelerator</string>
+    <key>CFBundleIdentifier</key><string>com.rosalina.accelerator</string>
+    <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+    <key>CFBundleName</key><string>Rosalina Accelerator</string>
+    <key>CFBundleDisplayName</key><string>Rosalina Accelerator</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>0.1</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>NSLocalNetworkUsageDescription</key><string>Rosalina Accelerator uses your local network only to pair with your Rosalina phone and process private accelerator jobs you start.</string>
+    <key>NSBonjourServices</key>
+    <array><string>_rosalina-accel._tcp</string></array>
+</dict>
+</plist>
