@@ -32,8 +32,8 @@ internal object MotionMath {
 
 
 internal object MotionProgressMath {
-    const val SAMPLE_START = 10
-    const val SAMPLE_END = 90
+    const val SAMPLE_START = 15
+    const val SAMPLE_END = 94
 
     fun samplingOverall(step:Int,total:Int):Int {
         if(total<=0) return SAMPLE_START
@@ -41,7 +41,7 @@ internal object MotionProgressMath {
         return SAMPLE_START + ((SAMPLE_END-SAMPLE_START)*n/total)
     }
 
-    fun mp4Overall(percent:Int):Int = 96 + (4*percent.coerceIn(0,100)/100)
+    fun mp4Overall(percent:Int):Int = 98 + (2*percent.coerceIn(0,100)/100)
 
     fun smoothMs(previous:Long,actual:Long):Long {
         require(actual>=0)
