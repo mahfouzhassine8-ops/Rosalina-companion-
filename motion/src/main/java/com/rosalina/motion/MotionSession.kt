@@ -16,6 +16,7 @@ import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.max
 
@@ -28,6 +29,7 @@ internal object MotionSession {
     private val mutable=MutableStateFlow(MotionState())
     val state:StateFlow<MotionState> = mutable.asStateFlow()
     private val process=AtomicReference<Process?>(null)
+    private val workerPid=AtomicInteger(0)
     private val stopRequested=AtomicBoolean(false)
     private var job:Job?=null
     private var pending:Pair<String,MotionSpec>?=null
@@ -63,20 +65,19 @@ internal object MotionSession {
     }
     fun fail(stage:String,t:Throwable,tail:String="") {
         val mem=ActivityManager.MemoryInfo().also{app.getSystemService(ActivityManager::class.java).getMemoryInfo(it)}
-        val workerPid=process.get()?.let{runCatching{it.pid()}.getOrNull()}
+        val activePid=workerPid.get().takeIf{it>0}
         val d="Stage: $stage\n${t.javaClass.simpleName}: ${MotionMath.error(t)}\nBuild: ${BuildConfig.VERSION_NAME}\n"+
             "Device: ${Build.MANUFACTURER} ${Build.MODEL}\nABI: ${Build.SUPPORTED_ABIS.joinToString()}\nRAM total=${mem.totalMem}, available=${mem.availMem}\n"+
-            "Thermal: ${state.value.thermal.ifBlank{"unknown"}}\nStopping: ${state.value.stopping}\nWorker pid: ${workerPid?:"none"}\n"+tail.takeLast(12000)
+            "Thermal: ${state.value.thermal.ifBlank{"unknown"}}\nStopping: ${state.value.stopping}\nWorker pid: ${activePid?:"none"}\n"+tail.takeLast(12000)
         mutable.update{it.copy(status="$stage: ${MotionMath.error(t)}",details=d,expectedFinish=0,stopping=false)}
         scope.launch(Dispatchers.IO){runCatching{File(app.filesDir,"last-diagnostic.txt").writeText(d)}}
     }
     private fun terminateWorker(target:Process){
         runCatching{target.destroy()}
         if(runCatching{target.waitFor(350,TimeUnit.MILLISECONDS)}.getOrDefault(false)){
-            process.compareAndSet(target,null);return
+            workerPid.set(0);process.compareAndSet(target,null);return
         }
-        val pid=runCatching{target.pid()}.getOrNull()
-        if(pid!=null&&pid in 1L..Int.MAX_VALUE.toLong())runCatching{android.os.Process.killProcess(pid.toInt())}
+        workerPid.getAndSet(0).takeIf{it>0}?.let{pid->runCatching{android.os.Process.killProcess(pid)}}
         if(!runCatching{target.waitFor(750,TimeUnit.MILLISECONDS)}.getOrDefault(false)){
             runCatching{target.destroyForcibly()}
             runCatching{target.waitFor(1250,TimeUnit.MILLISECONDS)}
@@ -245,7 +246,9 @@ internal object MotionSession {
                     var logOffset=0L
                     var sampling=false
                     fun consume(line:String){
-                        if(line.startsWith("@@STAGE ")){
+                        if(line.startsWith("@@PID ")){
+                            line.removePrefix("@@PID ").trim().toIntOrNull()?.takeIf{it>0}?.let{workerPid.set(it)}
+                        }else if(line.startsWith("@@STAGE ")){
                             val message=line.removePrefix("@@STAGE ")
                             val pct=when {
                                 message.startsWith("Loading Wan") -> 2
@@ -306,7 +309,7 @@ internal object MotionSession {
                         ensureActive()
                         check(p.exitValue()==0){"Video worker exited with code ${p.exitValue()}"}
                     }finally{
-                        if(p.isAlive)terminateWorker(p) else process.compareAndSet(p,null)
+                        if(p.isAlive)terminateWorker(p) else {workerPid.set(0);process.compareAndSet(p,null)}
                     }
                     stage="MP4 ENCODING";renderUpdate("Encoding ${spec.seconds}-second MP4…",96)
                     val videos=File(app.filesDir,"videos").apply{mkdirs()};val name="Rosalina-${System.currentTimeMillis()}"
