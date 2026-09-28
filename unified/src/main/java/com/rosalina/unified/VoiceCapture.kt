@@ -38,7 +38,8 @@ internal class VoiceCapture(private val context: Context, private val handsFree:
         if(Build.VERSION.SDK_INT<31 || ContextCompat.checkSelfPermission(context,Manifest.permission.BLUETOOTH_CONNECT)!=PackageManager.PERMISSION_GRANTED)return null
         val devices=runCatching{audio.availableCommunicationDevices}.getOrDefault(emptyList())
         val priority=intArrayOf(AudioDeviceInfo.TYPE_BLE_HEADSET,AudioDeviceInfo.TYPE_BLUETOOTH_SCO,AudioDeviceInfo.TYPE_USB_HEADSET,AudioDeviceInfo.TYPE_WIRED_HEADSET)
-        return priority.firstNotNullOfOrNull{type->devices.firstOrNull{it.type==type}}
+        for(type in priority){val match=devices.firstOrNull{it.type==type};if(match!=null)return match}
+        return null
     }
     fun start() {
         check(record == null && !closed)
