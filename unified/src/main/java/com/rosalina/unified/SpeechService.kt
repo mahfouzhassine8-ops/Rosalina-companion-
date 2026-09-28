@@ -87,12 +87,17 @@ class SpeechService:NativeRpcService() {
                 while(offset<samples.size && !cancelled.get()) {
                     val n=audio.write(samples,offset,minOf(2048,samples.size-offset),AudioTrack.WRITE_BLOCKING)
                     if(n<0)error("Audio output failed with code $n")
-                    if(n==0)break
+                    if(n==0)error("Audio output stopped accepting samples")
                     offset+=n;totalSamples+=n
                 }
                 if(cancelled.get())0 else 1
             }
-            while(!cancelled.get() && audio.playbackHeadPosition.toLong()<totalSamples) {currentCoroutineContext().ensureActive();kotlinx.coroutines.delay(20)}
+            val drainDeadline=SystemClock.elapsedRealtime()+maxOf(5000L,totalSamples*1000/rate+3000L)
+            while(!cancelled.get() && audio.playbackHeadPosition.toLong()<totalSamples) {
+                currentCoroutineContext().ensureActive()
+                check(SystemClock.elapsedRealtime()<drainDeadline){"Audio output did not finish in its expected playback window"}
+                kotlinx.coroutines.delay(20)
+            }
             return Bundle().apply{putLong("firstAudioMs",first);putLong("elapsedMs",SystemClock.elapsedRealtime()-started);putLong("audioMs",totalSamples*1000/rate);putString("voice","Kokoro82M/speaker-$sid")}
         } finally {
             runCatching{audio.pause();audio.flush();audio.release()};track=null;am.abandonAudioFocusRequest(focusRequest);focus=null

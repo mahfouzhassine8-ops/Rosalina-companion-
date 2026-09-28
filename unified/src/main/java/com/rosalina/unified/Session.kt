@@ -43,7 +43,9 @@ internal class Session private constructor(private val context:Context) {
     private val mutable=MutableStateFlow(TaskState(result=prefs.getString("result","").orEmpty(),stage=if(prefs.getString("active-id","").isNullOrBlank())"Ready" else "Previous work was interrupted by Android. No task was restarted."))
     val state:StateFlow<TaskState> = mutable.asStateFlow()
     @Volatile private var request:TaskRequest?=null
-    private var activeJob:Job?=null
+    @Volatile private var activeJob:Job?=null
+    @Volatile private var taskService:GenerationService?=null
+    private val deviceFacts by lazy{DeviceFacts.describe(context)}
     @Volatile private var stopReason=""
     @Volatile var finishListening=false
     private var speechMetrics=""
@@ -56,9 +58,40 @@ internal class Session private constructor(private val context:Context) {
         turns.add(role to text)
         val a=JSONArray();turns.forEach{(r,t)->a.put(JSONObject().put("role",r).put("text",t))};atomicText(transcriptFile,a.toString())
     }
-    fun clearConversation(){if(state.value.busy)return;scope.launch{chat.shutdown();synchronized(this@Session){turns.clear();atomicText(transcriptFile,"[]")};mutable.update{it.copy(answer="",stage="Conversation cleared")}}}
-    private fun update(id:String,change:(TaskState)->TaskState){mutable.update{if(it.id==id)change(it)else it}}
-    fun notice(text:String){mutable.update{it.copy(stage=text)}}
+    @Synchronized fun clearConversation() {
+        if(state.value.busy || state.value.quarantined)return
+        val id="clear-${UUID.randomUUID()}"
+        if(!lease.acquire(id))return
+        stopReason=""
+        mutable.update{it.copy(id=id,busy=true,kind=TaskKind.CHAT,stage="Clearing conversation",error="")}
+        val job=scope.launch(Dispatchers.IO,start=CoroutineStart.LAZY) {
+            var failure:Throwable?=null
+            try {
+                chat.shutdown()
+                currentCoroutineContext().ensureActive()
+                synchronized(this@Session){atomicText(transcriptFile,"[]");turns.clear()}
+            } catch(t:Throwable){failure=t}
+            finally {
+                withContext(NonCancellable+Dispatchers.Main.immediate) {
+                    activeJob=null
+                    if(lease.release(id))mutable.update{it.copy(busy=false,stopping=false,answer="",stage=if(failure==null)"Conversation cleared"else failure?.message ?: "Clear stopped",error=failure?.toString().orEmpty(),quarantined=failure is WorkerQuarantined)}
+                }
+            }
+        }
+        activeJob=job;job.start()
+    }
+    private fun update(id:String,change:(TaskState)->TaskState) {
+        mutable.update {old->
+            if(old.id!=id)old else {
+                var next=change(old)
+                if(next.pid>0)next=next.copy(lastPid=next.pid)
+                if(old.stopping && next.busy)next=next.copy(stopping=true,stage="Stopping…",percent=null,eta="")
+                next
+            }
+        }
+    }
+    // A photo/save notice must never replace the active generation stage.
+    fun notice(text:String){mutable.update{if(it.busy)it else it.copy(stage=text)}}
     fun refreshResources(){val r=thermal.read();mutable.update{it.copy(thermal=r.thermal,thermalAt=r.measuredAt,availableBytes=r.available,totalBytes=r.total)}}
     @Synchronized fun begin(r:TaskRequest):Boolean {
         if(state.value.quarantined){notice("Force-stop Rosalina before starting another native worker");return false}
@@ -82,16 +115,22 @@ internal class Session private constructor(private val context:Context) {
         }
     }
     fun launchPending(service:GenerationService,taskId:String) {
-        val r=request ?: run{service.finishTask();return}
+        val r=request ?: run{service.finishTask(taskId);return}
         if(r.id!=taskId || activeJob?.isActive==true)return
-        if(state.value.stopping){finish(r,service,null);return}
+        taskService=service
+        if(state.value.stopping){activeJob=scope.launch{finish(r,service,CancellationException(stopReason))};return}
         val job=scope.launch(Dispatchers.IO,start=CoroutineStart.LAZY) {
             var failure:Throwable?=null;val started=SystemClock.elapsedRealtime()
             val ticker=scope.launch(Dispatchers.IO) {
+                var savedAt=0L
                 while(isActive && state.value.id==r.id && state.value.busy) {
                     val resources=thermal.read()
                     update(r.id){it.copy(elapsedMs=SystemClock.elapsedRealtime()-started,availableBytes=resources.available,totalBytes=resources.total,thermal=resources.thermal,thermalAt=resources.measuredAt)}
                     if(ThermalPolicy.blocks(resources.thermal) && r.kind!=TaskKind.IMPORT) {stop("Stopped safely: Android reported ${ThermalPolicy.label(resources.thermal)} heat");break}
+                    if(SystemClock.elapsedRealtime()-savedAt>=5000) {
+                        runCatching{atomicText(File(context.filesDir,"last-diagnostics.txt"),diagnostics())}
+                        savedAt=SystemClock.elapsedRealtime()
+                    }
                     delay(1000)
                 }
             }
@@ -104,25 +143,47 @@ internal class Session private constructor(private val context:Context) {
                 }
             } catch(t:Throwable){failure=t}
             finally {
-                ticker.cancel()
                 withContext(NonCancellable) {
-                    speech.shutdown()
-                    if(failure!=null || r.kind !in listOf(TaskKind.CHAT,TaskKind.VOICE))chat.shutdown()
-                    finish(r,service,failure)
+                    ticker.cancelAndJoin()
+                    var finalFailure=failure
+                    try {speech.shutdown()} catch(t:Throwable){finalFailure=if(t is WorkerQuarantined)t else finalFailure ?: t}
+                    if(finalFailure!=null || r.kind !in listOf(TaskKind.CHAT,TaskKind.VOICE)) {
+                        try {chat.shutdown()} catch(t:Throwable){finalFailure=if(t is WorkerQuarantined)t else finalFailure ?: t}
+                    }
+                    // Cleanup failure cannot strand the UI in Stopping forever.
+                    finish(r,service,finalFailure)
                 }
             }
         }
         activeJob=job;job.start()
     }
-    private fun finish(r:TaskRequest,service:GenerationService,failure:Throwable?) {
-        val message=when {failure is CancellationException->stopReason.ifBlank{"Stopped"};failure!=null->failure.message ?: failure.javaClass.simpleName;state.value.result.isNotBlank() && r.kind in listOf(TaskKind.CREATE,TaskKind.EDIT,TaskKind.ANIMATE)->"Ready · saved privately";else->"Ready"}
-        update(r.id){it.copy(busy=false,stopping=false,stage=message,percent=null,step=0,total=0,eta="",pid=0,error=if(failure!=null && failure !is CancellationException)failure.stackTraceToString()else it.error,quarantined=failure is WorkerQuarantined)}
-        runCatching{atomicText(File(context.filesDir,"last-diagnostics.txt"),diagnostics())}
-        if(lease.release(r.id)){request=null;prefs.edit().remove("active-id").apply()}
-        service.finishTask()
+    private suspend fun finish(r:TaskRequest,service:GenerationService,failure:Throwable?)=withContext(NonCancellable+Dispatchers.Main.immediate) {
+        if(lease.current()!=r.id)return@withContext
+        val previous=state.value
+        val message=when {
+            failure is CancellationException->stopReason.ifBlank{"Stopped"}
+            failure!=null->failure.message ?: failure.javaClass.simpleName
+            previous.result.isNotBlank() && previous.kind in listOf(TaskKind.CREATE,TaskKind.EDIT,TaskKind.ANIMATE)->"Ready · saved privately"
+            else->"Ready"
+        }
+        val finished=previous.copy(busy=false,stopping=false,stage=message,percent=null,step=0,total=0,eta="",pid=0,
+            error=if(failure!=null && failure !is CancellationException)failure.stackTraceToString()else previous.error,
+            quarantined=previous.quarantined || failure is WorkerQuarantined)
+        service.finishTask(r.id)
+        val report=diagnostics(finished)
+        withContext(Dispatchers.IO){runCatching{atomicText(File(context.filesDir,"last-diagnostics.txt"),report)}}
+        taskService=null;request=null;activeJob=null;prefs.edit().remove("active-id").apply()
+        lease.release(r.id)
+        // Publish Ready only after the old service/worker can no longer clean up a successor.
+        mutable.value=finished
+    }
+    private suspend fun setTaskMode(r:TaskRequest,microphone:Boolean=false,playback:Boolean=false)=withContext(Dispatchers.Main.immediate) {
+        currentCoroutineContext().ensureActive()
+        taskService?.setMode(r.id,r.kind,microphone,playback)
     }
     private suspend fun performChat(r:TaskRequest,prompt:String,readAloud:Boolean)=coroutineScope {
         require(prompt.isNotBlank() && prompt.length<=8000){"Use a prompt between 1 and 8,000 characters"}
+        setTaskMode(r,playback=readAloud)
         val model=models.requirePath(ModelKey.CHAT);val history=SpeechText.history(transcript());addTurn("You",prompt)
         val queue=Channel<String>(4)
         val speechJob=if(readAloud)launch {
@@ -160,7 +221,7 @@ internal class Session private constructor(private val context:Context) {
     private suspend fun performVoice(r:TaskRequest) {
         require(ContextCompat.checkSelfPermission(context,Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED){"Microphone permission is required for Voice"}
         models.requirePath(ModelKey.STT);models.requirePath(ModelKey.TTS);models.requirePath(ModelKey.CHAT)
-        speech.shutdown();update(r.id){it.copy(stage="Listening · tap Finish when done",backend="Microphone · local PCM")}
+        speech.shutdown();update(r.id){it.copy(stage="Listening · tap Mic again when done",backend="Microphone · local PCM")}
         val dir=File(context.filesDir,"voice-input").apply{mkdirs()};val pcm=File(dir,"${r.id}.pcm")
         val min=AudioRecord.getMinBufferSize(16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT)
         val record=AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION,16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,maxOf(min,6400))
@@ -177,6 +238,7 @@ internal class Session private constructor(private val context:Context) {
                 };out.fd.sync()
             }
             record.stop()
+            setTaskMode(r)
             update(r.id){it.copy(stage="Transcribing on device",backend="Whisper tiny.en · CPU")}
             val result=speech.call(Bundle().apply{putString("operation","transcribe");putString("pcm",pcm.path)}){event->if(event.getString("type")=="stage")update(r.id){it.copy(stage=event.getString("text").orEmpty(),pid=event.getInt("pid"))}}
             speechMetrics="Whisper: ${result.getLong("inferenceMs")} ms for ${result.getLong("audioMs")} ms audio"
@@ -190,6 +252,8 @@ internal class Session private constructor(private val context:Context) {
         } finally {runCatching{record.stop()};record.release();pcm.delete()}
     }
     private suspend fun render(r:TaskRequest) {
+        setTaskMode(r)
+        update(r.id){it.copy(kind=r.kind)}
         chat.shutdown();speech.shutdown()
         val resources=thermal.read()
         require(!resources.low){"Android reports low memory. Available RAM: ${String.format("%.2f",resources.available/1e9)} GB. Close other large applications before retrying."}
@@ -215,7 +279,7 @@ internal class Session private constructor(private val context:Context) {
                 NativeWorker(thermal).run(listOf(exe.path)+args,dir,steps){stage,percent,step,total,pid,tail,res->
                     if(step>0)sampled=true
                     val assigned=Regex("@@BACKEND ([^\\r\\n]+)").findAll(tail).lastOrNull()?.groupValues?.get(1)
-                    update(r.id){it.copy(stage=stage,percent=percent,step=step,total=total,pid=pid,logTail=tail,backend=assigned ?: it.backend,availableBytes=res.available,totalBytes=res.total,thermal=res.thermal,thermalAt=res.measuredAt)}
+                    update(r.id){it.copy(stage=stage,percent=percent,step=step,total=total,pid=pid,logTail=tail,lastStage=stage,lastStep=if(step>0)step else it.lastStep,lastTotal=if(total>0)total else it.lastTotal,lastPercent=percent ?: it.lastPercent,backend=assigned ?: it.backend,availableBytes=res.available,totalBytes=res.total,thermal=res.thermal,thermalAt=res.measuredAt)}
                 }
             }
             try{runBackend(r.backend)}catch(e:CancellationException){throw e}catch(e:WorkerQuarantined){quarantine=true;throw e}catch(t:Throwable){
@@ -291,8 +355,8 @@ internal class Session private constructor(private val context:Context) {
             } catch(t:Throwable){notice("Photo import failed: ${t.message}")}
         }
     }
-    fun diagnostics():String {
-        val s=state.value
-        return "ROSALINA UNIFIED CANDIDATE\nVersion: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\nPackage: ${context.packageName}\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}\nAndroid: ${Build.VERSION.SDK_INT}; ABI: ${Build.SUPPORTED_ABIS.joinToString()}\nRAM total: ${s.totalBytes}; available: ${s.availableBytes}\nThermal: ${s.thermal} ${ThermalPolicy.label(s.thermal)}; sampled elapsedRealtime=${s.thermalAt}\nTask: ${s.id} ${s.kind}; stage: ${s.stage}; worker PID: ${s.pid}\nBackend: ${s.backend}\nProgress: ${s.step}/${s.total}; percent=${s.percent}; elapsed=${s.elapsedMs} ms\nETA: ${s.eta}\nVoice: ${s.voiceStage}\n$speechMetrics\n${models.diagnostic()}\nError: ${s.error}\nNative log tail:\n${s.logTail}\nReal Samsung output acceptance: NOT VERIFIED BY BUILD\n"
+    fun diagnostics(s:TaskState=state.value):String {
+        val prior=if(s.id.isBlank())runCatching{File(context.filesDir,"last-diagnostics.txt").readText().takeLast(50000)}.getOrDefault("") else ""
+        return "ROSALINA UNIFIED CANDIDATE\nVersion: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\nPackage: ${context.packageName}\n$deviceFacts\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}\nAndroid: ${Build.VERSION.SDK_INT}; ABI: ${Build.SUPPORTED_ABIS.joinToString()}\nRAM total: ${s.totalBytes}; available: ${s.availableBytes}\nThermal: ${s.thermal} ${ThermalPolicy.label(s.thermal)}; sampled elapsedRealtime=${s.thermalAt}\nTask: ${s.id} ${s.kind}; stage: ${s.stage}; worker PID: ${s.pid}\nLast worker PID: ${s.lastPid}; last native stage: ${s.lastStage}; last sampling: ${s.lastStep}/${s.lastTotal}; last percent: ${s.lastPercent}\nBackend: ${s.backend}\nProgress: ${s.step}/${s.total}; percent=${s.percent}; elapsed=${s.elapsedMs} ms\nETA: ${s.eta}\nVoice: ${s.voiceStage}\n$speechMetrics\n${models.diagnostic()}\nError: ${s.error}\nNative log tail:\n${s.logTail}\nReal Samsung output acceptance: NOT VERIFIED BY BUILD\n${if(prior.isBlank())""else"\nPrevious recorded job diagnostics:\n$prior"}"
     }
 }

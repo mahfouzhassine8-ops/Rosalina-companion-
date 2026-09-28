@@ -1,0 +1,47 @@
+name: Rosalina Permanent-Signer Fixtures
+on:
+  push:
+    branches: [rosalina-unified-v1-candidate]
+    paths:
+      - 'unified/**'
+      - '.github/workflows/unified-signing-fixtures.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: rosalina-signing-fixtures
+  cancel-in-progress: true
+jobs:
+  unsigned-fixtures:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.9', cache-read-only: false}
+      - name: Build two unsigned x86_64 update fixtures, with no fake Qwen inference
+        run: |
+          set -euo pipefail
+          mkdir -p unified/libs fixtures/tools
+          curl -fL --retry 3 -o unified/libs/sherpa-onnx-1.13.8.aar https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-1.13.8.aar
+          echo '633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96  unified/libs/sherpa-onnx-1.13.8.aar' | sha256sum -c
+          for VERSION in 10001 10002; do
+            gradle :unified:assembleRelease -PunifiedEmulatorQa=true -PunifiedVersionCode="$VERSION" --max-workers=2 --stacktrace
+            cp unified/build/outputs/apk/release/unified-release-unsigned.apk "fixtures/qa-$VERSION-unsigned.apk"
+          done
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" fixtures/tools/
+          cp "$ANDROID_HOME/build-tools/35.0.0/zipalign" fixtures/tools/
+          git rev-parse HEAD > fixtures/source-commit.txt
+          sha256sum fixtures/*.apk > fixtures/SHA256SUMS.txt
+          printf 'Unsigned x86_64 QA update fixtures only. Not an ARM64 release and not device inference tests. No private signing key is available in this workflow.\n' > fixtures/README.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Rosalina-permanent-signer-unsigned-fixtures
+          path: fixtures/
+          if-no-files-found: error
