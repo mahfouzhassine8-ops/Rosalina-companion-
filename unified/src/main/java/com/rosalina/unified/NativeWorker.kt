@@ -18,13 +18,15 @@ internal class ThermalManager(context:Context) {
     private val memory=context.getSystemService(ActivityManager::class.java)
     private var headroomAt=Long.MIN_VALUE
     private var headroom=Float.NaN
+    private var cached:Resources?=null
     @Synchronized fun read():Resources {
         val now=SystemClock.elapsedRealtime()
+        cached?.takeIf{now-it.measuredAt<500}?.let{return it}
         val info=ActivityManager.MemoryInfo();memory.getMemoryInfo(info)
         if(headroomAt==Long.MIN_VALUE || now-headroomAt>=10000) {
             headroom=runCatching{power.getThermalHeadroom(10)}.getOrDefault(Float.NaN);headroomAt=now
         }
-        return Resources(info.availMem,info.totalMem,info.lowMemory,runCatching{power.currentThermalStatus}.getOrDefault(-1),now,headroom)
+        return Resources(info.availMem,info.totalMem,info.lowMemory,runCatching{power.currentThermalStatus}.getOrDefault(-1),now,headroom).also{cached=it}
     }
 }
 internal class WorkerQuarantined(message:String):IOException(message)
@@ -59,8 +61,14 @@ internal class OwnedChild(private val process:Process,private val executable:Str
 /** The spawning thread remains alive until reaping, preserving Linux parent-death semantics. */
 internal class NativeWorker(private val thermal:ThermalManager) {
     suspend fun run(command:List<String>,directory:File,expectedSteps:Int,onState:(String,Int?,Int,Int,Int,String,Resources)->Unit):String {
+        require(command.isNotEmpty()) {"Native worker command is empty"}
+        val effectiveCommand=if(File(command.first()).name.startsWith("librosalina-motion") && command.size==14) {
+            // The final native argument is CPU threads for both video backend variants.
+            // Enforce the phone-conservative cap at launch, without changing frames/steps.
+            command.dropLast(1)+"1"
+        } else command
         val owner=Executors.newSingleThreadExecutor{Thread(it,"Rosalina-native-owner")}.asCoroutineDispatcher()
-        return try{withContext(owner){runOwned(command,directory,expectedSteps,onState)}}finally{owner.close()}
+        return try{withContext(owner){runOwned(effectiveCommand,directory,expectedSteps,onState)}}finally{owner.close()}
     }
     private suspend fun runOwned(command:List<String>,directory:File,expectedSteps:Int,onState:(String,Int?,Int,Int,Int,String,Resources)->Unit):String {
         require(command.isNotEmpty() && File(command[0]).canExecute()){"The packaged native engine is missing or not executable"}
@@ -68,7 +76,8 @@ internal class NativeWorker(private val thermal:ThermalManager) {
         val tail=StringBuilder();val pending=ByteArrayOutputStream();val job=currentCoroutineContext()
         var process:Process?=null;var child:OwnedChild?=null;var position=0L;var reportedPid=0
         val gpu=command[0].contains("-vulkan")
-        val paced=command[0].contains("librosalina-") && command.getOrNull(1)!="--probe"
+        val probe=command.getOrNull(1)=="--probe"
+        val paced=!gpu && command[0].contains("librosalina-") && !probe
         fun consume(line:String) {
             if(line.startsWith("@@PID ")){reportedPid=line.substringAfter(' ').trim().toIntOrNull() ?:0;child?.claim(reportedPid)}
             parser.consume(line)
@@ -91,31 +100,36 @@ internal class NativeWorker(private val thermal:ThermalManager) {
             job.ensureActive()
             val initial=thermal.read()
             check(!ThermalPolicy.blocks(initial.thermal)){"Android reports ${ThermalPolicy.label(initial.thermal)} heat. Cool the phone before rendering."}
-            val p=ProcessBuilder(command).directory(directory).redirectErrorStream(true).redirectOutput(log).start()
-            process=p
-            val owned=OwnedChild(p,command[0]);child=owned;val began=SystemClock.elapsedRealtime()
+            process=ProcessBuilder(command).directory(directory).redirectErrorStream(true).redirectOutput(log).start()
+            val p=process;child=OwnedChild(p,command[0]);val began=SystemClock.elapsedRealtime()
             var nextState=0L;var resources=initial;var resourceAt=0L;var rss=0L
             while(true) {
                 job.ensureActive();drain();val now=SystemClock.elapsedRealtime()
-                if(now-resourceAt>=1000){resources=thermal.read();rss=owned.rss();resourceAt=now}
+                if(now-resourceAt>=1000){resources=thermal.read();rss=child.rss();resourceAt=now}
                 val percent=if(paced)WorkBudget.percent(resources.thermal,gpu,resources.headroom)else 100
                 if(now>=nextState || !p.isAlive) {
-                    val control=if(paced)"${if(gpu)"GPU" else "CPU"} work budget $percent% · ${if(owned.paused)"cooling interval" else "running"}" else "Backend compute check"
-                    onState(parser.stage,parser.percent,parser.step,parser.total,owned.pid.takeIf{it>0} ?:reportedPid,tail.toString(),resources.copy(control=control,rssBytes=rss))
+                    val control=when {
+                        paced->"CPU work budget $percent% · ${if(child.paused)"cooling interval" else "running"}"
+                        probe->"Backend compute check"
+                        gpu->"GPU worker · Severe cutoff active; no host duty-cycle claim"
+                        else->"Native worker"
+                    }
+                    onState(parser.stage,parser.percent,parser.step,parser.total,child.pid.takeIf{it>0} ?:reportedPid,tail.toString(),resources.copy(control=control,rssBytes=rss))
                     nextState=now+250
                 }
                 check(!ThermalPolicy.blocks(resources.thermal)){"Stopped safely: Android reported ${ThermalPolicy.label(resources.thermal)} heat during ${parser.stage}"}
                 if(!p.isAlive)break
-                if(paced && (owned.pid>0 || now-began>3000))owned.pause(WorkBudget.shouldPause(now-began,percent))
+                if(paced && (child.pid>0 || now-began>3000))child.pause(WorkBudget.shouldPause(now-began,percent))
                 delay(50)
             }
             drain();if(pending.size()>0)consume(pending.toString("UTF-8"))
-            onState(parser.stage,parser.percent,parser.step,parser.total,owned.pid.takeIf{it>0} ?:reportedPid,tail.toString(),thermal.read().copy(rssBytes=rss))
+            onState(parser.stage,parser.percent,parser.step,parser.total,child.pid.takeIf{it>0} ?:reportedPid,tail.toString(),thermal.read().copy(rssBytes=rss))
             val code=p.waitFor();check(code==0){"Native engine exited with code $code. See Copy diagnostics."}
             return tail.toString()
         } finally {
             withContext(NonCancellable) {
                 process?.let{p->
+                    // Resume before graceful termination; forced termination remains bounded.
                     runCatching{child?.pause(false)}
                     if(p.isAlive){p.destroy();p.waitFor(350,TimeUnit.MILLISECONDS)}
                     if(p.isAlive){p.destroyForcibly();p.waitFor(1800,TimeUnit.MILLISECONDS)}

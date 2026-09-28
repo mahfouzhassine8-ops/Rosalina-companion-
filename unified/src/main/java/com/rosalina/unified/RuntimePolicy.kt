@@ -22,8 +22,9 @@ internal object WorkBudget {
     fun percent(thermal:Int,gpu:Boolean,headroom:Float=Float.NaN):Int {
         if(ThermalPolicy.blocks(thermal))return 0
         val effective=if(headroom.isFinite() && headroom>=0.85f)max(thermal,2)else thermal
-        return if(gpu)when(effective){2->65;1->85;else->100}
-            else when(effective){2->30;1->55;else->75}
+        // Pausing a host process cannot cancel already-submitted GPU commands.
+        // Do not pretend SIGSTOP controls GPU duty cycle; retain the Severe cutoff.
+        return if(gpu)100 else when(effective){2->30;1->55;else->75}
     }
     fun shouldPause(elapsedMs:Long,percent:Int):Boolean = elapsedMs%1000 >= percent.coerceIn(0,100)*10L
 }
@@ -57,4 +58,14 @@ internal object EchoText {
         if(b.joinToString(" ").contains(normalized))return true
         return a.size>=6 && a.count{it in b}.toDouble()/a.size>=.9
     }
+}
+
+/** Unknown routes cannot be assumed echo-safe merely because an effect object exists. */
+internal object VoiceSafety {
+    fun allow(requested:Boolean,headphones:Boolean,speaker:Boolean,aec:Boolean,communication:Boolean)=requested && (headphones || (speaker && aec && communication))
+}
+internal class CaptureLimit(private val maximum:Int=480000) {
+    var count=0;private set
+    fun accept(samples:Int):Int {require(samples>=0);val n=minOf(samples,maximum-count);count+=n;return n}
+    fun full()=count>=maximum
 }

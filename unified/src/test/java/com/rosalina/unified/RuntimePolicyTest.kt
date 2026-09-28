@@ -22,4 +22,7 @@ class RuntimePolicyTest {
     @Test fun unsafeSpeakerRouteCannotTriggerAcousticBarge(){val gate=VoiceGate();repeat(100){assertFalse(gate.accept(5000.0,40,false))};assertFalse(gate.started)}
     @Test fun probableSelfEchoIsNotAUserCommand(){assertTrue(EchoText.resemblesOutput("I can help you with that today","Hello, I can help you with that today."));assertFalse(EchoText.resemblesOutput("Stop and tell me about cooking","The weather is warm today"))}
     @Test fun politeRequestsRouteWithoutMisroutingQuestions(){assertEquals(TaskKind.CREATE,Route.kind("Could you please create a picture of a garden"));assertEquals(TaskKind.ANIMATE,Route.kind("Please animate this photo for eight seconds"));assertEquals(TaskKind.CHAT,Route.kind("Can you tell me how to create a picture?"))}
+    @Test fun unknownRouteRemainsManualEvenWithAec(){assertFalse(VoiceSafety.allow(true,false,false,true,true));assertTrue(VoiceSafety.allow(true,false,true,true,true));assertFalse(VoiceSafety.allow(false,true,false,false,false))}
+    @Test fun capturePrerollCannotExceedWhisperInputLimit(){val limit=CaptureLimit();assertEquals(6399,limit.accept(6399));repeat(1000){limit.accept(640)};assertEquals(480000,limit.count);assertEquals(0,limit.accept(640));assertTrue(limit.full())}
+    @Test fun hostPauseIsNotAdvertisedAsGpuDutyCycle(){for(t in 0..2)assertEquals(100,WorkBudget.percent(t,true))}
 }

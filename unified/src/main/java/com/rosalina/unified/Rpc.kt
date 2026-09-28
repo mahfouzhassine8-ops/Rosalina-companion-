@@ -22,7 +22,8 @@ internal class EngineRpc(private val context:Context,private val type:Class<out 
     @Volatile var pid=0;private set
     private val listeners=ConcurrentHashMap<String,Channel<Bundle>>()
     private val main=Handler(Looper.getMainLooper())
-    private val replies=Messenger(Handler(Looper.getMainLooper()){msg->
+    private val responseThread=HandlerThread("Rosalina-"+type.simpleName+"-replies").apply{start()}
+    private val replies=Messenger(Handler(responseThread.looper){msg->
         if(msg.what==RPC_EVENT){val b=msg.data;val channel=listeners[b.getString("id")];if(channel!=null){if(b.getInt("pid")>0)pid=b.getInt("pid");channel.trySend(b)}};true
     })
     /** Capture the current binder: a late interrupt may never target a successor process. */
@@ -79,7 +80,7 @@ internal class EngineRpc(private val context:Context,private val type:Class<out 
                 val graceful=died!=null && withTimeoutOrNull(750){died.await();true}==true
                 if(!graceful && m.binder.isBinderAlive) {
                     withContext(Dispatchers.IO) {
-                        val expected=context.packageName+if(type==ChatService::class.java)":chat" else ":speech"
+                        val expected=context.packageName+if(type==ChatService::class.java)":chat"else":speech"
                         val cmd=runCatching{File("/proc/$oldPid/cmdline").readText().substringBefore('\u0000')}.getOrDefault("")
                         if(oldPid>0 && cmd==expected)android.os.Process.killProcess(oldPid)
                     }

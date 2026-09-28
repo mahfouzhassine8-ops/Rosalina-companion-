@@ -14,89 +14,73 @@ import java.util.ArrayDeque
 import java.util.UUID
 import kotlin.math.sqrt
 
-internal data class VoiceRecording(val file: File, val duringSpeakerOutput: Boolean)
-internal class VoiceCapture(private val context: Context, private val handsFree: Boolean) : AutoCloseable {
-    private val audio = context.getSystemService(AudioManager::class.java)
-    private var record: AudioRecord? = null
-    private var echo: AcousticEchoCanceler? = null
-    private var noise: NoiseSuppressor? = null
-    private var previousMode = AudioManager.MODE_NORMAL
-    private var changedMode = false
-    @Volatile private var closed = false
-    @Volatile var outputActive = false
-    @Volatile var outputRoute = -1
-    fun headphones() = outputRoute in intArrayOf(AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_BLE_HEADSET)
-    fun canInterrupt() = handsFree && (headphones() || (echo?.enabled == true && changedMode))
-    fun describe() = "Hands-free requested=$handsFree; output route=$outputRoute; AEC available=${AcousticEchoCanceler.isAvailable()}; AEC enabled=${echo?.enabled == true}; acoustic interruption=${canInterrupt()}"
+internal data class VoiceRecording(val file:File,val duringSpeakerOutput:Boolean)
+internal class VoiceCapture(private val context:Context,private val handsFree:Boolean):AutoCloseable {
+    private val audio=context.getSystemService(AudioManager::class.java)
+    private var record:AudioRecord?=null
+    private var echo:AcousticEchoCanceler?=null
+    private var noise:NoiseSuppressor?=null
+    private var previousMode=AudioManager.MODE_NORMAL
+    private var changedMode=false
+    @Volatile private var closed=false
+    @Volatile private var outputStoppedAt=Long.MIN_VALUE
+    @Volatile var outputActive=false
+        set(value) {field=value;if(!value)outputStoppedAt=SystemClock.elapsedRealtime()}
+    @Volatile var outputRoute=-1
+    fun headphones()=outputRoute in intArrayOf(AudioDeviceInfo.TYPE_WIRED_HEADSET,AudioDeviceInfo.TYPE_WIRED_HEADPHONES,AudioDeviceInfo.TYPE_USB_HEADSET,AudioDeviceInfo.TYPE_BLE_HEADSET)
+    private fun speaker()=outputRoute in intArrayOf(AudioDeviceInfo.TYPE_BUILTIN_EARPIECE,AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)
+    fun canInterrupt()=VoiceSafety.allow(handsFree,headphones(),speaker(),echo?.enabled==true,changedMode && audio.mode==AudioManager.MODE_IN_COMMUNICATION)
+    fun describe()="Hands-free requested=$handsFree; output route=$outputRoute; AEC available=${AcousticEchoCanceler.isAvailable()}; AEC enabled=${echo?.enabled==true}; acoustic interruption=${canInterrupt()}"
     fun start() {
-        check(record == null && !closed)
-        previousMode = audio.mode
-        check(previousMode != AudioManager.MODE_IN_CALL) { "Voice is unavailable during a telephone call" }
+        check(record==null && !closed);previousMode=audio.mode
+        check(previousMode!=AudioManager.MODE_IN_CALL){"Voice is unavailable during a telephone call"}
         try {
-            val communication = handsFree && AcousticEchoCanceler.isAvailable() && previousMode == AudioManager.MODE_NORMAL
-            if (communication) { audio.mode = AudioManager.MODE_IN_COMMUNICATION; changedMode = true }
-            val source = if (communication) MediaRecorder.AudioSource.VOICE_COMMUNICATION else MediaRecorder.AudioSource.VOICE_RECOGNITION
-            val minimum = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-            require(minimum > 0) { "Microphone format unsupported" }
-            val r = AudioRecord(source, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minimum, 12800))
-            record = r
-            require(r.state == AudioRecord.STATE_INITIALIZED) { "Microphone initialization failed" }
-            if (communication) echo = runCatching { AcousticEchoCanceler.create(r.audioSessionId)?.apply { enabled = true } }.getOrNull()
-            if (NoiseSuppressor.isAvailable()) noise = runCatching { NoiseSuppressor.create(r.audioSessionId)?.apply { enabled = true } }.getOrNull()
-            r.startRecording()
-            require(r.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "Microphone did not start" }
-        } catch (t: Throwable) { close(); throw t }
+            val communication=handsFree && AcousticEchoCanceler.isAvailable() && previousMode==AudioManager.MODE_NORMAL
+            if(communication){audio.mode=AudioManager.MODE_IN_COMMUNICATION;changedMode=audio.mode==AudioManager.MODE_IN_COMMUNICATION}
+            val source=if(changedMode)MediaRecorder.AudioSource.VOICE_COMMUNICATION else MediaRecorder.AudioSource.VOICE_RECOGNITION
+            val minimum=AudioRecord.getMinBufferSize(16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT);require(minimum>0){"Microphone format unsupported"}
+            val r=AudioRecord(source,16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,maxOf(minimum,12800));record=r
+            require(r.state==AudioRecord.STATE_INITIALIZED){"Microphone initialization failed"}
+            if(changedMode)echo=runCatching{AcousticEchoCanceler.create(r.audioSessionId)?.apply{enabled=true}}.getOrNull()
+            if(NoiseSuppressor.isAvailable())noise=runCatching{NoiseSuppressor.create(r.audioSessionId)?.apply{enabled=true}}.getOrNull()
+            r.startRecording();require(r.recordingState==AudioRecord.RECORDSTATE_RECORDING){"Microphone did not start"}
+        }catch(t:Throwable){close();throw t}
     }
-    suspend fun capture(manual: () -> Boolean, finish: () -> Boolean, idle: () -> Boolean, onStart: () -> Unit): VoiceRecording? = withContext(Dispatchers.IO) {
-        val r = record ?: error("Microphone not open")
-        val folder = File(context.filesDir, "voice-input").apply { mkdirs() }
-        val file = File(folder, "${UUID.randomUUID()}.pcm")
-        val gate = VoiceGate()
-        val preRoll = ArrayDeque<ByteArray>()
-        val samples = ShortArray(640)
-        var began = false; var outputAtStart = false; var count = 0
-        var idleSince = SystemClock.elapsedRealtime(); var keep = false; var manualQuiet = 0
+    suspend fun capture(manual:()->Boolean,finish:()->Boolean,idle:()->Boolean,onStart:()->Unit):VoiceRecording?=withContext(Dispatchers.IO) {
+        val r=record ?:error("Microphone not open");val folder=File(context.filesDir,"voice-input").apply{mkdirs()};val file=File(folder,"${UUID.randomUUID()}.pcm")
+        val gate=VoiceGate();val preRoll=ArrayDeque<ByteArray>();val samples=ShortArray(640);val limit=CaptureLimit()
+        var began=false;var outputAtStart=false;var idleSince=SystemClock.elapsedRealtime();var keep=false;var manualQuiet=0
         try {
-            FileOutputStream(file).use { out ->
-                fun writeBounded(bytes: ByteArray) {
-                    val length = minOf(bytes.size, (480000 - count) * 2)
-                    if (length > 0) { out.write(bytes, 0, length); count += length / 2 }
-                }
-                while (count < 480000) {
-                    currentCoroutineContext().ensureActive()
-                    check(!closed) { "Voice input closed" }
-                    val n = r.read(samples, 0, samples.size, AudioRecord.READ_NON_BLOCKING)
-                    require(n >= 0) { "Microphone read failed: $n" }
-                    if (n == 0) { delay(10); continue }
-                    val data = ByteBuffer.allocate(n * 2).order(ByteOrder.LITTLE_ENDIAN).apply { asShortBuffer().put(samples, 0, n) }.array()
-                    val rms = sqrt((0 until n).sumOf { samples[it].toDouble() * samples[it] } / n)
-                    val forced = manual()
-                    val allowed = !outputActive || canInterrupt()
-                    if (!allowed && !began) preRoll.clear()
-                    if (allowed || began || forced) { preRoll.addLast(data); while (preRoll.size > 10) preRoll.removeFirst() }
-                    val onset = gate.accept(rms, maxOf(1, n * 1000 / 16000), allowed)
-                    if (!began && (onset || forced)) {
-                        began = true; outputAtStart = outputActive && !headphones(); onStart()
-                        for (bytes in preRoll) writeBounded(bytes)
-                        preRoll.clear()
-                    } else if (began) { writeBounded(data); preRoll.clear() }
-                    if (began) manualQuiet = if (rms < 500) manualQuiet + n * 1000 / 16000 else 0
-                    if (began && (gate.finished() || manualQuiet >= 1800 || finish())) break
-                    if (!idle() || began) idleSince = SystemClock.elapsedRealtime()
-                    if (!began && SystemClock.elapsedRealtime() - idleSince >= 45000) break
-                }
-                out.fd.sync()
+            FileOutputStream(file).use{out->
+                fun write(bytes:ByteArray) {val n=limit.accept(bytes.size/2);if(n>0)out.write(bytes,0,n*2)}
+                while(!limit.full()) {
+                    currentCoroutineContext().ensureActive();check(!closed){"Voice input closed"}
+                    val n=r.read(samples,0,samples.size,AudioRecord.READ_NON_BLOCKING);require(n>=0){"Microphone read failed: $n"}
+                    if(n==0){delay(10);continue}
+                    val data=ByteBuffer.allocate(n*2).order(ByteOrder.LITTLE_ENDIAN).apply{asShortBuffer().put(samples,0,n)}.array()
+                    val rms=sqrt((0 until n).sumOf{samples[it].toDouble()*samples[it]}/n)
+                    val forced=manual()
+                    val inOutput=outputActive || (outputStoppedAt!=Long.MIN_VALUE && SystemClock.elapsedRealtime()-outputStoppedAt<350)
+                    val allowed=!inOutput || canInterrupt()
+                    if(!allowed && !began)preRoll.clear()
+                    if(allowed || began || forced){preRoll.addLast(data);while(preRoll.size>10)preRoll.removeFirst()}
+                    val onset=gate.accept(rms,maxOf(1,n*1000/16000),allowed)
+                    if(!began && (onset || forced)){began=true;outputAtStart=inOutput && !headphones();onStart();for(bytes in preRoll)write(bytes);preRoll.clear()}
+                    else if(began){write(data);preRoll.clear()}
+                    if(began)manualQuiet=if(rms<500)manualQuiet+n*1000/16000 else 0
+                    if(began && (gate.finished() || manualQuiet>=1800 || finish()))break
+                    if(!idle() || began)idleSince=SystemClock.elapsedRealtime()
+                    if(!began && SystemClock.elapsedRealtime()-idleSince>=45000)break
+                };out.fd.sync()
             }
-            if (count < 1600) return@withContext null
-            keep = true
-            VoiceRecording(file, outputAtStart)
-        } finally { if (!keep) file.delete() }
+            if(limit.count<1600)return@withContext null
+            keep=true;VoiceRecording(file,outputAtStart)
+        }finally{if(!keep)file.delete()}
     }
     override fun close() {
-        if (closed) return
-        closed = true
-        runCatching { record?.stop() }; runCatching { record?.release() }; record = null
-        runCatching { echo?.release() }; runCatching { noise?.release() }; echo = null; noise = null
-        if (changedMode && audio.mode == AudioManager.MODE_IN_COMMUNICATION) runCatching { audio.mode = previousMode }
+        if(closed)return
+        closed=true;runCatching{record?.stop()};runCatching{record?.release()};record=null
+        runCatching{echo?.release()};runCatching{noise?.release()};echo=null;noise=null
+        if(changedMode && audio.mode==AudioManager.MODE_IN_COMMUNICATION)runCatching{audio.mode=previousMode}
     }
 }
