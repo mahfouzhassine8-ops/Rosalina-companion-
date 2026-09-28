@@ -101,7 +101,6 @@ internal class NativeWorker(private val thermal:ThermalManager) {
             val p=ProcessBuilder(command).directory(directory).redirectErrorStream(true).redirectOutput(log).start()
             process=p
             val owned=OwnedChild(p,command[0]);child=owned
-            runCatching{owned.claim(p.pid().toInt())}
             val began=SystemClock.elapsedRealtime()
             var nextState=0L;var resources=initial;var resourceAt=0L;var rss=0L
             while(true) {
