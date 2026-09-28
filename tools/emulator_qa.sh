@@ -2,13 +2,25 @@
 set -euo pipefail
 mkdir -p qa
 trap 'adb logcat -d > qa/emulator-logcat.txt 2>/dev/null || true' EXIT
+
+# Run instrumentation against the current candidate first.
 gradle :unified:connectedDebugAndroidTest -PunifiedEmulatorQa=true --max-workers=2 --stacktrace
+
+# Then perform a real forward-update continuity check. The instrumentation task
+# already installed the current build, so remove only the emulator copy before
+# staging the previous version. This never touches a user's device or data.
+adb uninstall com.rosalina.unified >/dev/null 2>&1 || true
+
+gradle :unified:assembleDebug -PunifiedEmulatorQa=true -PunifiedVersionCode=10007 --max-workers=2
+adb install unified/build/outputs/apk/debug/unified-debug.apk
+adb shell am start -W -n com.rosalina.unified/.MainActivity
+adb shell "run-as com.rosalina.unified sh -c 'echo preserved > files/update-marker.txt'"
+
+gradle :unified:assembleDebug -PunifiedEmulatorQa=true -PunifiedVersionCode=10008 --max-workers=2
 adb install -r unified/build/outputs/apk/debug/unified-debug.apk
+adb shell run-as com.rosalina.unified cat files/update-marker.txt | grep preserved
 adb shell am start -W -n com.rosalina.unified/.MainActivity
 sleep 1
 adb exec-out screencap -p > qa/unified-emulator.png
-adb shell "run-as com.rosalina.unified sh -c 'echo preserved > files/update-marker.txt'"
-gradle :unified:assembleDebug -PunifiedEmulatorQa=true -PunifiedVersionCode=10007 --max-workers=2
-adb install -r unified/build/outputs/apk/debug/unified-debug.apk
-adb shell run-as com.rosalina.unified cat files/update-marker.txt | grep preserved
-echo 'QA-signer x86_64 update 10006 -> 10007 and data continuity passed; permanent-signer Samsung update NOT tested' > qa/update-test.txt
+
+echo 'QA-signer x86_64 update 10007 -> 10008 and data continuity passed; permanent-signer Samsung update NOT tested' > qa/update-test.txt
