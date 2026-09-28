@@ -12,7 +12,7 @@ Live Voice uses three isolated warm local processes during an active session:
 - :listen — dedicated warm Whisper tiny.en recognizer
 - :speech — dedicated warm Kokoro / Voice V2 renderer
 
-The microphone stays active while Rosalina speaks. Acoustic echo cancellation / safe-route gating controls whether speech can trigger a barge-in. A barge-in sends a non-destructive speech interrupt, cancels the current Qwen response, and immediately returns focus to listening. The TTS process itself is not killed merely to interrupt one utterance.
+The microphone stays active while Rosalina speaks. Acoustic echo cancellation / safe-route gating controls whether speech can trigger a barge-in. A barge-in sends a non-destructive speech interrupt and immediately returns acoustic focus to listening. The already-started Qwen turn is allowed to finish silently instead of killing the 5.6 GB chat process; this preserves the warm model for the next turn. The TTS process itself is also kept alive.
 
 Whisper and TTS no longer unload each other every turn in Live mode. Classic Voice V2 remains available in Settings and preserves the older sequential speech-process behavior.
 
@@ -21,6 +21,7 @@ Whisper and TTS no longer unload each other every turn in Live mode. Classic Voi
 - Live endpoint timing defaults to 820 ms of quiet and is user-adjustable from 550–1400 ms.
 - Streaming Qwen text can be spoken at natural clause boundaries instead of waiting for a full long sentence / paragraph.
 - Qwen, Whisper, and TTS stay warm for the live session when memory allows.
+- Live spoken turns cap Qwen generation at 256 tokens so an interrupted local 9B response cannot monopolize the conversation indefinitely. Text Chat retains the user-selected normal response limit.
 - Live mode requires at least 3.5 GB Android-reported available RAM before warming all three engines; otherwise the app asks the user to use Classic Voice rather than risking memory pressure.
 
 ## Truthful scope
