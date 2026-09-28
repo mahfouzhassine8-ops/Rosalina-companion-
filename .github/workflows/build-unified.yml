@@ -1,0 +1,205 @@
+name: Rosalina Unified Candidate
+on:
+  push:
+    branches: [rosalina-unified-v1-candidate]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: rosalina-unified-candidate
+  cancel-in-progress: true
+jobs:
+  preservation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0, persist-credentials: false}
+      - name: Verify protected source trees
+        run: |
+          git diff --exit-code 2b4dbd048484e67fcc745c30ce1622cb095d3519 HEAD -- app lib
+          git diff --exit-code 37bb610977054fe20626acbdc3ba14483354d578 HEAD -- studio image-engine
+          git diff --exit-code 95e44a09c7aa2ccb2ad18fa7e62b746a318fb7f3 HEAD -- motion motion-engine
+          python3 -m py_compile unified-native/prepare.py tools/*.py
+          python3 unified-native/prepare.py /tmp/derived-workers
+          mkdir -p source-backup
+          git archive --format=zip HEAD -o source-backup/Rosalina-Unified-source.zip
+          git rev-parse HEAD > source-backup/commit.txt
+          cp UNIFIED_AUDIT.md source-backup/
+      - uses: actions/upload-artifact@v4
+        with: {name: Rosalina-Unified-source, path: source-backup/}
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0, persist-credentials: false}
+      - uses: actions/checkout@v4
+        with: {repository: ggml-org/llama.cpp, ref: a97cce86a8addeb9f40cba7a261c94b1f0c576cb, path: third_party/llama.cpp, persist-credentials: false}
+      - uses: actions/checkout@v4
+        with: {repository: leejet/stable-diffusion.cpp, ref: 3f8527a46c54ecf4cb4ed6003da8e8982283c73c, path: third_party/stable-diffusion.cpp, submodules: recursive, persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;29.0.13113456" "cmake;3.31.6"
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.9'}
+      - name: Download and verify speech runtime and decoder
+        run: |
+          set -euo pipefail
+          mkdir -p unified/libs unified/src/main/assets qa
+          curl --fail --location --retry 3 -o unified/libs/sherpa-onnx-1.13.8.aar https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-1.13.8.aar
+          echo '633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96  unified/libs/sherpa-onnx-1.13.8.aar' | sha256sum -c
+          curl --fail --location --retry 3 -o unified/src/main/assets/taew2_2.safetensors https://raw.githubusercontent.com/madebyollin/taehv/011dfc2112197741c540e0bdd5b7b67bcc930771/safetensors/taew2_2.safetensors
+          echo 'b84609b2a133d48434bd9636bfcb44bf05168dc436e2d3cecf26256faa1f5325  unified/src/main/assets/taew2_2.safetensors' | sha256sum -c
+          python3 tools/voice_models.py
+      - uses: actions/cache/restore@v4
+        id: native-cache
+        with:
+          path: |
+            native-arm64
+            native-vulkan
+            unified/src/main/jniLibs
+          key: rosalina-unified-native-v1-${{ hashFiles('unified-native/**', 'image-engine/**', 'motion-engine/**') }}
+      - name: Build CPU and Vulkan ARM64 worker candidates
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y ninja-build glslc libvulkan-dev
+          NDK="$ANDROID_HOME/ndk/29.0.13113456"
+          mkdir -p unified/src/main/jniLibs/arm64-v8a
+          for MODE in cpu vulkan; do
+            if [ "$MODE" = cpu ]; then BUILD=native-arm64; VK=OFF; SUFFIX=; else BUILD=native-vulkan; VK=ON; SUFFIX=-vulkan; fi
+            cmake -S unified-native -B "$BUILD" -G Ninja -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-30 -DANDROID_STL=c++_static -DCMAKE_BUILD_TYPE=Release -DSD_SOURCE="$PWD/third_party/stable-diffusion.cpp" -DROSALINA_VULKAN="$VK" -DVulkan_GLSLC_EXECUTABLE=/usr/bin/glslc
+            cmake --build "$BUILD" --target rosalina-image rosalina-motion --parallel 2
+            for ENGINE in image motion; do
+              cp "$BUILD/rosalina-$ENGINE" "unified/src/main/jniLibs/arm64-v8a/librosalina-$ENGINE$SUFFIX.so"
+              "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" "unified/src/main/jniLibs/arm64-v8a/librosalina-$ENGINE$SUFFIX.so"
+              "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -d "unified/src/main/jniLibs/arm64-v8a/librosalina-$ENGINE$SUFFIX.so" | tee -a qa/worker-dependencies.txt
+            done
+          done
+          ! grep -E 'NEEDED.*(ggml|stable-diffusion|c\+\+_shared|omp)' qa/worker-dependencies.txt
+      - uses: actions/cache/save@v4
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            native-arm64
+            native-vulkan
+            unified/src/main/jniLibs
+          key: rosalina-unified-native-v1-${{ hashFiles('unified-native/**', 'image-engine/**', 'motion-engine/**') }}
+      - name: Include upstream notices
+        run: |
+          mkdir -p unified/src/main/assets/licenses
+          cp third_party/llama.cpp/LICENSE unified/src/main/assets/licenses/llama-LICENSE
+          cp third_party/stable-diffusion.cpp/LICENSE unified/src/main/assets/licenses/stable-diffusion-LICENSE
+          curl --fail --location -o unified/src/main/assets/licenses/sherpa-LICENSE https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/v1.13.8/LICENSE
+          curl --fail --location -o unified/src/main/assets/licenses/taehv-LICENSE https://raw.githubusercontent.com/madebyollin/taehv/011dfc2112197741c540e0bdd5b7b67bcc930771/LICENSE
+      - name: Kotlin tests and unsigned ARM64 release candidate
+        run: gradle :unified:testReleaseUnitTest :unified:assembleRelease --max-workers=2 --stacktrace
+      - name: Verify packaging; never substitute an ephemeral release signer
+        run: |
+          set -euo pipefail
+          mkdir -p deliverables/signing-tools
+          cp unified/build/outputs/apk/release/unified-release-unsigned.apk deliverables/Rosalina-Unified-Candidate-1-arm64-UNSIGNED.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions deliverables/*.apk | tee qa/permissions.txt
+          ! grep -q android.permission.INTERNET qa/permissions.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging deliverables/*.apk > qa/package.txt
+          python3 tools/verify_unified_apk.py deliverables/Rosalina-Unified-Candidate-1-arm64-UNSIGNED.apk
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" deliverables/signing-tools/
+          cp "$ANDROID_HOME/build-tools/35.0.0/zipalign" deliverables/signing-tools/
+          cp -r qa deliverables/
+          cp UNIFIED_AUDIT.md deliverables/
+          git rev-parse HEAD > deliverables/commit.txt
+          sha256sum deliverables/*.apk > deliverables/SHA256SUMS-UNSIGNED.txt
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with: {name: Rosalina-Unified-ARM64-unsigned, path: deliverables/, if-no-files-found: error}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Rosalina-Unified-build-QA
+          path: |
+            unified/build/test-results/
+            qa/
+            native-vulkan/CMakeFiles/CMakeConfigureLog.yaml
+  emulator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.9'}
+      - name: Speech library and Kotlin test package
+        run: |
+          mkdir -p unified/libs
+          curl --fail --location --retry 3 -o unified/libs/sherpa-onnx-1.13.8.aar https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-1.13.8.aar
+          echo '633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96  unified/libs/sherpa-onnx-1.13.8.aar' | sha256sum -c
+          gradle :unified:testDebugUnitTest :unified:assembleDebug :unified:assembleDebugAndroidTest -PunifiedEmulatorQa=true --max-workers=2 --stacktrace
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_5
+          disable-animations: true
+          script: |
+            gradle :unified:connectedDebugAndroidTest -PunifiedEmulatorQa=true --max-workers=2 --stacktrace
+            adb shell am start -n com.rosalina.unified/.MainActivity
+            mkdir -p qa
+            adb exec-out screencap -p > qa/unified-emulator.png
+            adb shell run-as com.rosalina.unified sh -c 'echo preserved > files/update-marker.txt'
+            gradle :unified:assembleDebug -PunifiedEmulatorQa=true -PunifiedVersionCode=10002 --max-workers=2
+            adb install -r unified/build/outputs/apk/debug/unified-debug.apk
+            adb shell run-as com.rosalina.unified cat files/update-marker.txt | grep preserved
+            echo 'QA-signer x86_64 update and data continuity passed; permanent-signer Samsung update NOT tested' > qa/update-test.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Rosalina-Unified-emulator-QA
+          path: |
+            unified/build/outputs/androidTest-results/
+            unified/build/test-results/
+            qa/
+  host-images:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with: {repository: leejet/stable-diffusion.cpp, ref: 3f8527a46c54ecf4cb4ed6003da8e8982283c73c, path: third_party/stable-diffusion.cpp, submodules: recursive, persist-credentials: false}
+      - run: |
+          cmake -S unified-native -B native-host -G Ninja -DSD_SOURCE="$PWD/third_party/stable-diffusion.cpp" -DCMAKE_BUILD_TYPE=Release
+          cmake --build native-host --target rosalina-image --parallel 2
+          mkdir -p models
+          curl --fail --location --retry 3 -o models/sd15.gguf https://huggingface.co/second-state/stable-diffusion-v1-5-GGUF/resolve/main/stable-diffusion-v1-5-pruned-emaonly-Q4_0.gguf
+          echo 'b8944e9fe0b69b36ae1b5bb0185b3a7b8ef14347fe0fa9af6c64c4829022261f  models/sd15.gguf' | sha256sum -c
+          python3 -m pip install pillow
+          python3 tools/host_images.py "$PWD/native-host/rosalina-image" "$PWD/models/sd15.gguf"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: Rosalina-Unified-host-images, path: qa/}
+  host-voice:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - run: |
+          python3 -m pip install sherpa-onnx==1.13.8 soundfile numpy
+          python3 tools/voice_models.py --benchmark
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: Rosalina-Unified-host-voice, path: qa/}

@@ -6,4 +6,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "RosalinaLocalAI"
-include(":app", ":lib", ":studio", ":motion")
+include(":app", ":lib", ":studio", ":motion", ":unified")
