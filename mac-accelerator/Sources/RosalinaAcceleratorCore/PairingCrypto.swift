@@ -75,10 +75,7 @@ public enum PairingCrypto {
     public static func seal<T: Encodable>(_ value: T, using key: SymmetricKey) throws -> String {
         let clear = try JSONEncoder.rosalina.encode(value)
         let box = try ChaChaPoly.seal(clear, using: key)
-        guard let combined = box.combined else {
-            throw AcceleratorError.internalError("Could not create encrypted envelope")
-        }
-        return combined.base64EncodedString()
+        return box.combined.base64EncodedString()
     }
 
     public static func open<T: Decodable>(_ type: T.Type, sealedBox: String, using key: SymmetricKey) throws -> T {
