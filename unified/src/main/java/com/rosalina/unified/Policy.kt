@@ -20,7 +20,7 @@ internal data class TaskState(
     val pid:Int=0,val backend:String="Not selected",val logTail:String="",val error:String="",
     val result:String="",val answer:String="",val voiceStage:String="",val quarantined:Boolean=false,
     val lastPid:Int=0,val lastStage:String="",val lastStep:Int=0,val lastTotal:Int=0,val lastPercent:Int?=null,
-    val revision:Long=0,val workHint:String=""
+    val revision:Long=0,val workHint:String="",val avatarEnergy:Float=0f
 )
 internal object ThermalPolicy {
     fun blocks(status:Int)=status>=3

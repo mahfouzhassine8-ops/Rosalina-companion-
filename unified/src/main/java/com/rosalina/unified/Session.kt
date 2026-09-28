@@ -181,7 +181,7 @@ internal class Session private constructor(private val context:Context) {
         if(lease.current()!=r.id)return@withContext
         val old=state.value
         val message=when{failure is CancellationException->stopReason.ifBlank{"Stopped"};failure!=null->failure.message ?:failure.javaClass.simpleName;r.modelKey=="prepare"->"Ready · chat model prepared";old.result.isNotBlank() && old.kind in listOf(TaskKind.CREATE,TaskKind.EDIT,TaskKind.ANIMATE)->"Ready · saved privately";else->"Ready"}
-        val done=old.copy(busy=false,stopping=false,stage=message,percent=null,step=0,total=0,eta="",pid=0,voiceStage="",workHint="",error=if(failure!=null && failure !is CancellationException)failure.stackTraceToString()else old.error,quarantined=old.quarantined || failure is WorkerQuarantined)
+        val done=old.copy(busy=false,stopping=false,stage=message,percent=null,step=0,total=0,eta="",pid=0,voiceStage="",workHint="",avatarEnergy=0f,error=if(failure!=null && failure !is CancellationException)failure.stackTraceToString()else old.error,quarantined=old.quarantined || failure is WorkerQuarantined)
         service.finishTask(r.id)
         val report=diagnostics(done);withContext(Dispatchers.IO){runCatching{atomicText(File(context.filesDir,"last-diagnostics.txt"),report)}}
         taskService=null;request=null;activeJob=null;prefs.edit().remove("active-id").apply();lease.release(r.id);mutable.value=done
@@ -240,11 +240,12 @@ internal class Session private constructor(private val context:Context) {
                             when(event.getString("type")) {
                                 "stage"->update(r.id){it.copy(voiceStage=event.getString("text").orEmpty())}
                                 "playback"->{capture?.outputRoute=event.getInt("route",-1);capture?.outputActive=event.getString("text")=="start"}
+                                "avatar"->update(r.id){it.copy(avatarEnergy=event.getFloat("energy",0f).coerceIn(0f,1f))}
                             }
                         }
                         val wasInterrupted=result.getBoolean("interrupted")
                         speechMetrics="Kokoro Voice V2; ${result.getString("voiceProfile")}; pitch path=${if(result.getBoolean("pitchApplied"))"Android pitch-preserving playback" else "neutral fallback"}; first audio ${result.getLong("firstAudioMs")} ms; audio ${result.getLong("audioMs")} ms; elapsed ${result.getLong("elapsedMs")} ms; interrupted=$wasInterrupted; restart attempts=${attempt-1}"
-                        if(wasInterrupted){unavailable=true;update(r.id){it.copy(voiceStage="")}}
+                        if(wasInterrupted){unavailable=true;update(r.id){it.copy(voiceStage="",avatarEnergy=0f)}}
                         completed=true
                     }catch(e:CancellationException){throw e}
                     catch(t:Throwable){
@@ -257,7 +258,7 @@ internal class Session private constructor(private val context:Context) {
                             delay(80)
                         } else {
                             unavailable=true;completed=true
-                            update(r.id){it.copy(voiceStage="Voice unavailable · ${t.message}",error="Speech: ${t.stackTraceToString()}")}
+                            update(r.id){it.copy(voiceStage="Voice unavailable · ${t.message}",avatarEnergy=0f,error="Speech: ${t.stackTraceToString()}")}
                             try{speech.shutdown()}catch(_:Throwable){}
                         }
                     } finally {capture?.outputActive=false}
@@ -285,7 +286,7 @@ internal class Session private constructor(private val context:Context) {
             chatMetrics="Chat warm model=${result.getBoolean("warmModel")}; clean recovery=${result.getBoolean("recovered")}; setup=${result.getLong("modelSetupMs")} ms; first text=${result.getLong("firstTextMs")} ms; response=${result.getLong("responseMs")} ms; characters=${result.getInt("characters")}; emitted text pieces=${result.getInt("textPieces")} (not native token count); chat PSS=${result.getLong("chatPssKb")} KiB"
             if(readAloud){val visible=SpeechText.spoken(answer.toString());val span=if(liveSpeech)220 else 500;while(spoken<visible.length){val end=minOf(visible.length,spoken+span);enqueue(visible.substring(spoken,end).trim());spoken=end}}
         } finally {queue.close();if(answer.isNotBlank())addTurn("Rosalina",answer.toString())}
-        speechJob?.join();update(r.id){it.copy(answer="",voiceStage="")}
+        speechJob?.join();update(r.id){it.copy(answer="",voiceStage="",avatarEnergy=0f)}
     }
     private suspend fun performVoice(r:TaskRequest) {
         if(prefs.getBoolean("live-voice",true))performLiveVoice(r)else performClassicVoice(r)
@@ -430,7 +431,7 @@ internal class Session private constructor(private val context:Context) {
                         input.capture(::manual,::finished,{responseDone.get()}) {
                             interrupted.set(true)
                             speech.interruptNow()
-                            update(r.id){it.copy(stage="Listening · LIVE · interrupted · finishing thought silently",voiceStage="")}
+                            update(r.id){it.copy(stage="Listening · LIVE · interrupted · finishing thought silently",voiceStage="",avatarEnergy=0f)}
                         }?.also{recorded.set(it)}
                     }
                     try {

@@ -11,6 +11,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
+import kotlin.math.sqrt
 
 class SpeechService:NativeRpcService() {
     private var tts:OfflineTts?=null
@@ -88,12 +89,23 @@ class SpeechService:NativeRpcService() {
                 true
             }.getOrDefault(false)
             out.play()
-            val started=SystemClock.elapsedRealtime();var first=0L;var total=0L;var announced=false;var clipped=0
+            val started=SystemClock.elapsedRealtime();var first=0L;var total=0L;var announced=false;var clipped=0;var lastAvatarEmit=0L
             emit("stage","Rosalina is speaking · "+expression.name,null)
             engine.generateWithCallback(text,sid,expression.pace){samples->
                 if(cancelled.get())return@generateWithCallback 0
                 val shaped=dsp.process(samples)
-                for(value in shaped){if(!value.isFinite())error("Voice produced non-finite audio");if(abs(value)>=.999f){clipped++;if(clipped>rate/20)error("Voice produced clipped audio; stopped")}else clipped=0}
+                var energySum=0.0
+                for(value in shaped){
+                    if(!value.isFinite())error("Voice produced non-finite audio")
+                    energySum+=value.toDouble()*value.toDouble()
+                    if(abs(value)>=.999f){clipped++;if(clipped>rate/20)error("Voice produced clipped audio; stopped")}else clipped=0
+                }
+                val avatarNow=SystemClock.elapsedRealtime()
+                if(shaped.isNotEmpty() && avatarNow-lastAvatarEmit>=70L){
+                    val rms=sqrt(energySum/shaped.size).toFloat()
+                    emit("avatar","energy",Bundle().apply{putFloat("energy",(rms*4.5f).coerceIn(0f,1f))})
+                    lastAvatarEmit=avatarNow
+                }
                 if(!announced){announced=true;emit("playback","start",Bundle().apply{putInt("route",out.routedDevice?.type ?: -1);putString("profile",expression.summary());putBoolean("pitchApplied",pitchApplied)})}
                 var offset=0
                 while(offset<shaped.size && !cancelled.get()) {
@@ -117,6 +129,6 @@ class SpeechService:NativeRpcService() {
                 putBoolean("pitchApplied",pitchApplied)
                 putBoolean("interrupted",interrupted)
             }
-        }finally{emit("playback","stop",null);runCatching{audio?.pause();audio?.flush();audio?.release()};track=null;am.abandonAudioFocusRequest(request);focus=null}
+        }finally{emit("avatar","energy",Bundle().apply{putFloat("energy",0f)});emit("playback","stop",null);runCatching{audio?.pause();audio?.flush();audio?.release()};track=null;am.abandonAudioFocusRequest(request);focus=null}
     }
 }

@@ -46,6 +46,7 @@ class MainActivity:AppCompatActivity() {
     private var chatList:LinearLayout?=null
     private var chatScroll:ScrollView?=null
     private var streaming:TextView?=null
+    private var avatar:LiveAvatarView?=null
     private var rendered:List<Pair<String,String>> = emptyList()
     private var liveText=""
     private var chatWindow=60
@@ -88,18 +89,22 @@ class MainActivity:AppCompatActivity() {
         status=text("Ready",14f);thermal=text("",11f,muted)
         progress=ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal).apply{max=100;visibility=View.GONE}
         stop=button("Stop"){session.stop()}.apply{visibility=View.GONE}
-        val stateBox=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;background=shape(panel);setPadding(dp(12),dp(8),dp(12),dp(8));addView(text("UNIFIED CANDIDATE 2 · ADAPTIVE HYBRID LIVE C1.1",10f,accent));addView(status);addView(thermal);addView(progress,LinearLayout.LayoutParams(-1,dp(5)));addView(row(button("Diagnostics"){diagnosticsDialog()},stop))}
+        val stateBox=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;background=shape(panel);setPadding(dp(12),dp(8),dp(12),dp(8));addView(text("UNIFIED · ADAPTIVE HYBRID LIVE · AVATAR C1",10f,accent));addView(status);addView(thermal);addView(progress,LinearLayout.LayoutParams(-1,dp(5)));addView(row(button("Diagnostics"){diagnosticsDialog()},stop))}
         root.addView(stateBox,LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(8);bottomMargin=dp(6)})
         for(label in listOf("Chat","Create","Edit","Animate"))tabs+=button(label){mode=label;session.prefs.edit().putString("tab",mode).apply();buildPane();if(mode=="Chat")session.prepareChat()}
         root.addView(row(*tabs.toTypedArray()));content=FrameLayout(this);root.addView(content,LinearLayout.LayoutParams(-1,0,1f));setContentView(outer)
     }
     private fun buildPane() {
-        content.removeAllViews();controls.clear();preview=null;reference=null;resultLabel=null;chatList=null;chatScroll=null;streaming=null;liveText="";lastResult="";lastPhoto="";rendered=emptyList()
+        content.removeAllViews();controls.clear();preview=null;reference=null;resultLabel=null;chatList=null;chatScroll=null;streaming=null;avatar=null;liveText="";lastResult="";lastPhoto="";rendered=emptyList()
         tabs.forEach{it.setTextColor(if(it.text==mode)bg else ink);it.background=shape(if(it.text==mode)accent else panel)}
         val body=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(4),dp(8),dp(4),dp(8))}
         val draftKey="draft-$mode"
         prompt=field(when(mode){"Chat"->"Message Rosalina…";"Animate"->"Describe the motion…";"Edit"->"Describe how to transform your photo…";else->"Describe what you want to create…"}).apply{id=1001;setText(session.prefs.getString(draftKey,""));addTextChangedListener(object:TextWatcher{override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){};override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){session.prefs.edit().putString(draftKey,s.toString()).apply()};override fun afterTextChanged(s:Editable?){} })}
         if(mode=="Chat") {
+            if(session.prefs.getBoolean("live-avatar",true)) {
+                val live=LiveAvatarView(this).apply{contentDescription="Rosalina live avatar";bind(session.state.value)};avatar=live
+                body.addView(live,LinearLayout.LayoutParams(-1,dp(320)).apply{bottomMargin=dp(8)})
+            }
             val messages=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};chatList=messages
             val scroll=ScrollView(this).apply{isFillViewport=true;isSmoothScrollingEnabled=true;addView(messages)};chatScroll=scroll
             body.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));body.addView(prompt)
@@ -153,6 +158,7 @@ class MainActivity:AppCompatActivity() {
     }
     private fun update(s:TaskState) {
         status.change(s.stage+if(s.voiceStage.isNotBlank())"\n${s.voiceStage}" else "")
+        avatar?.bind(s)
         thermal.change("Thermal: ${ThermalPolicy.label(s.thermal)} · Available RAM: ${String.format("%.1f",s.availableBytes/1e9)} GB"+if(s.busy)"\n${s.elapsedMs/1000}s elapsed${if(s.eta.isBlank())"" else " · ${s.eta}"}${if(s.workHint.isBlank() || s.kind==TaskKind.VOICE)"" else "\n${s.workHint}"}" else "")
         stop.visibility=if(s.busy)View.VISIBLE else View.GONE;stop.isEnabled=!s.stopping
         progress.visibility=if(s.busy && s.kind !in listOf(TaskKind.CHAT,TaskKind.VOICE))View.VISIBLE else View.GONE
@@ -192,6 +198,8 @@ class MainActivity:AppCompatActivity() {
         val spoken=Switch(this).apply{text="Read text-chat replies aloud";setTextColor(ink);isChecked=session.prefs.getBoolean("spoken-replies",false)};body.addView(spoken)
         val handsFree=Switch(this).apply{text="Hands-free interruption in Voice mode";setTextColor(ink);isChecked=session.prefs.getBoolean("hands-free",true)};body.addView(handsFree)
         val liveVoice=Switch(this).apply{text="Live conversation mode · keep local voice engines warm";setTextColor(ink);isChecked=session.prefs.getBoolean("live-voice",true)};body.addView(liveVoice)
+        val liveAvatar=Switch(this).apply{text="Live avatar · show Rosalina in Chat and Voice";setTextColor(ink);isChecked=session.prefs.getBoolean("live-avatar",true)};body.addView(liveAvatar)
+        body.addView(text("Avatar C1 uses your locked Rosalina reference image with low-overhead breathing, sway and state reactions. Speaking motion is driven by real Voice V2 audio energy. The renderer is rig-ready so a layered/full skeletal model can replace the single-image adapter later.",11f,muted))
         val liveEndpoint=SeekBar(this).apply{max=850;progress=(session.prefs.getInt("live-endpoint-ms",820)-550).coerceIn(0,850)}
         body.addView(text("Live turn timing · quicker ← pause before Rosalina answers → more patient",13f));body.addView(liveEndpoint)
         body.addView(text("Live mode keeps Qwen, Whisper and Rosalina's voice in separate local processes during the session. It listens while she speaks and supports barge-in. If free RAM is too low, use Classic Voice V2.",12f,muted))
@@ -237,7 +245,7 @@ class MainActivity:AppCompatActivity() {
             val pacePercent=70+pace.progress
             session.prefs.edit()
                 .putString("system",system.text.toString()).putBoolean("spoken-replies",spoken.isChecked).putBoolean("hands-free",handsFree.isChecked)
-                .putBoolean("live-voice",liveVoice.isChecked).putInt("live-endpoint-ms",550+liveEndpoint.progress)
+                .putBoolean("live-voice",liveVoice.isChecked).putBoolean("live-avatar",liveAvatar.isChecked).putInt("live-endpoint-ms",550+liveEndpoint.progress)
                 .putBoolean("adaptive-live-learning",adaptiveLive.isChecked).putBoolean("online-enhancements",online.isChecked)
                 .putString("voice-style",styleKeys[style.selectedItemPosition]).putBoolean("voice-realism",realism.isChecked).putInt("voice-expression",expression.progress)
                 .putInt("voice-pitch",pitch.progress-80).putInt("voice-breath",breath.progress).putInt("voice-tone",tone.progress-80)
