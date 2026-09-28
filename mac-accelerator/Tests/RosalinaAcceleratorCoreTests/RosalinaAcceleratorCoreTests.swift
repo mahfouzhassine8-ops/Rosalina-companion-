@@ -51,11 +51,14 @@ final class RosalinaAcceleratorCoreTests: XCTestCase {
         XCTAssertEqual(opened.operation, "status")
     }
 
-    func testMetalProbeUsesRealDeviceWhenAvailable() throws {
+    func testMetalProbeUsesFullProductionSizeOnAppleSilicon() throws {
         #if arch(arm64)
-        let result = try MetalProbe.run(elements: 4096)
+        let result = try MetalProbe.run(elements: 65_536)
         XCTAssertTrue(result.passed)
-        XCTAssertLessThan(result.maxError, 0.0001)
+        XCTAssertEqual(result.storageMode, "shared")
+        XCTAssertLessThan(result.constantMaxError, 0.0001)
+        XCTAssertLessThan(result.vectorMaxError, 0.0001)
+        XCTAssertNil(result.firstMismatchIndex)
         #endif
     }
 }

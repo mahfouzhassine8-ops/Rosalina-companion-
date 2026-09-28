@@ -83,21 +83,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildWindow() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
+            contentRect: NSRect(x: 0, y: 0, width: 820, height: 600),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Rosalina Accelerator"
         window.center()
-        window.minSize = NSSize(width: 680, height: 500)
+        window.minSize = NSSize(width: 720, height: 520)
 
         let content = NSView()
         content.translatesAutoresizingMaskIntoConstraints = false
         window.contentView = content
 
         let title = label("ROSALINA ACCELERATOR", size: 26, weight: .semibold)
-        let subtitle = label("PRIVATE MAC COMPANION · v0.1.2", size: 12, weight: .medium)
+        let subtitle = label("PRIVATE MAC COMPANION · v0.1.3", size: 12, weight: .medium)
         subtitle.textColor = .secondaryLabelColor
 
         let status = label("Mac app launched successfully. Accelerator is stopped.", size: 15, weight: .medium)
@@ -126,7 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         probeLabel = probe
 
         let privacy = label(
-            "v0.1.2 intentionally does not accept personal photo jobs yet. Create/Edit/Animate stay disabled until the Mac-native image pipeline passes fidelity testing.",
+            "v0.1.3 intentionally does not accept personal photo jobs yet. Create/Edit/Animate stay disabled until the Mac-native image pipeline passes fidelity testing.",
             size: 12,
             weight: .regular
         )
@@ -203,20 +203,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func runMetalProbe() {
-        probeLabel?.stringValue = "Testing Metal GPU…"
+        probeLabel?.stringValue = "Testing Metal GPU with shared buffers…"
         LaunchLog.write("metal probe clicked")
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
                 let result = try MetalProbe.run()
                 DispatchQueue.main.async {
-                    self?.probeLabel?.stringValue = String(
-                        format: "PASS · %@ · %,d elements · %.2f ms · max error %.6f",
+                    let verdict = result.passed ? "PASS" : "FAIL"
+                    var detail = String(
+                        format: "%@ · %@ · %,d elements · %.2f ms · constant err %.6f · vector err %.6f",
+                        verdict,
                         result.gpuName,
                         result.elements,
                         result.elapsedMs,
-                        result.maxError
+                        result.constantMaxError,
+                        result.vectorMaxError
                     )
-                    LaunchLog.write("metal probe passed")
+                    if let index = result.firstMismatchIndex,
+                       let expected = result.firstMismatchExpected,
+                       let actual = result.firstMismatchActual {
+                        detail += String(
+                            format: " · first mismatch #%d expected %.6f actual %.6f",
+                            index,
+                            expected,
+                            actual
+                        )
+                    }
+                    self?.probeLabel?.stringValue = detail
+                    LaunchLog.write("metal probe \(verdict.lowercased()) · max error \(result.maxError)")
                 }
             } catch {
                 DispatchQueue.main.async {

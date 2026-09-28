@@ -90,6 +90,12 @@ public struct MetalProbeResult: Codable, Equatable {
     public let elements: Int
     public let elapsedMs: Double
     public let maxError: Float
+    public let constantMaxError: Float
+    public let vectorMaxError: Float
+    public let firstMismatchIndex: Int?
+    public let firstMismatchExpected: Float?
+    public let firstMismatchActual: Float?
+    public let storageMode: String
 }
 
 public enum AcceleratorError: Error, LocalizedError {
