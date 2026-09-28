@@ -234,7 +234,9 @@ internal class Session private constructor(private val context:Context) {
                             "playback"->{capture?.outputRoute=event.getInt("route",-1);capture?.outputActive=event.getString("text")=="start"}
                         }
                     }
-                    speechMetrics="Kokoro Voice V2; ${result.getString("voiceProfile")}; pitch path=${if(result.getBoolean("pitchApplied"))"Android pitch-preserving playback" else "neutral fallback"}; first audio ${result.getLong("firstAudioMs")} ms; audio ${result.getLong("audioMs")} ms; elapsed ${result.getLong("elapsedMs")} ms"
+                    val wasInterrupted=result.getBoolean("interrupted")
+                    speechMetrics="Kokoro Voice V2; ${result.getString("voiceProfile")}; pitch path=${if(result.getBoolean("pitchApplied"))"Android pitch-preserving playback" else "neutral fallback"}; first audio ${result.getLong("firstAudioMs")} ms; audio ${result.getLong("audioMs")} ms; elapsed ${result.getLong("elapsedMs")} ms; interrupted=$wasInterrupted"
+                    if(wasInterrupted){unavailable=true;update(r.id){it.copy(voiceStage="")}}
                 }catch(e:CancellationException){throw e}
                 catch(t:Throwable){unavailable=true;update(r.id){it.copy(voiceStage="Voice unavailable · ${t.message}",error="Speech: ${t.stackTraceToString()}")};speech.shutdown()}
                 finally{capture?.outputActive=false}
@@ -243,7 +245,8 @@ internal class Session private constructor(private val context:Context) {
         val answer=StringBuilder();var spoken=0;var lastSpeechScan=0L
         chatNeedsReset=true
         try {
-            val result=chat.call(Bundle().apply{putString("model",model.path);putString("prompt",prompt);putString("system",prefs.getString("system",DEFAULT_SYSTEM));putInt("maxTokens",prefs.getInt("max-tokens",1024))}){event->
+            val responseLimit=if(liveSpeech)minOf(prefs.getInt("max-tokens",1024),256)else prefs.getInt("max-tokens",1024)
+            val result=chat.call(Bundle().apply{putString("model",model.path);putString("prompt",prompt);putString("system",prefs.getString("system",DEFAULT_SYSTEM));putInt("maxTokens",responseLimit)}){event->
                 when(event.getString("type")) {
                     "stage"->update(r.id){it.copy(stage=event.getString("text").orEmpty(),pid=event.getInt("pid"),backend="Qwen · preserved CPU engine")}
                     "token"->{
@@ -404,9 +407,8 @@ internal class Session private constructor(private val context:Context) {
                     val next=async {
                         input.capture(::manual,::finished,{responseDone.get()}) {
                             interrupted.set(true)
-                            response.cancel(CancellationException("User live-voice interruption"))
                             speech.interruptNow()
-                            update(r.id){it.copy(stage="Listening · LIVE · interrupted",voiceStage="")}
+                            update(r.id){it.copy(stage="Listening · LIVE · interrupted · finishing thought silently",voiceStage="")}
                         }?.also{recorded.set(it)}
                     }
                     try {

@@ -107,7 +107,7 @@ class SpeechService:NativeRpcService() {
             }
             val deadline=SystemClock.elapsedRealtime()+maxOf(5000L,total*1000/rate+3000L)
             while(!cancelled.get() && out.playbackHeadPosition.toLong()<total){currentCoroutineContext().ensureActive();check(SystemClock.elapsedRealtime()<deadline){"Audio output did not finish"};kotlinx.coroutines.delay(20)}
-            check(!cancelled.get()){"Speech interrupted by audio focus change"}
+            val interrupted=cancelled.get()
             return Bundle().apply{
                 putLong("firstAudioMs",first)
                 putLong("elapsedMs",SystemClock.elapsedRealtime()-started)
@@ -115,6 +115,7 @@ class SpeechService:NativeRpcService() {
                 putString("voice","Kokoro82M/speaker-$sid")
                 putString("voiceProfile",expression.summary())
                 putBoolean("pitchApplied",pitchApplied)
+                putBoolean("interrupted",interrupted)
             }
         }finally{emit("playback","stop",null);runCatching{audio?.pause();audio?.flush();audio?.release()};track=null;am.abandonAudioFocusRequest(request);focus=null}
     }
