@@ -80,7 +80,7 @@ class SpeechService:NativeRpcService() {
         val sid=values.getInt("speaker",3).coerceIn(0,engine.numSpeakers()-1)
         val expression=VoiceExpression(
             name=values.getString("voiceProfile") ?: "Voice V2",
-            pitchSemitones=values.getFloat("pitchSemitones",0f),
+            pitchSemitones=0f,
             breathiness=values.getFloat("breathiness",0f),
             tone=values.getFloat("tone",0f),
             rasp=values.getFloat("rasp",0f),
