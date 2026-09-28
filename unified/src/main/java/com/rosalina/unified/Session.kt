@@ -476,7 +476,7 @@ internal class Session private constructor(private val context:Context) {
                             }
                         }
                         learner.recordTurn(interrupted.get(),lastChatFirstTextMs)
-                        liveMetrics=liveMetrics+"\n"+learner.snapshot().summary()+"\n"+OnlineEnhancements.state(context,prefs).summary()
+                        liveMetrics=liveMetrics.substringBefore("\nAdaptive Live turns=")+"\n"+learner.snapshot().summary()+"\n"+OnlineEnhancements.state(context,prefs).summary()
                         previousOutput=snapshot.lastOrNull{it.first=="Rosalina"}?.second.orEmpty()
                         responseDone.set(true)
                         update(r.id){it.copy(stage="Listening · LIVE · your turn",answer="",voiceStage="",backend="Live coordinator · warm")}
