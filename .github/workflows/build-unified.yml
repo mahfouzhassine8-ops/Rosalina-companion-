@@ -1,7 +1,7 @@
 name: Rosalina Unified Candidate
 on:
   push:
-    branches: [rosalina-unified-v1-candidate]
+    branches: [rosalina-unified-v1-candidate, rosalina-voice-v2-expressive-candidate]
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,7 +26,7 @@ jobs:
           mkdir -p source-backup
           git archive --format=zip HEAD -o source-backup/Rosalina-Unified-source.zip
           git rev-parse HEAD > source-backup/commit.txt
-          cp UNIFIED_AUDIT.md UNIFIED_SCOPE_CHANGE.md SIGNING.md source-backup/
+          cp UNIFIED_AUDIT.md UNIFIED_SCOPE_CHANGE.md SIGNING.md VOICE_V2.md source-backup/
       - uses: actions/upload-artifact@v4
         with: {name: Rosalina-Unified-source, path: source-backup/}
   native:
@@ -120,11 +120,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p deliverables/signing-tools
-          cp unified/build/outputs/apk/release/unified-release-unsigned.apk deliverables/Rosalina-Unified-Candidate-1-arm64-UNSIGNED.apk
+          cp unified/build/outputs/apk/release/unified-release-unsigned.apk deliverables/Rosalina-Unified-Candidate-2-Voice-V2-arm64-UNSIGNED.apk
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions deliverables/*.apk | tee qa/permissions.txt
           ! grep -q android.permission.INTERNET qa/permissions.txt
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging deliverables/*.apk > qa/package.txt
-          python3 tools/verify_unified_apk.py deliverables/Rosalina-Unified-Candidate-1-arm64-UNSIGNED.apk
+          python3 tools/verify_unified_apk.py deliverables/Rosalina-Unified-Candidate-2-Voice-V2-arm64-UNSIGNED.apk
           cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" deliverables/signing-tools/
           cp "$ANDROID_HOME/build-tools/35.0.0/zipalign" deliverables/signing-tools/
           cp -r qa deliverables/

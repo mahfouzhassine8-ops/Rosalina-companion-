@@ -182,6 +182,30 @@ internal class Session private constructor(private val context:Context) {
     private suspend fun setTaskMode(r:TaskRequest,playback:Boolean=false)=withContext(Dispatchers.Main.immediate) {
         currentCoroutineContext().ensureActive();taskService?.setMode(r.id,r.kind,microphone=voiceActive,playback=playback)
     }
+    private fun voiceExpression(userText:String,spokenText:String):VoiceExpression =
+        VoiceExpressionResolver.resolve(
+            mode=prefs.getString("voice-style","adaptive") ?: "adaptive",
+            intensity=prefs.getInt("voice-expression",75)/100f,
+            pitchTrim=prefs.getInt("voice-pitch",0)/10f,
+            breathTrim=prefs.getInt("voice-breath",0)/100f,
+            toneTrim=prefs.getInt("voice-tone",0)/100f,
+            raspTrim=prefs.getInt("voice-rasp",0)/100f,
+            energyTrim=prefs.getInt("voice-energy",0)/100f,
+            pace=prefs.getInt("voice-pace",100)/100f,
+            userText=userText,
+            spokenText=spokenText,
+            realismGuard=prefs.getBoolean("voice-realism",true)
+        )
+    private fun Bundle.putExpression(expression:VoiceExpression) {
+        putString("voiceProfile",expression.name)
+        putFloat("pitchSemitones",expression.pitchSemitones)
+        putFloat("breathiness",expression.breathiness)
+        putFloat("tone",expression.tone)
+        putFloat("rasp",expression.rasp)
+        putFloat("energy",expression.energy)
+        putFloat("pace",expression.pace)
+        putFloat("voiceIntensity",expression.intensity)
+    }
     private suspend fun performChat(r:TaskRequest,prompt:String,readAloud:Boolean)=coroutineScope {
         require(prompt.isNotBlank() && prompt.length<=8000){"Use a prompt between 1 and 8,000 characters"}
         setTaskMode(r,readAloud)
@@ -194,13 +218,17 @@ internal class Session private constructor(private val context:Context) {
             for(text in queue) {
                 if(unavailable)continue
                 try {
-                    val result=speech.call(Bundle().apply{putString("operation","speak");putString("text",text);putInt("speaker",prefs.getInt("speaker",3));putFloat("speed",prefs.getFloat("speed",1f));putBoolean("conversation",voiceActive)}){event->
+                    val expression=voiceExpression(prompt,text)
+                    val result=speech.call(Bundle().apply{
+                        putString("operation","speak");putString("text",text);putInt("speaker",prefs.getInt("speaker",3));putBoolean("conversation",voiceActive)
+                        putExpression(expression)
+                    }){event->
                         when(event.getString("type")) {
                             "stage"->update(r.id){it.copy(voiceStage=event.getString("text").orEmpty())}
                             "playback"->{capture?.outputRoute=event.getInt("route",-1);capture?.outputActive=event.getString("text")=="start"}
                         }
                     }
-                    speechMetrics="Kokoro first audio ${result.getLong("firstAudioMs")} ms; audio ${result.getLong("audioMs")} ms; elapsed ${result.getLong("elapsedMs")} ms"
+                    speechMetrics="Kokoro Voice V2; ${result.getString("voiceProfile")}; pitch path=${if(result.getBoolean("pitchApplied"))"Android pitch-preserving playback" else "neutral fallback"}; first audio ${result.getLong("firstAudioMs")} ms; audio ${result.getLong("audioMs")} ms; elapsed ${result.getLong("elapsedMs")} ms"
                 }catch(e:CancellationException){throw e}
                 catch(t:Throwable){unavailable=true;update(r.id){it.copy(voiceStage="Voice unavailable · ${t.message}",error="Speech: ${t.stackTraceToString()}")};speech.shutdown()}
                 finally{capture?.outputActive=false}

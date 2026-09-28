@@ -46,7 +46,18 @@ class SpeechService:NativeRpcService() {
         }
         val engine=tts ?:error("Voice unavailable")
         val text=values.getString("text").orEmpty().trim();require(text.isNotBlank() && text.length<=1000){"Invalid speech chunk"}
-        val rate=engine.sampleRate();val sid=values.getInt("speaker",3).coerceIn(0,engine.numSpeakers()-1);val speed=values.getFloat("speed",1f).coerceIn(.7f,1.4f)
+        val rate=engine.sampleRate()
+        val sid=values.getInt("speaker",3).coerceIn(0,engine.numSpeakers()-1)
+        val expression=VoiceExpression(
+            name=values.getString("voiceProfile") ?: "Voice V2",
+            pitchSemitones=values.getFloat("pitchSemitones",0f),
+            breathiness=values.getFloat("breathiness",0f),
+            tone=values.getFloat("tone",0f),
+            rasp=values.getFloat("rasp",0f),
+            energy=values.getFloat("energy",1f),
+            pace=values.getFloat("pace",values.getFloat("speed",1f)),
+            intensity=values.getFloat("voiceIntensity",1f)
+        ).safe()
         val attributes=AudioAttributes.Builder().setUsage(if(values.getBoolean("conversation"))AudioAttributes.USAGE_VOICE_COMMUNICATION else AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
         val am=getSystemService(AudioManager::class.java)
         val request=AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT).setAudioAttributes(attributes).setOnAudioFocusChangeListener{loss->if(loss<0)interrupt()}.build()
@@ -54,16 +65,24 @@ class SpeechService:NativeRpcService() {
         var audio:AudioTrack?=null
         try {
             val out=AudioTrack.Builder().setAudioAttributes(attributes).setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT).setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build()).setBufferSizeInBytes(maxOf(rate,AudioTrack.getMinBufferSize(rate,AudioFormat.CHANNEL_OUT_MONO,AudioFormat.ENCODING_PCM_FLOAT))).setTransferMode(AudioTrack.MODE_STREAM).build()
-            audio=out;track=out;out.play()
+            audio=out;track=out
+            val dsp=VoiceDspProcessor(rate,expression)
+            val pitchFactor=VoiceDspProcessor.pitchFactor(expression.pitchSemitones)
+            val pitchApplied=runCatching {
+                out.playbackParams=PlaybackParams().allowDefaults().setPitch(pitchFactor).setSpeed(1f)
+                true
+            }.getOrDefault(false)
+            out.play()
             val started=SystemClock.elapsedRealtime();var first=0L;var total=0L;var announced=false;var clipped=0
-            emit("stage","Rosalina is speaking",null)
-            engine.generateWithCallback(text,sid,speed){samples->
+            emit("stage","Rosalina is speaking · "+expression.name,null)
+            engine.generateWithCallback(text,sid,expression.pace){samples->
                 if(cancelled.get())return@generateWithCallback 0
-                for(value in samples){if(!value.isFinite())error("Voice produced non-finite audio");if(abs(value)>=.999f){clipped++;if(clipped>rate/20)error("Voice produced clipped audio; stopped")}else clipped=0}
-                if(!announced){announced=true;emit("playback","start",Bundle().apply{putInt("route",out.routedDevice?.type ?: -1)})}
+                val shaped=dsp.process(samples)
+                for(value in shaped){if(!value.isFinite())error("Voice produced non-finite audio");if(abs(value)>=.999f){clipped++;if(clipped>rate/20)error("Voice produced clipped audio; stopped")}else clipped=0}
+                if(!announced){announced=true;emit("playback","start",Bundle().apply{putInt("route",out.routedDevice?.type ?: -1);putString("profile",expression.summary());putBoolean("pitchApplied",pitchApplied)})}
                 var offset=0
-                while(offset<samples.size && !cancelled.get()) {
-                    val n=out.write(samples,offset,minOf(2048,samples.size-offset),AudioTrack.WRITE_BLOCKING)
+                while(offset<shaped.size && !cancelled.get()) {
+                    val n=out.write(shaped,offset,minOf(2048,shaped.size-offset),AudioTrack.WRITE_BLOCKING)
                     check(n>0){"Audio output stopped accepting samples: $n"}
                     if(first==0L)first=SystemClock.elapsedRealtime()-started
                     offset+=n;total+=n
@@ -74,7 +93,14 @@ class SpeechService:NativeRpcService() {
             val deadline=SystemClock.elapsedRealtime()+maxOf(5000L,total*1000/rate+3000L)
             while(!cancelled.get() && out.playbackHeadPosition.toLong()<total){currentCoroutineContext().ensureActive();check(SystemClock.elapsedRealtime()<deadline){"Audio output did not finish"};kotlinx.coroutines.delay(20)}
             check(!cancelled.get()){"Speech interrupted by audio focus change"}
-            return Bundle().apply{putLong("firstAudioMs",first);putLong("elapsedMs",SystemClock.elapsedRealtime()-started);putLong("audioMs",total*1000/rate);putString("voice","Kokoro82M/speaker-$sid")}
+            return Bundle().apply{
+                putLong("firstAudioMs",first)
+                putLong("elapsedMs",SystemClock.elapsedRealtime()-started)
+                putLong("audioMs",(total*1000L/rate/expression.pace).toLong())
+                putString("voice","Kokoro82M/speaker-$sid")
+                putString("voiceProfile",expression.summary())
+                putBoolean("pitchApplied",pitchApplied)
+            }
         }finally{emit("playback","stop",null);runCatching{audio?.pause();audio?.flush();audio?.release()};track=null;am.abandonAudioFocusRequest(request);focus=null}
     }
 }

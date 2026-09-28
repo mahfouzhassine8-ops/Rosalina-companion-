@@ -87,7 +87,7 @@ class MainActivity:AppCompatActivity() {
         status=text("Ready",14f);thermal=text("",11f,muted)
         progress=ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal).apply{max=100;visibility=View.GONE}
         stop=button("Stop"){session.stop()}.apply{visibility=View.GONE}
-        val stateBox=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;background=shape(panel);setPadding(dp(12),dp(8),dp(12),dp(8));addView(text("UNIFIED CANDIDATE 2",10f,accent));addView(status);addView(thermal);addView(progress,LinearLayout.LayoutParams(-1,dp(5)));addView(row(button("Diagnostics"){diagnosticsDialog()},stop))}
+        val stateBox=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;background=shape(panel);setPadding(dp(12),dp(8),dp(12),dp(8));addView(text("UNIFIED CANDIDATE 2 · VOICE V2",10f,accent));addView(status);addView(thermal);addView(progress,LinearLayout.LayoutParams(-1,dp(5)));addView(row(button("Diagnostics"){diagnosticsDialog()},stop))}
         root.addView(stateBox,LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(8);bottomMargin=dp(6)})
         for(label in listOf("Chat","Create","Edit","Animate"))tabs+=button(label){mode=label;session.prefs.edit().putString("tab",mode).apply();buildPane();if(mode=="Chat")session.prepareChat()}
         root.addView(row(*tabs.toTypedArray()));content=FrameLayout(this);root.addView(content,LinearLayout.LayoutParams(-1,0,1f));setContentView(outer)
@@ -180,13 +180,49 @@ class MainActivity:AppCompatActivity() {
         val tokens=field("Maximum response tokens").apply{inputType=InputType.TYPE_CLASS_NUMBER;minLines=1;setText(session.prefs.getInt("max-tokens",1024).toString())};body.addView(text("Maximum response length · 64–4096 tokens",13f));body.addView(tokens)
         val spoken=Switch(this).apply{text="Read text-chat replies aloud";setTextColor(ink);isChecked=session.prefs.getBoolean("spoken-replies",false)};body.addView(spoken)
         val handsFree=Switch(this).apply{text="Hands-free interruption in Voice mode";setTextColor(ink);isChecked=session.prefs.getBoolean("hands-free",true)};body.addView(handsFree)
-        val speed=SeekBar(this).apply{max=70;progress=((session.prefs.getFloat("speed",1f)-.7f)*100).toInt()};body.addView(text("Voice speed · 0.7× to 1.4×",14f));body.addView(speed)
+
+        body.addView(text("VOICE V2 · EXPRESSIVE ROSALINA",16f,accent))
+        val styleKeys=arrayOf("adaptive","natural","warm","breathy","deep","bright","squeaky","intimate")
+        val styleNames=arrayOf("Adaptive · Rosalina chooses naturally","Natural","Warm","Breathy","Low & smoky","Bright & playful","Squeaky · stylized","Intimate")
+        val style=Spinner(this).apply{
+            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,styleNames)
+            setSelection(styleKeys.indexOf(session.prefs.getString("voice-style","adaptive")).coerceAtLeast(0))
+        };body.addView(style)
+        val realism=Switch(this).apply{text="Realism Guard · preserve natural voice quality";setTextColor(ink);isChecked=session.prefs.getBoolean("voice-realism",true)};body.addView(realism)
+        body.addView(text("Realism Guard keeps Adaptive/Natural pitch, breathiness, rasp, pace and energy in conservative ranges. Squeaky is always an explicit stylized effect.",12f,muted))
+
+        val expression=SeekBar(this).apply{max=100;progress=session.prefs.getInt("voice-expression",75).coerceIn(0,100)}
+        body.addView(text("Expression strength · subtle → full",13f));body.addView(expression)
+        val pitch=SeekBar(this).apply{max=160;progress=(80+session.prefs.getInt("voice-pitch",0)).coerceIn(0,160)}
+        body.addView(text("Pitch · low ← natural → high · ±8 semitones manual range",13f));body.addView(pitch)
+        val breath=SeekBar(this).apply{max=60;progress=session.prefs.getInt("voice-breath",0).coerceIn(0,60)}
+        body.addView(text("Breathiness · clean → airy/breathy",13f));body.addView(breath)
+        val tone=SeekBar(this).apply{max=160;progress=(80+session.prefs.getInt("voice-tone",0)).coerceIn(0,160)}
+        body.addView(text("Tone · warm/dark ← neutral → bright",13f));body.addView(tone)
+        val rasp=SeekBar(this).apply{max=40;progress=session.prefs.getInt("voice-rasp",0).coerceIn(0,40)}
+        body.addView(text("Rasp / vocal fry · clean → textured",13f));body.addView(rasp)
+        val energy=SeekBar(this).apply{max=80;progress=(40+session.prefs.getInt("voice-energy",0)).coerceIn(0,80)}
+        body.addView(text("Energy · soft ← natural → energetic",13f));body.addView(energy)
+        val legacyPace=(session.prefs.getFloat("speed",1f)*100).toInt()
+        val pace=SeekBar(this).apply{max=60;progress=(session.prefs.getInt("voice-pace",legacyPace)-70).coerceIn(0,60)}
+        body.addView(text("Pace · 0.70× to 1.30×",13f));body.addView(pace)
+
         val voices=arrayOf("Alloy","Aoede","Bella","Heart · Rosalina default","Jessica","Kore","Nicole","Nova","River","Sarah","Sky")
-        val spinner=Spinner(this).apply{adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,voices);setSelection(session.prefs.getInt("speaker",3).coerceIn(0,10))};body.addView(spinner)
-        body.addView(text("Hands-free runs only after you tap Mic. Speaker interruption requires enabled echo cancellation; otherwise use a supported headphone route or tap Mic. Stop ends listening. Device acoustic behavior remains candidate testing.",12f,muted))
+        val spinner=Spinner(this).apply{adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,voices);setSelection(session.prefs.getInt("speaker",3).coerceIn(0,10))};body.addView(text("Base Rosalina voice identity",13f));body.addView(spinner)
+        body.addView(text("Pitch is changed independently from pace when Android's pitch-preserving playback is available. Breath/tone/rasp are streamed locally with smoothing and clipping protection. No cloud voice service is used.",12f,muted))
+        body.addView(text("Hands-free runs only after you tap Mic. Speaker interruption requires enabled echo cancellation; otherwise use a supported headphone route or tap Mic. Stop ends listening.",12f,muted))
         body.addView(button("Clear conversation"){if(!session.state.value.busy)AlertDialog.Builder(this).setMessage("Clear this app's conversation? Models and other apps will not change.").setNegativeButton("Keep",null).setPositiveButton("Clear"){_,_->session.clearConversation()}.show()})
         body.addView(button("Open Samsung Thermal Guardian"){val launch=packageManager.getLaunchIntentForPackage("com.samsung.android.thermalguardian") ?:packageManager.getLaunchIntentForPackage("com.android.samsung.utilityapp");if(launch!=null)startActivity(launch)else session.notice("Samsung Thermal Guardian is not installed or has no launch activity")})
-        AlertDialog.Builder(this).setTitle("Rosalina settings").setView(ScrollView(this).apply{addView(body)}).setNegativeButton("Cancel",null).setPositiveButton("Save"){_,_->session.prefs.edit().putString("system",system.text.toString()).putBoolean("spoken-replies",spoken.isChecked).putBoolean("hands-free",handsFree.isChecked).putFloat("speed",.7f+speed.progress/100f).putInt("speaker",spinner.selectedItemPosition).putInt("max-tokens",(tokens.text.toString().toIntOrNull() ?:1024).coerceIn(64,4096)).apply()}.show()
+        AlertDialog.Builder(this).setTitle("Rosalina settings").setView(ScrollView(this).apply{addView(body)}).setNegativeButton("Cancel",null).setPositiveButton("Save"){_,_->
+            val pacePercent=70+pace.progress
+            session.prefs.edit()
+                .putString("system",system.text.toString()).putBoolean("spoken-replies",spoken.isChecked).putBoolean("hands-free",handsFree.isChecked)
+                .putString("voice-style",styleKeys[style.selectedItemPosition]).putBoolean("voice-realism",realism.isChecked).putInt("voice-expression",expression.progress)
+                .putInt("voice-pitch",pitch.progress-80).putInt("voice-breath",breath.progress).putInt("voice-tone",tone.progress-80)
+                .putInt("voice-rasp",rasp.progress).putInt("voice-energy",energy.progress-40).putInt("voice-pace",pacePercent)
+                .putFloat("speed",pacePercent/100f).putInt("speaker",spinner.selectedItemPosition)
+                .putInt("max-tokens",(tokens.text.toString().toIntOrNull() ?:1024).coerceIn(64,4096)).apply()
+        }.show()
     }
     private fun renderSettings() {
         val body=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(6),dp(16),dp(6))}
