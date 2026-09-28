@@ -74,7 +74,7 @@ internal object MotionSession {
             process.compareAndSet(target,null);return
         }
         val pid=runCatching{target.pid()}.getOrNull()
-        if(pid!=null&&pid in 1..Int.MAX_VALUE.toLong())runCatching{android.os.Process.killProcess(pid.toInt())}
+        if(pid!=null&&pid in 1L..Int.MAX_VALUE.toLong())runCatching{android.os.Process.killProcess(pid.toInt())}
         if(!runCatching{target.waitFor(750,TimeUnit.MILLISECONDS)}.getOrDefault(false)){
             runCatching{target.destroyForcibly()}
             runCatching{target.waitFor(1250,TimeUnit.MILLISECONDS)}
@@ -128,7 +128,12 @@ internal object MotionSession {
                 notice("${part.label} · checksum verified and imported")
             }catch(e:CancellationException){notice(stopMessage);throw e}
             catch(e:Exception){fail("MODEL IMPORT",e)}
-            finally{withContext(NonCancellable+Dispatchers.IO){temp?.delete()};mutable.update{it.copy(busy=false,work="",progress=null)};job=null}
+            finally{
+                withContext(NonCancellable+Dispatchers.IO){temp?.delete()}
+                val stopped=stopRequested.getAndSet(false)
+                mutable.update{it.copy(busy=false,work="",progress=null,stopping=false,expectedFinish=0,status=if(stopped)stopMessage else it.status)}
+                job=null
+            }
         }
     }
     fun selectPhoto(uri:Uri) {
@@ -152,7 +157,11 @@ internal object MotionSession {
                 mutable.update{it.copy(photo=p.path,status="Photo ready · describe what should move")}
                 if(old.isNotEmpty())withContext(Dispatchers.IO){File(old).delete()}
             }catch(e:CancellationException){notice(stopMessage);throw e}catch(e:Exception){fail("PHOTO",e)}
-            finally{mutable.update{it.copy(busy=false,work="")};job=null}
+            finally{
+                val stopped=stopRequested.getAndSet(false)
+                mutable.update{it.copy(busy=false,work="",stopping=false,expectedFinish=0,status=if(stopped)stopMessage else it.status)}
+                job=null
+            }
         }
     }
     fun requestRender(prompt:String,spec:MotionSpec) {
