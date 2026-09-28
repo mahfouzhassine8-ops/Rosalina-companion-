@@ -77,7 +77,8 @@ internal class LiveAvatarView @JvmOverloads constructor(
             val dy=(h-bmp.height*scale)/2f+motion[1]*density
             canvas.save()
             val clip=RectF(pad,pad,w-pad,h-pad)
-            canvas.clipRoundRect(clip,radius*.82f,radius*.82f)
+            val clipPath=Path().apply{addRoundRect(clip,radius*.82f,radius*.82f,Path.Direction.CW)}
+            canvas.clipPath(clipPath)
             matrix.reset()
             matrix.postScale(scale,scale)
             matrix.postTranslate(dx,dy)
