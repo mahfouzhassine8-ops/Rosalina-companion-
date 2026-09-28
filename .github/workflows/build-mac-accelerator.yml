@@ -44,13 +44,21 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist" | grep -x 'com.rosalina.accelerator'
           lipo -info "$APP/Contents/MacOS/RosalinaAccelerator" | grep -q arm64
           codesign --verify --deep --strict "$APP"
+          "$APP/Contents/MacOS/RosalinaAccelerator" --launch-smoke &
+          PID=$!
+          for i in {1..20}; do
+            if ! kill -0 "$PID" 2>/dev/null; then break; fi
+            sleep 0.25
+          done
+          wait "$PID"
+          grep -q 'launch-smoke passed' "$HOME/Library/Logs/Rosalina Accelerator/launch.log"
           cat mac-accelerator/dist/SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Rosalina-Accelerator-Mac-v0.1-arm64
+          name: Rosalina-Accelerator-Mac-v0.1.1-arm64
           path: |
-            mac-accelerator/dist/Rosalina-Accelerator-v0.1-arm64.zip
+            mac-accelerator/dist/Rosalina-Accelerator-v0.1.1-arm64.zip
             mac-accelerator/dist/SHA256SUMS.txt
             MAC_ACCELERATOR_V0_1.md
           if-no-files-found: error
