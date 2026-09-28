@@ -1,11 +1,7 @@
-# User scope correction — 2026-09-28
+# Scope confirmation — 2026-09-28
 
-> Do not add parent death protection.
+The user's final instruction is to **keep parent-death protection**. This supersedes the temporary removal request.
 
-This overrides the corresponding requirement in the original consolidation brief.
+Both unified CPU and Vulkan workers link the original, unchanged `motion-engine/android_lifecycle.cpp`. It installs `PR_SET_PDEATHSIG` before native generation and checks the parent identity across installation. Explicit Stop, cancellation, bounded termination/reap, foreground-service cleanup and wake-lock release remain in scope.
 
-The unified CPU and Vulkan workers do **not** link `motion-engine/android_lifecycle.cpp`, do not install `PR_SET_PDEATHSIG`, and do not introduce an equivalent parent-death watchdog. The old locked source file remains unmodified for rollback/preservation only.
-
-Explicit Stop, cancellation, process termination/reap, service cleanup, and wake-lock release remain in scope. The new package does not promise parent-death-triggered child cleanup. Force-stop/background lifecycle behavior still requires real-device validation; it is not inferred from an omitted guard.
-
-`python3 tools/test_no_parent_guard.py` checks the generated unified worker sources and preserves the explicit cleanup path.
+The legacy locked sources are not modified. Host and emulator lifecycle tests do not establish Samsung Force Stop behavior; real-device acceptance is still required.

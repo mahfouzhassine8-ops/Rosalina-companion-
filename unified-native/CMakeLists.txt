@@ -35,8 +35,8 @@ foreach(ENGINE image motion)
     target_compile_definitions(rosalina-${ENGINE} PRIVATE ROSALINA_VULKAN=1)
   endif()
   if(ANDROID)
-    # User scope correction: do not link the legacy app-lifetime guard.
-    # Explicit Stop/cancellation/reap remain owned by the common worker session.
+    # Retain the locked native parent-death guard for both CPU and Vulkan workers.
+    target_sources(rosalina-${ENGINE} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../motion-engine/android_lifecycle.cpp)
     target_link_options(rosalina-${ENGINE} PRIVATE -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384)
   endif()
 endforeach()

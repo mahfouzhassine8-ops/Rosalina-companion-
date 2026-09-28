@@ -2,6 +2,7 @@ package com.rosalina.unified
 
 import android.Manifest
 import android.content.*
+import android.content.ClipboardManager
 import android.content.pm.PackageManager
 import android.graphics.*
 import android.graphics.drawable.GradientDrawable
