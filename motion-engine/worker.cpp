@@ -10,6 +10,9 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#if defined(__linux__) || defined(__ANDROID__)
+#include <unistd.h>
+#endif
 
 static void stage(const std::string& s) { std::cout << "@@STAGE " << s << std::endl; }
 static void log_cb(sd_log_level_t l, const char* s, void*) {
@@ -39,6 +42,9 @@ int main(int argc,char** argv) {
     // diffusion.gguf text_encoder.gguf tae.safetensors prompt negative reference.rgb output.rvf width height frames steps seed threads
     if(argc!=14) { std::cerr << "Expected 13 motion arguments\n"; return 2; }
     try {
+#if defined(__linux__) || defined(__ANDROID__)
+        std::cout << "@@PID " << static_cast<long long>(getpid()) << std::endl;
+#endif
         const int w=std::stoi(argv[8]),h=std::stoi(argv[9]),frames=std::stoi(argv[10]);
         const int steps=std::stoi(argv[11]),threads=std::stoi(argv[13]);
         const auto seed=std::stoll(argv[12]);
