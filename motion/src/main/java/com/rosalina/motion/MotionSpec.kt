@@ -29,3 +29,38 @@ internal object MotionMath {
     fun u(r:Int,g:Int,b:Int)=(((-38*r-74*g+112*b+128) shr 8)+128).coerceIn(0,255).toByte()
     fun v(r:Int,g:Int,b:Int)=(((112*r-94*g-18*b+128) shr 8)+128).coerceIn(0,255).toByte()
 }
+
+
+internal object MotionProgressMath {
+    const val SAMPLE_START = 10
+    const val SAMPLE_END = 90
+
+    fun samplingOverall(step:Int,total:Int):Int {
+        if(total<=0) return SAMPLE_START
+        val n=step.coerceIn(0,total)
+        return SAMPLE_START + ((SAMPLE_END-SAMPLE_START)*n/total)
+    }
+
+    fun mp4Overall(percent:Int):Int = 96 + (4*percent.coerceIn(0,100)/100)
+
+    fun smoothMs(previous:Long,actual:Long):Long {
+        require(actual>=0)
+        return if(previous>0) (previous*2 + actual)/3 else actual
+    }
+
+    fun remainingFromSampling(step:Int,total:Int,samplingStartedAt:Long,now:Long,postBaselineMs:Long):Long? {
+        if(step<2 || total<=0 || step>total || samplingStartedAt<=0 || now<=samplingStartedAt) return null
+        val averagePerStep=(now-samplingStartedAt)/step
+        val samplingRemaining=(total-step).toLong()*averagePerStep
+        val fallbackPost=maxOf(30_000L,averagePerStep*maxOf(1,total/10))
+        return maxOf(0L,samplingRemaining + if(postBaselineMs>0) postBaselineMs else fallbackPost)
+    }
+
+    fun formatDuration(seconds:Long):String {
+        val s=maxOf(0L,seconds)
+        val h=s/3600
+        val m=(s%3600)/60
+        val sec=s%60
+        return if(h>0) "${h}h ${m}m" else if(m>0) "${m}m ${sec}s" else "${sec}s"
+    }
+}
