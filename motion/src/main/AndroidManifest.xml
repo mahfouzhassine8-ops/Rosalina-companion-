@@ -12,7 +12,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <application android:name=".MotionApp" android:allowBackup="false" android:fullBackupContent="false"
         android:dataExtractionRules="@xml/data_extraction_rules" android:extractNativeLibs="true"
-        android:label="Rosalina Motion Lab" android:icon="@drawable/ic_motion" android:theme="@style/Theme.Motion"
+        android:label="Rosalina Motion Lab RC2" android:icon="@drawable/ic_motion" android:theme="@style/Theme.Motion"
         android:supportsRtl="true" android:usesCleartextTraffic="false">
         <activity android:name=".MotionActivity" android:exported="true" android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize" android:resizeableActivity="true">
