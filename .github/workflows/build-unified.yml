@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: rosalina-unified-${{ github.sha }}
+  group: rosalina-unified-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   preservation:
