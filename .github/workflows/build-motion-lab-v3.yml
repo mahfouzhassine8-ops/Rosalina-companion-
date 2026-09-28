@@ -126,20 +126,20 @@ jobs:
           openssl rand -hex 32 > signing/envelope.pass
           openssl enc -aes-256-cbc -salt -pbkdf2             -in signing/signing-bundle.tar.gz             -out delivery/Rosalina-Motion-signing-bundle.enc             -pass file:signing/envelope.pass
           cat > signing/wrap-public.pem <<'PEM'
------BEGIN PUBLIC KEY-----
-MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAxVVomnaz2kCqRkQrrQZ1
-jFJfxEQ2YDvosu+xevHt1tfT+aF0AAEbW5+zAwI4y4KB5H5HadIuxkGPQ23BHICc
-FSryeD0+K434PdBOodXUImxxblr/cOnsMJWcIscimwgl8JmMuuM1JmAtyu6hYXh5
-wMbt5/mEbguY2GaHrm/qbC3VUOghvTZVVAP58aL09AZSpq8Ax8tkrn5RH+kxEnIJ
-21w8Odu+isclzSUvAgqhvkXY7Er67n4nuOoxRh7iy7K4oyP28jEsrSe/fGvOeBz6
-4z2Q+5e/z0dkHKnaJHDMOWWRc8QVvtgK2h+E/7SJwuS9UdKxi7/orgmTPj49Yhsw
-SXKnv4+cMeutyJ1z3XZXyU+0eFJcb5fHr2yJcAY2oSyrxDXQ2IxpkZ4Tadj0JiuL
-XYQ3Lxoluy/Wx1bWOi6LDdYi/jE8q2fHIqjhFM21zHdYQ4R9nkpy7T0YcekP7Ms2
-aufFKGJdAC3dTb04Hx+/DQnQJM532uPdz/9cXESyhioXfYrQ8m4SQnMZ6bEJPI34
-6+JV7wYexLai3S+QhuZReoXX5frDqwPL5fvQ7JPTHrTyIg7dEd64g+U3/cKnxlQk
-kXbmabh7IIfzYc1r/6KdqYOiW/Xdwjpcyv1ZfCvu11BpvRgaKbzdPpSWgt3x7owr
-1/4WBUo3u26qlCwlxJZ3WOUCAwEAAQ==
------END PUBLIC KEY-----
+          -----BEGIN PUBLIC KEY-----
+          MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAxVVomnaz2kCqRkQrrQZ1
+          jFJfxEQ2YDvosu+xevHt1tfT+aF0AAEbW5+zAwI4y4KB5H5HadIuxkGPQ23BHICc
+          FSryeD0+K434PdBOodXUImxxblr/cOnsMJWcIscimwgl8JmMuuM1JmAtyu6hYXh5
+          wMbt5/mEbguY2GaHrm/qbC3VUOghvTZVVAP58aL09AZSpq8Ax8tkrn5RH+kxEnIJ
+          21w8Odu+isclzSUvAgqhvkXY7Er67n4nuOoxRh7iy7K4oyP28jEsrSe/fGvOeBz6
+          4z2Q+5e/z0dkHKnaJHDMOWWRc8QVvtgK2h+E/7SJwuS9UdKxi7/orgmTPj49Yhsw
+          SXKnv4+cMeutyJ1z3XZXyU+0eFJcb5fHr2yJcAY2oSyrxDXQ2IxpkZ4Tadj0JiuL
+          XYQ3Lxoluy/Wx1bWOi6LDdYi/jE8q2fHIqjhFM21zHdYQ4R9nkpy7T0YcekP7Ms2
+          aufFKGJdAC3dTb04Hx+/DQnQJM532uPdz/9cXESyhioXfYrQ8m4SQnMZ6bEJPI34
+          6+JV7wYexLai3S+QhuZReoXX5frDqwPL5fvQ7JPTHrTyIg7dEd64g+U3/cKnxlQk
+          kXbmabh7IIfzYc1r/6KdqYOiW/Xdwjpcyv1ZfCvu11BpvRgaKbzdPpSWgt3x7owr
+          1/4WBUo3u26qlCwlxJZ3WOUCAwEAAQ==
+          -----END PUBLIC KEY-----
           PEM
           openssl pkeyutl -encrypt -pubin -inkey signing/wrap-public.pem             -in signing/envelope.pass             -out delivery/Rosalina-Motion-signing-envelope.rsa             -pkeyopt rsa_padding_mode:oaep             -pkeyopt rsa_oaep_md:sha256
           printf 'The signing bundle is encrypted. The unencrypted signing key is not stored in this public repository.\n' > delivery/SIGNING-RECOVERY.txt
