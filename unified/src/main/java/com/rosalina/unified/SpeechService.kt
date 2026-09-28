@@ -11,6 +11,19 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
+import kotlin.math.roundToInt
+
+internal object VoicePcm {
+    fun toPcm16(samples:FloatArray):ShortArray {
+        val out=ShortArray(samples.size)
+        for(i in samples.indices) {
+            val value=samples[i]
+            require(value.isFinite()){"Voice produced non-finite audio"}
+            out[i]=(value.coerceIn(-1f,1f)*32767f).roundToInt().coerceIn(-32767,32767).toShort()
+        }
+        return out
+    }
+}
 
 class SpeechService:NativeRpcService() {
     private var tts:OfflineTts?=null
@@ -58,6 +71,7 @@ class SpeechService:NativeRpcService() {
             putInt("speakers",e.numSpeakers());putLong("elapsedMs",SystemClock.elapsedRealtime()-start)
         }
     }
+    private fun routeType(out:AudioTrack)=runCatching{out.routedDevice?.type ?: -1}.getOrDefault(-1)
     private suspend fun speak(values:Bundle,emit:(String,String,Bundle?)->Unit):Bundle {
         val engine=ensureVoice(emit)
         val text=values.getString("text").orEmpty().trim();require(text.isNotBlank() && text.length<=1000){"Invalid speech chunk"}
@@ -73,49 +87,72 @@ class SpeechService:NativeRpcService() {
             pace=values.getFloat("pace",values.getFloat("speed",1f)),
             intensity=values.getFloat("voiceIntensity",1f)
         ).safe()
-        val attributes=AudioAttributes.Builder().setUsage(if(values.getBoolean("conversation"))AudioAttributes.USAGE_VOICE_COMMUNICATION else AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
+        val started=SystemClock.elapsedRealtime()
+        emit("voiceDiag","tts-synthesis-start",Bundle().apply{putInt("sampleRate",rate);putString("profile",expression.summary())})
+        val generated=engine.generate(text,sid,expression.pace)
+        val synthesisMs=SystemClock.elapsedRealtime()-started
+        require(generated.sampleRate==rate){"Voice sample-rate changed unexpectedly: ${generated.sampleRate} vs $rate"}
+        require(generated.samples.isNotEmpty()){"Voice synthesis returned zero samples"}
+        emit("voiceDiag","tts-synthesis-complete",Bundle().apply{putInt("samples",generated.samples.size);putInt("sampleRate",generated.sampleRate);putLong("synthesisMs",synthesisMs)})
+        if(cancelled.get())return Bundle().apply{
+            putLong("synthesisMs",synthesisMs);putLong("firstAudioMs",0);putLong("audioMs",0)
+            putString("voice","Kokoro82M/speaker-$sid");putString("voiceProfile",expression.summary())
+            putString("playbackPath","PCM16 safe path · interrupted before playback");putBoolean("pitchApplied",false);putBoolean("interrupted",true)
+        }
+        currentCoroutineContext().ensureActive()
+        val shaped=VoiceDspProcessor(rate,expression).process(generated.samples)
+        var clipped=0
+        for(value in shaped) {
+            if(!value.isFinite())error("Voice produced non-finite audio")
+            if(abs(value)>=.999f){clipped++;if(clipped>rate/20)error("Voice produced clipped audio; stopped")}else clipped=0
+        }
+        val pcm=VoicePcm.toPcm16(shaped)
+        emit("voiceDiag","pcm16-ready",Bundle().apply{putInt("samples",pcm.size);putInt("sampleRate",rate)})
+        val attributes=AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
         val am=getSystemService(AudioManager::class.java)
         val request=AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT).setAudioAttributes(attributes).setOnAudioFocusChangeListener{loss->if(loss<0)interrupt()}.build()
         focus=request;require(am.requestAudioFocus(request)==AudioManager.AUDIOFOCUS_REQUEST_GRANTED){"Audio focus was not granted"}
         var audio:AudioTrack?=null
         try {
-            val out=AudioTrack.Builder().setAudioAttributes(attributes).setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT).setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build()).setBufferSizeInBytes(maxOf(rate,AudioTrack.getMinBufferSize(rate,AudioFormat.CHANNEL_OUT_MONO,AudioFormat.ENCODING_PCM_FLOAT))).setTransferMode(AudioTrack.MODE_STREAM).build()
+            val encoding=AudioFormat.ENCODING_PCM_16BIT
+            val minimum=AudioTrack.getMinBufferSize(rate,AudioFormat.CHANNEL_OUT_MONO,encoding)
+            require(minimum>0){"Android rejected Rosalina PCM16 output at $rate Hz"}
+            val bufferBytes=maxOf(minimum,rate*2/5)
+            val out=AudioTrack.Builder()
+                .setAudioAttributes(attributes)
+                .setAudioFormat(AudioFormat.Builder().setEncoding(encoding).setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+                .setBufferSizeInBytes(bufferBytes)
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .build()
+            require(out.state==AudioTrack.STATE_INITIALIZED){"Android audio track failed to initialize"}
             audio=out;track=out
-            val dsp=VoiceDspProcessor(rate,expression)
-            val pitchFactor=VoiceDspProcessor.pitchFactor(expression.pitchSemitones)
-            val pitchApplied=runCatching {
-                out.playbackParams=PlaybackParams().allowDefaults().setPitch(pitchFactor).setSpeed(1f)
-                true
-            }.getOrDefault(false)
+            emit("voiceDiag","audio-track-ready",Bundle().apply{putInt("sampleRate",rate);putInt("route",routeType(out));putInt("bufferBytes",bufferBytes)})
             out.play()
-            val started=SystemClock.elapsedRealtime();var first=0L;var total=0L;var announced=false;var clipped=0
-            emit("stage","Rosalina is speaking · "+expression.name,null)
-            engine.generateWithCallback(text,sid,expression.pace){samples->
-                if(cancelled.get())return@generateWithCallback 0
-                val shaped=dsp.process(samples)
-                for(value in shaped){if(!value.isFinite())error("Voice produced non-finite audio");if(abs(value)>=.999f){clipped++;if(clipped>rate/20)error("Voice produced clipped audio; stopped")}else clipped=0}
-                if(!announced){announced=true;emit("playback","start",Bundle().apply{putInt("route",out.routedDevice?.type ?: -1);putString("profile",expression.summary());putBoolean("pitchApplied",pitchApplied)})}
-                var offset=0
-                while(offset<shaped.size && !cancelled.get()) {
-                    val n=out.write(shaped,offset,minOf(2048,shaped.size-offset),AudioTrack.WRITE_BLOCKING)
-                    check(n>0){"Audio output stopped accepting samples: $n"}
-                    if(first==0L)first=SystemClock.elapsedRealtime()-started
-                    offset+=n;total+=n
+            require(out.playState==AudioTrack.PLAYSTATE_PLAYING){"Android audio track did not enter playing state"}
+            emit("voiceDiag","audio-play-called",Bundle().apply{putInt("route",routeType(out))})
+            var offset=0;var total=0L;var first=0L;var announced=false
+            while(offset<pcm.size && !cancelled.get()) {
+                val n=out.write(pcm,offset,minOf(2048,pcm.size-offset),AudioTrack.WRITE_BLOCKING)
+                check(n>0){"Audio output stopped accepting samples: $n"}
+                offset+=n;total+=n
+                if(!announced) {
+                    announced=true;first=SystemClock.elapsedRealtime()-started
+                    val route=routeType(out)
+                    emit("playback","start",Bundle().apply{putInt("route",route);putString("profile",expression.summary());putBoolean("pitchApplied",false)})
+                    emit("stage","Rosalina is speaking · "+expression.name,null)
+                    emit("voiceDiag","first-audio-written",Bundle().apply{putInt("route",route);putInt("samples",n);putInt("sampleRate",rate)})
                 }
-                emit("playback","start",Bundle().apply{putInt("route",out.routedDevice?.type ?: -1)})
-                if(cancelled.get())0 else 1
             }
+            require(total>0 || cancelled.get()){"No audio samples reached Android playback"}
             val deadline=SystemClock.elapsedRealtime()+maxOf(5000L,total*1000/rate+3000L)
             while(!cancelled.get() && out.playbackHeadPosition.toLong()<total){currentCoroutineContext().ensureActive();check(SystemClock.elapsedRealtime()<deadline){"Audio output did not finish"};kotlinx.coroutines.delay(20)}
             val interrupted=cancelled.get()
             return Bundle().apply{
-                putLong("firstAudioMs",first)
-                putLong("elapsedMs",SystemClock.elapsedRealtime()-started)
-                putLong("audioMs",(total*1000L/rate/expression.pace).toLong())
-                putString("voice","Kokoro82M/speaker-$sid")
-                putString("voiceProfile",expression.summary())
-                putBoolean("pitchApplied",pitchApplied)
-                putBoolean("interrupted",interrupted)
+                putLong("synthesisMs",synthesisMs);putLong("firstAudioMs",first)
+                putLong("elapsedMs",SystemClock.elapsedRealtime()-started);putLong("audioMs",total*1000L/rate)
+                putLong("samples",total);putInt("sampleRate",rate);putInt("route",routeType(out))
+                putString("voice","Kokoro82M/speaker-$sid");putString("voiceProfile",expression.summary())
+                putString("playbackPath","PCM16 buffered media path");putBoolean("pitchApplied",false);putBoolean("interrupted",interrupted)
             }
         }finally{emit("playback","stop",null);runCatching{audio?.pause();audio?.flush();audio?.release()};track=null;am.abandonAudioFocusRequest(request);focus=null}
     }

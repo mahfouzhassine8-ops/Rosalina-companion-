@@ -1,6 +1,6 @@
 package com.rosalina.unified
 
-import android.app.Service
+import android.app.*
 import android.content.*
 import android.os.*
 import kotlinx.coroutines.*
@@ -27,6 +27,7 @@ internal class EngineRpc(private val context:Context,private val type:Class<out 
     private val replies=Messenger(Handler(Looper.getMainLooper()){msg->
         if(msg.what==RPC_EVENT){val b=msg.data;val channel=listeners[b.getString("id")];if(channel!=null){if(b.getInt("pid")>0)pid=b.getInt("pid");channel.trySend(b)}};true
     })
+    @Volatile var lastExit:String="";private set
     /** Capture the current binder: a late interrupt may never target a successor process. */
     fun interruptNow() {
         if(Looper.myLooper()==Looper.getMainLooper()){val m=remote;runCatching{m?.send(Message.obtain().apply{what=RPC_INTERRUPT})}}
@@ -34,6 +35,33 @@ internal class EngineRpc(private val context:Context,private val type:Class<out 
             val current=remote
             main.post{if(remote===current)runCatching{current?.send(Message.obtain().apply{what=RPC_INTERRUPT})}}
         }
+    }
+    private fun exitReasonName(reason:Int)=when(reason) {
+        ApplicationExitInfo.REASON_CRASH_NATIVE->"native-crash"
+        ApplicationExitInfo.REASON_CRASH->"java-crash"
+        ApplicationExitInfo.REASON_ANR->"anr"
+        ApplicationExitInfo.REASON_LOW_MEMORY->"low-memory"
+        ApplicationExitInfo.REASON_SIGNALED->"signal"
+        ApplicationExitInfo.REASON_EXIT_SELF->"self-exit"
+        else->"reason-$reason"
+    }
+    private fun processExitDetails(processPid:Int):String {
+        if(Build.VERSION.SDK_INT<30 || processPid<=0)return ""
+        return runCatching {
+            val info=context.getSystemService(ActivityManager::class.java)
+                .getHistoricalProcessExitReasons(context.packageName,processPid,8)
+                .firstOrNull{it.pid==processPid} ?:return@runCatching ""
+            val description=info.description?.toString()?.replace('\n',' ')?.take(180).orEmpty()
+            buildString {
+                append("Android exit=").append(exitReasonName(info.reason))
+                append(" reason=").append(info.reason)
+                append(" status=").append(info.status)
+                append(" process=").append(info.processName)
+                append(" pss=").append(info.pss)
+                append(" rss=").append(info.rss)
+                if(description.isNotBlank())append(" description=").append(description)
+            }
+        }.getOrDefault("")
     }
     private suspend fun bind():Messenger=withContext(Dispatchers.Main.immediate) {
         check(!shuttingDown){"The previous engine is still shutting down"}
@@ -46,7 +74,7 @@ internal class EngineRpc(private val context:Context,private val type:Class<out 
                     if(!continuation.isActive || connection!==this){runCatching{context.unbindService(this)};return}
                     val m=Messenger(binder);val recipient=IBinder.DeathRecipient{died.complete(Unit)}
                     try{binder.linkToDeath(recipient,0)}catch(t:RemoteException){died.complete(Unit);continuation.resumeWith(Result.failure(t));return}
-                    expectedDisconnect=false;remote=m;remoteDeath=died;deathRecipient=recipient;continuation.resume(m){_,_,_->}
+                    expectedDisconnect=false;lastExit="";remote=m;remoteDeath=died;deathRecipient=recipient;continuation.resume(m){_,_,_->}
                 }
                 override fun onServiceDisconnected(name:ComponentName){died.complete(Unit);if(connection===this){remote=null;val cause=if(expectedDisconnect)CancellationException("${type.simpleName} stopped")else IllegalStateException("${type.simpleName} process exited");listeners.values.forEach{it.close(cause)}}}
                 override fun onBindingDied(name:ComponentName)=onServiceDisconnected(name)
@@ -66,6 +94,13 @@ internal class EngineRpc(private val context:Context,private val type:Class<out 
             m.send(Message.obtain().apply{what=RPC_RUN;data=Bundle(values).apply{putString("id",id)};replyTo=replies})
             for(event in channel)when(event.getString("type")){"error"->error(event.getString("text") ?:"Native engine failed");"done"->{onEvent(event);return event};else->onEvent(event)}
             error("Engine disconnected without completing its request")
+        }catch(t:Throwable){
+            if(t.message?.contains("${type.simpleName} process exited")==true) {
+                withContext(NonCancellable){delay(180)}
+                val detail=processExitDetails(pid);lastExit=detail
+                if(detail.isNotBlank())throw IllegalStateException("${t.message}; $detail",t)
+            }
+            throw t
         }finally{listeners.remove(id);channel.cancel()}
     }
     suspend fun shutdown()=withContext(NonCancellable+Dispatchers.Main.immediate) {

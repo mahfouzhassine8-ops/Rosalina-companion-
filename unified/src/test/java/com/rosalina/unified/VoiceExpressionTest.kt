@@ -58,4 +58,14 @@ class VoiceExpressionTest {
         assertEquals(2f,VoiceDspProcessor.pitchFactor(12f),.001f)
         assertEquals(.5f,VoiceDspProcessor.pitchFactor(-12f),.001f)
     }
+    @Test fun pcm16SafePathClampsAndKeepsSilence(){
+        val pcm=VoicePcm.toPcm16(floatArrayOf(-2f,-1f,0f,1f,2f))
+        assertEquals(-32767,pcm[0].toInt())
+        assertEquals(-32767,pcm[1].toInt())
+        assertEquals(0,pcm[2].toInt())
+        assertEquals(32767,pcm[3].toInt())
+        assertEquals(32767,pcm[4].toInt())
+    }
+    @Test(expected=IllegalArgumentException::class)
+    fun pcm16SafePathRejectsNonFinite(){VoicePcm.toPcm16(floatArrayOf(Float.NaN))}
 }
