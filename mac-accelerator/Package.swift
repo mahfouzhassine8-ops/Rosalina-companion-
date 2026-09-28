@@ -21,7 +21,8 @@ let package = Package(
         .executableTarget(
             name: "RosalinaAccelerator",
             dependencies: ["RosalinaAcceleratorCore"],
-            path: "Sources/RosalinaAccelerator"
+            path: "Sources/RosalinaAccelerator",
+            exclude: ["AcceleratorController.swift", "ContentView.swift"]
         ),
         .testTarget(
             name: "RosalinaAcceleratorCoreTests",
