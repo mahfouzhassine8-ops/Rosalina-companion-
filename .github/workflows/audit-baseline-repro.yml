@@ -37,7 +37,7 @@ jobs:
           profile: pixel_5
           disable-animations: true
           script: |
-            bash -c 'set -o pipefail; trap "adb logcat -d > qa/baseline-logcat.txt; adb exec-out screencap -p > qa/baseline-last-screen.png" EXIT; gradle :unified:connectedDebugAndroidTest -PunifiedEmulatorQa=true -Pandroid.testInstrumentationRunnerArguments.class=com.rosalina.unified.CompanionAuditTest --max-workers=2 --stacktrace 2>&1 | tee qa/baseline-tests.log'
+            bash -c 'set -o pipefail; trap "adb logcat -d > qa/baseline-logcat.txt; adb exec-out screencap -p > qa/baseline-last-screen.png" EXIT; gradle :unified:connectedDebugAndroidTest -PunifiedEmulatorQa=true -Pandroid.testInstrumentationRunnerArguments.class=com.rosalina.unified.CompanionAuditTest,com.rosalina.unified.LiveWarmupAuditTest --max-workers=2 --stacktrace 2>&1 | tee qa/baseline-tests.log'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
