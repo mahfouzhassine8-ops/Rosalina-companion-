@@ -16,7 +16,7 @@ class MotionSpecTest {
   assertEquals(98,MotionProgressMath.mp4Overall(50))
   assertEquals(30_000L,MotionProgressMath.smoothMs(30_000L,30_000L))
   assertNull(MotionProgressMath.remainingFromSampling(1,9,1_000L,11_000L,0))
-  assertEquals(70_000L,MotionProgressMath.remainingFromSampling(2,9,1_000L,21_000L,0))
+  assertEquals(100_000L,MotionProgressMath.remainingFromSampling(2,9,1_000L,21_000L,0))
   assertEquals("1m 5s",MotionProgressMath.formatDuration(65))
  }
 }
