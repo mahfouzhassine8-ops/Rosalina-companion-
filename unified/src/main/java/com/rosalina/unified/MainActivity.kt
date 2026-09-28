@@ -184,6 +184,10 @@ class MainActivity:AppCompatActivity() {
         val liveEndpoint=SeekBar(this).apply{max=850;progress=(session.prefs.getInt("live-endpoint-ms",820)-550).coerceIn(0,850)}
         body.addView(text("Live turn timing · quicker ← pause before Rosalina answers → more patient",13f));body.addView(liveEndpoint)
         body.addView(text("Live mode keeps Qwen, Whisper and Rosalina's voice in separate local processes during the session. It listens while she speaks and supports barge-in. If free RAM is too low, use Classic Voice V2.",12f,muted))
+        val adaptiveLive=Switch(this).apply{text="Adaptive Live learning · learn my conversation rhythm";setTextColor(ink);isChecked=session.prefs.getBoolean("adaptive-live-learning",true)};body.addView(adaptiveLive)
+        body.addView(text(session.liveLearningSummary(),11f,muted))
+        val online=Switch(this).apply{text="Allow internet enhancements · local fallback always available";setTextColor(ink);isChecked=session.prefs.getBoolean("online-enhancements",true)};body.addView(online)
+        body.addView(text("Internet access is permission only until a trusted online provider is configured. No API key is built into Rosalina and local models remain the fallback.",11f,muted))
 
         body.addView(text("VOICE V2 · EXPRESSIVE ROSALINA",16f,accent))
         val styleKeys=arrayOf("adaptive","natural","warm","breathy","deep","bright","squeaky","intimate")
@@ -213,8 +217,9 @@ class MainActivity:AppCompatActivity() {
 
         val voices=arrayOf("Alloy","Aoede","Bella","Heart · Rosalina default","Jessica","Kore","Nicole","Nova","River","Sarah","Sky")
         val spinner=Spinner(this).apply{adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,voices);setSelection(session.prefs.getInt("speaker",3).coerceIn(0,10))};body.addView(text("Base Rosalina voice identity",13f));body.addView(spinner)
-        body.addView(text("Pitch is changed independently from pace when Android's pitch-preserving playback is available. Breath/tone/rasp are streamed locally with smoothing and clipping protection. No cloud voice service is used.",12f,muted))
+        body.addView(text("Pitch is changed independently from pace when Android's pitch-preserving playback is available. Breath/tone/rasp are streamed locally with smoothing and clipping protection. Local voice remains available even when online enhancements are disabled or unavailable.",12f,muted))
         body.addView(text("Live Voice starts only after you tap Mic. Speaker interruption requires enabled echo cancellation; otherwise use a supported headphone route or tap Mic. Stop ends listening. Classic mode remains available above.",12f,muted))
+        body.addView(button("Reset Live learning"){if(!session.state.value.busy)session.resetLiveLearning()})
         body.addView(button("Clear conversation"){if(!session.state.value.busy)AlertDialog.Builder(this).setMessage("Clear this app's conversation? Models and other apps will not change.").setNegativeButton("Keep",null).setPositiveButton("Clear"){_,_->session.clearConversation()}.show()})
         body.addView(button("Open Samsung Thermal Guardian"){val launch=packageManager.getLaunchIntentForPackage("com.samsung.android.thermalguardian") ?:packageManager.getLaunchIntentForPackage("com.android.samsung.utilityapp");if(launch!=null)startActivity(launch)else session.notice("Samsung Thermal Guardian is not installed or has no launch activity")})
         AlertDialog.Builder(this).setTitle("Rosalina settings").setView(ScrollView(this).apply{addView(body)}).setNegativeButton("Cancel",null).setPositiveButton("Save"){_,_->
@@ -222,6 +227,7 @@ class MainActivity:AppCompatActivity() {
             session.prefs.edit()
                 .putString("system",system.text.toString()).putBoolean("spoken-replies",spoken.isChecked).putBoolean("hands-free",handsFree.isChecked)
                 .putBoolean("live-voice",liveVoice.isChecked).putInt("live-endpoint-ms",550+liveEndpoint.progress)
+                .putBoolean("adaptive-live-learning",adaptiveLive.isChecked).putBoolean("online-enhancements",online.isChecked)
                 .putString("voice-style",styleKeys[style.selectedItemPosition]).putBoolean("voice-realism",realism.isChecked).putInt("voice-expression",expression.progress)
                 .putInt("voice-pitch",pitch.progress-80).putInt("voice-breath",breath.progress).putInt("voice-tone",tone.progress-80)
                 .putInt("voice-rasp",rasp.progress).putInt("voice-energy",energy.progress-40).putInt("voice-pace",pacePercent)

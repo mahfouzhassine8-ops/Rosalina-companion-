@@ -1,5 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
-    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -16,7 +17,7 @@
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity>
         <service android:name=".GenerationService" android:exported="false" android:foregroundServiceType="mediaProcessing|mediaPlayback|dataSync|microphone|specialUse">
-            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Explicit user-started offline assistant inference, and local AI image/video rendering on Android versions before mediaProcessing. No network, periodic work, or auto-start." />
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Explicit user-started assistant inference, optional user-enabled online enhancements, and local AI image/video rendering on Android versions before mediaProcessing. No periodic work or auto-start." />
         </service>
         <service android:name=".ChatService" android:exported="false" android:process=":chat" />
         <service android:name=".SpeechService" android:exported="false" android:process=":speech" />

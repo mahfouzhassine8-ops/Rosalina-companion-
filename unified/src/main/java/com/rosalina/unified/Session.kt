@@ -38,6 +38,7 @@ internal class Session private constructor(private val context:Context) {
     private val chat=EngineRpc(context,ChatService::class.java)
     private val listen=EngineRpc(context,ListenService::class.java)
     private val speech=EngineRpc(context,SpeechService::class.java)
+    private val learner=LiveLearner(prefs)
     private val transcriptFile=File(context.filesDir,"conversation.json")
     private val turns=mutableListOf<Pair<String,String>>()
     @Volatile private var snapshot:List<Pair<String,String>> = emptyList()
@@ -57,6 +58,7 @@ internal class Session private constructor(private val context:Context) {
     private var speechMetrics=""
     private var liveMetrics=""
     private var chatMetrics=""
+    @Volatile private var lastChatFirstTextMs=0L
     private var probeLog=""
     private val deviceFacts by lazy{DeviceFacts.describe(context)}
     init {
@@ -109,6 +111,8 @@ internal class Session private constructor(private val context:Context) {
         }}
     }
     fun notice(text:String){mutable.update{if(it.busy)it else it.copy(stage=text)}}
+    fun liveLearningSummary()=learner.snapshot().summary()
+    fun resetLiveLearning(){learner.reset();notice("Adaptive Live learning reset")}
     fun refreshResources(){val r=thermal.read();mutable.update{it.copy(thermal=r.thermal,thermalAt=r.measuredAt,availableBytes=r.available,totalBytes=r.total)}}
     @Synchronized fun begin(r:TaskRequest):Boolean {
         if(state.value.quarantined){notice("Force-stop Rosalina before starting another worker");return false}
@@ -223,29 +227,47 @@ internal class Session private constructor(private val context:Context) {
             var unavailable=false
             for(text in queue) {
                 if(unavailable)continue
-                try {
-                    val expression=voiceExpression(prompt,text)
-                    val result=speech.call(Bundle().apply{
-                        putString("operation","speak");putString("text",text);putInt("speaker",prefs.getInt("speaker",3));putBoolean("conversation",voiceActive)
-                        putExpression(expression)
-                    }){event->
-                        when(event.getString("type")) {
-                            "stage"->update(r.id){it.copy(voiceStage=event.getString("text").orEmpty())}
-                            "playback"->{capture?.outputRoute=event.getInt("route",-1);capture?.outputActive=event.getString("text")=="start"}
+                var attempt=0
+                var completed=false
+                while(!completed && attempt<2 && currentCoroutineContext().isActive) {
+                    try {
+                        attempt++
+                        val expression=voiceExpression(prompt,text)
+                        val result=speech.call(Bundle().apply{
+                            putString("operation","speak");putString("text",text);putInt("speaker",prefs.getInt("speaker",3));putBoolean("conversation",voiceActive)
+                            putExpression(expression)
+                        }){event->
+                            when(event.getString("type")) {
+                                "stage"->update(r.id){it.copy(voiceStage=event.getString("text").orEmpty())}
+                                "playback"->{capture?.outputRoute=event.getInt("route",-1);capture?.outputActive=event.getString("text")=="start"}
+                            }
                         }
-                    }
-                    val wasInterrupted=result.getBoolean("interrupted")
-                    speechMetrics="Kokoro Voice V2; ${result.getString("voiceProfile")}; pitch path=${if(result.getBoolean("pitchApplied"))"Android pitch-preserving playback" else "neutral fallback"}; first audio ${result.getLong("firstAudioMs")} ms; audio ${result.getLong("audioMs")} ms; elapsed ${result.getLong("elapsedMs")} ms; interrupted=$wasInterrupted"
-                    if(wasInterrupted){unavailable=true;update(r.id){it.copy(voiceStage="")}}
-                }catch(e:CancellationException){throw e}
-                catch(t:Throwable){unavailable=true;update(r.id){it.copy(voiceStage="Voice unavailable · ${t.message}",error="Speech: ${t.stackTraceToString()}")};speech.shutdown()}
-                finally{capture?.outputActive=false}
+                        val wasInterrupted=result.getBoolean("interrupted")
+                        speechMetrics="Kokoro Voice V2; ${result.getString("voiceProfile")}; pitch path=${if(result.getBoolean("pitchApplied"))"Android pitch-preserving playback" else "neutral fallback"}; first audio ${result.getLong("firstAudioMs")} ms; audio ${result.getLong("audioMs")} ms; elapsed ${result.getLong("elapsedMs")} ms; interrupted=$wasInterrupted; restart attempts=${attempt-1}"
+                        if(wasInterrupted){unavailable=true;update(r.id){it.copy(voiceStage="")}}
+                        completed=true
+                    }catch(e:CancellationException){throw e}
+                    catch(t:Throwable){
+                        if(!currentCoroutineContext().isActive || state.value.stopping)throw CancellationException("Speech stopped").apply{initCause(t)}
+                        val processExit=t.message?.contains("SpeechService process exited")==true
+                        if(liveSpeech && processExit && attempt<2) {
+                            speechMetrics="Speech process exited · restarting once"
+                            update(r.id){it.copy(voiceStage="Restarting Rosalina voice")}
+                            try{speech.shutdown()}catch(_:Throwable){}
+                            delay(80)
+                        } else {
+                            unavailable=true;completed=true
+                            update(r.id){it.copy(voiceStage="Voice unavailable · ${t.message}",error="Speech: ${t.stackTraceToString()}")}
+                            try{speech.shutdown()}catch(_:Throwable){}
+                        }
+                    } finally {capture?.outputActive=false}
+                }
             }
         }else null
         val answer=StringBuilder();var spoken=0;var lastSpeechScan=0L
         chatNeedsReset=true
         try {
-            val responseLimit=if(liveSpeech)minOf(prefs.getInt("max-tokens",1024),256)else prefs.getInt("max-tokens",1024)
+            val responseLimit=if(liveSpeech)learner.responseLimit(prefs.getInt("max-tokens",1024))else prefs.getInt("max-tokens",1024)
             val result=chat.call(Bundle().apply{putString("model",model.path);putString("prompt",prompt);putString("system",prefs.getString("system",DEFAULT_SYSTEM));putInt("maxTokens",responseLimit)}){event->
                 when(event.getString("type")) {
                     "stage"->update(r.id){it.copy(stage=event.getString("text").orEmpty(),pid=event.getInt("pid"),backend="Qwen · preserved CPU engine")}
@@ -259,7 +281,7 @@ internal class Session private constructor(private val context:Context) {
                     }
                 }
             }
-            chatNeedsReset=false;warmSystem=prefs.getString("system",DEFAULT_SYSTEM)
+            chatNeedsReset=false;warmSystem=prefs.getString("system",DEFAULT_SYSTEM);lastChatFirstTextMs=result.getLong("firstTextMs")
             chatMetrics="Chat warm model=${result.getBoolean("warmModel")}; clean recovery=${result.getBoolean("recovered")}; setup=${result.getLong("modelSetupMs")} ms; first text=${result.getLong("firstTextMs")} ms; response=${result.getLong("responseMs")} ms; characters=${result.getInt("characters")}; emitted text pieces=${result.getInt("textPieces")} (not native token count); chat PSS=${result.getLong("chatPssKb")} KiB"
             if(readAloud){val visible=SpeechText.spoken(answer.toString());val span=if(liveSpeech)220 else 500;while(spoken<visible.length){val end=minOf(visible.length,spoken+span);enqueue(visible.substring(spoken,end).trim());spoken=end}}
         } finally {queue.close();if(answer.isNotBlank())addTurn("Rosalina",answer.toString())}
@@ -419,6 +441,8 @@ internal class Session private constructor(private val context:Context) {
                                 if(chatNeedsReset){chat.shutdown();warmSystem=null;chatNeedsReset=false}
                             }
                         }
+                        learner.recordTurn(interrupted.get(),lastChatFirstTextMs)
+                        liveMetrics=liveMetrics+"\n"+learner.snapshot().summary()+"\n"+OnlineEnhancements.state(context,prefs).summary()
                         previousOutput=snapshot.lastOrNull{it.first=="Rosalina"}?.second.orEmpty()
                         responseDone.set(true)
                         update(r.id){it.copy(stage="Listening · LIVE · your turn",answer="",voiceStage="",backend="Live coordinator · warm")}
@@ -547,6 +571,6 @@ internal class Session private constructor(private val context:Context) {
     }
     fun diagnostics(s:TaskState=state.value):String {
         val prior=if(s.id.isBlank())runCatching{File(context.filesDir,"last-diagnostics.txt").readText().takeLast(50000)}.getOrDefault("")else ""
-        return "ROSALINA UNIFIED CANDIDATE\nVersion: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\nPackage: ${context.packageName}\n$deviceFacts\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}\nAndroid: ${Build.VERSION.SDK_INT}; ABI: ${Build.SUPPORTED_ABIS.joinToString()}\nCurrent RAM total: ${s.totalBytes}; available: ${s.availableBytes}\nCurrent thermal: ${s.thermal} ${ThermalPolicy.label(s.thermal)}; sampled elapsedRealtime=${s.thermalAt}\nTask: ${s.id} ${s.kind}; stage: ${s.stage}; PID: ${s.pid}; last PID: ${s.lastPid}\nLast native stage: ${s.lastStage}; last sampling: ${s.lastStep}/${s.lastTotal}\nBackend: ${s.backend}\nElapsed: ${s.elapsedMs} ms\nWork pacing: ${s.workHint}\n$chatMetrics\n$speechMetrics\n$liveMetrics\n${models.diagnostic()}\nError: ${s.error}\nGPU compute check:\n$probeLog\nNative log tail:\n${s.logTail}\n${journal.describe()}\nSamsung output acceptance: candidate; not established by CI\n${if(prior.isBlank())"" else "Previous recorded diagnostics:\n$prior"}"
+        return "ROSALINA UNIFIED CANDIDATE\nVersion: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\nPackage: ${context.packageName}\n$deviceFacts\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}\nAndroid: ${Build.VERSION.SDK_INT}; ABI: ${Build.SUPPORTED_ABIS.joinToString()}\nCurrent RAM total: ${s.totalBytes}; available: ${s.availableBytes}\nCurrent thermal: ${s.thermal} ${ThermalPolicy.label(s.thermal)}; sampled elapsedRealtime=${s.thermalAt}\nTask: ${s.id} ${s.kind}; stage: ${s.stage}; PID: ${s.pid}; last PID: ${s.lastPid}\nLast native stage: ${s.lastStage}; last sampling: ${s.lastStep}/${s.lastTotal}\nBackend: ${s.backend}\nElapsed: ${s.elapsedMs} ms\nWork pacing: ${s.workHint}\n$chatMetrics\n$speechMetrics\n$liveMetrics\n${learner.snapshot().summary()}\n${OnlineEnhancements.state(context,prefs).summary()}\n${models.diagnostic()}\nError: ${s.error}\nGPU compute check:\n$probeLog\nNative log tail:\n${s.logTail}\n${journal.describe()}\nSamsung output acceptance: candidate; not established by CI\n${if(prior.isBlank())"" else "Previous recorded diagnostics:\n$prior"}"
     }
 }

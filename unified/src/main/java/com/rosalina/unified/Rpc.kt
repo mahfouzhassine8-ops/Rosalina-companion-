@@ -20,6 +20,7 @@ internal class EngineRpc(private val context:Context,private val type:Class<out 
     private var remoteDeath:CompletableDeferred<Unit>?=null
     private var deathRecipient:IBinder.DeathRecipient?=null
     private var shuttingDown=false
+    @Volatile private var expectedDisconnect=false
     @Volatile var pid=0;private set
     private val listeners=ConcurrentHashMap<String,Channel<Bundle>>()
     private val main=Handler(Looper.getMainLooper())
@@ -45,9 +46,9 @@ internal class EngineRpc(private val context:Context,private val type:Class<out 
                     if(!continuation.isActive || connection!==this){runCatching{context.unbindService(this)};return}
                     val m=Messenger(binder);val recipient=IBinder.DeathRecipient{died.complete(Unit)}
                     try{binder.linkToDeath(recipient,0)}catch(t:RemoteException){died.complete(Unit);continuation.resumeWith(Result.failure(t));return}
-                    remote=m;remoteDeath=died;deathRecipient=recipient;continuation.resume(m){_,_,_->}
+                    expectedDisconnect=false;remote=m;remoteDeath=died;deathRecipient=recipient;continuation.resume(m){_,_,_->}
                 }
-                override fun onServiceDisconnected(name:ComponentName){died.complete(Unit);if(connection===this){remote=null;listeners.values.forEach{it.close(IllegalStateException("${type.simpleName} process exited"))}}}
+                override fun onServiceDisconnected(name:ComponentName){died.complete(Unit);if(connection===this){remote=null;val cause=if(expectedDisconnect)CancellationException("${type.simpleName} stopped")else IllegalStateException("${type.simpleName} process exited");listeners.values.forEach{it.close(cause)}}}
                 override fun onBindingDied(name:ComponentName)=onServiceDisconnected(name)
                 override fun onNullBinding(name:ComponentName){died.complete(Unit);if(continuation.isActive)continuation.resumeWith(Result.failure(IllegalStateException("Engine binding refused")))}
             }
@@ -70,6 +71,7 @@ internal class EngineRpc(private val context:Context,private val type:Class<out 
     suspend fun shutdown()=withContext(NonCancellable+Dispatchers.Main.immediate) {
         if(shuttingDown)throw WorkerQuarantined("Concurrent engine cleanup was rejected")
         shuttingDown=true
+        expectedDisconnect=true
         val m=remote;val died=remoteDeath;val recipient=deathRecipient;val oldPid=pid;val oldConnection=connection
         remote=null;connection=null;remoteDeath=null;deathRecipient=null
         listeners.values.forEach{it.close(CancellationException("Engine stopped"))};listeners.clear()
