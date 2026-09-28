@@ -1,0 +1,47 @@
+name: Rosalina 10010 Live Crash Reproduction
+on:
+  push:
+    branches: [rosalina-10010-end-to-end-audit-c1]
+    paths: [.github/workflows/audit-baseline-repro.yml]
+permissions:
+  contents: read
+jobs:
+  baseline-live:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.9', cache-read-only: false}
+      - name: Prepare unchanged production UI with reproduction tests
+        run: |
+          mkdir -p unified/libs qa
+          curl --fail --location --retry 3 -o unified/libs/sherpa-onnx-1.13.8.aar https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-1.13.8.aar
+          echo '633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96  unified/libs/sherpa-onnx-1.13.8.aar' | sha256sum -c
+          gradle :unified:assembleDebug :unified:assembleDebugAndroidTest -PunifiedEmulatorQa=true --max-workers=2
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_5
+          disable-animations: true
+          script: |
+            bash -c 'set -o pipefail; trap "adb logcat -d > qa/baseline-logcat.txt; adb exec-out screencap -p > qa/baseline-last-screen.png" EXIT; gradle :unified:connectedDebugAndroidTest -PunifiedEmulatorQa=true -Pandroid.testInstrumentationRunnerArguments.class=com.rosalina.unified.CompanionAuditTest --max-workers=2 --stacktrace 2>&1 | tee qa/baseline-tests.log'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Rosalina-10010-Live-Reproduction
+          path: |
+            qa/
+            unified/build/outputs/androidTest-results/
