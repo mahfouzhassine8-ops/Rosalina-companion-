@@ -12,11 +12,13 @@ class RuntimePolicyTest {
         assertEquals(chunks.joinToString(""),output.toString());assertTrue(messages<=22);assertNull(batch.flush())
     }
     @Test fun firstTextIsImmediate(){assertEquals("Hi",StreamBatch().append("Hi",0))}
-    @Test fun severeIsNeverWorkedThrough(){for(gpu in listOf(false,true))for(t in 3..6)assertEquals(0,WorkBudget.percent(t,gpu))}
-    @Test fun budgetFallsBeforeSevere(){assertTrue(WorkBudget.percent(0,false)>WorkBudget.percent(1,false));assertTrue(WorkBudget.percent(1,false)>WorkBudget.percent(2,false));assertEquals(50,WorkBudget.percent(0,false,.9f))}
-    @Test fun nearSevereForecastProgressivelyReducesWork(){assertEquals(50,WorkBudget.percent(0,false,.90f));assertEquals(40,WorkBudget.percent(0,false,.94f));assertEquals(30,WorkBudget.percent(0,false,.99f));assertEquals(58,WorkBudget.percent(0,true,.94f))}
-    @Test fun decodingGetsSomeProgressWhenForecastAllows(){assertTrue(WorkBudget.percent(2,false,.88f,"Decoding")>=55)}
-    @Test fun missingHeadroomDoesNotBlockNormal(){assertTrue(WorkBudget.percent(0,false,Float.NaN)>0)}
+    @Test fun criticalAndWorseStop(){for(gpu in listOf(false,true))for(t in 4..6)assertEquals(0,WorkBudget.percent(t,gpu))}
+    @Test fun severeThrottlesInsteadOfInstantStop(){assertTrue(WorkBudget.percent(3,false)>0);assertTrue(WorkBudget.percent(3,true)>0);assertTrue(WorkBudget.percent(3,false)<WorkBudget.percent(2,false))}
+    @Test fun coolPhoneCanUseFullBudget(){assertEquals(100,WorkBudget.percent(0,false,Float.NaN));assertEquals(100,WorkBudget.percent(0,true,Float.NaN))}
+    @Test fun forecastProgressivelyReducesWork(){assertEquals(60,WorkBudget.percent(0,false,.90f));assertEquals(45,WorkBudget.percent(0,false,.97f));assertEquals(30,WorkBudget.percent(0,false,1.0f));assertEquals(65,WorkBudget.percent(0,true,.97f))}
+    @Test fun decodingGetsSomeProgressWhenForecastAllows(){assertTrue(WorkBudget.percent(2,false,.88f,"Decoding")>=65)}
+    @Test fun missingHeadroomDoesNotBlockNormal(){assertEquals(100,WorkBudget.percent(0,false,Float.NaN))}
+    @Test fun cpuFallbackRejectsThermalAndAcceptsBackendFailure(){assertFalse(BackendFallback.shouldRetryCpu("Stopped safely: Android reported Critical heat","","Encoding"));assertTrue(BackendFallback.shouldRetryCpu("Vulkan allocation failed","","Loading model"))}
     @Test fun budgetDoesNotChangeSelectedQuality(){assertEquals(512,RenderProfile.Standard.width);assertEquals(12,RenderProfile.Standard.steps);assertEquals(8,RenderProfile.Draft.steps)}
     @Test fun dutyCycleMatchesRealWallTime(){assertEquals(300,(0L..999L).count{!WorkBudget.shouldPause(it,30)});assertFalse((0L..999L).any{WorkBudget.shouldPause(it,100)})}
     @Test fun backgroundNoiseDoesNotStartVoice(){val gate=VoiceGate();repeat(100){assertFalse(gate.accept(110.0,40))};assertFalse(gate.started)}

@@ -23,8 +23,18 @@ internal data class TaskState(
     val revision:Long=0,val workHint:String="",val avatarEnergy:Float=0f
 )
 internal object ThermalPolicy {
-    fun blocks(status:Int)=status>=3
-    fun label(status:Int)=when(status){0->"Normal";1->"Light";2->"Moderate · throttling possible";3->"Severe";4->"Critical";5->"Emergency";6->"Shutdown";else->"Unavailable"}
+    /** Severe is a throttling signal. Critical+ is the hard render stop. */
+    fun blocks(status:Int)=status>=4
+    fun label(status:Int)=when(status){
+        0->"Normal"
+        1->"Light"
+        2->"Moderate · Android reports throttling possible"
+        3->"Severe · Android thermal status; throttling"
+        4->"Critical · render stop"
+        5->"Emergency · render stop"
+        6->"Shutdown · render stop"
+        else->"Unavailable"
+    }
 }
 internal object Route {
     private val polite=Regex("^(?:(?:please|hey rosalina|rosalina)[, ]+|(?:can|could|would) you (?:please )?)+",RegexOption.IGNORE_CASE)

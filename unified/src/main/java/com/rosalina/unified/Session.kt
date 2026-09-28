@@ -468,7 +468,7 @@ internal class Session private constructor(private val context:Context) {
         val w=if(video)r.width else r.profile.width;val h=if(video)r.height else r.profile.height
         require(r.seconds in listOf(6,8,10));require(r.strength in .1f.. .9f)
         val steps=if(video)12 else r.profile.steps
-        val threads=if(resources.thermal==2)1 else if(video)2 else r.profile.threads
+        val threads=if(video)when(resources.thermal){0->4;1->3;else->2}else if(resources.thermal>=2)minOf(r.profile.threads,2)else r.profile.threads
         val dir=File(context.filesDir,"jobs/${r.id}").apply{mkdirs()};var quarantined=false
         journal.begin(r,resources)
         try {
@@ -501,9 +501,9 @@ internal class Session private constructor(private val context:Context) {
                 }
             }
             try{runBackend(selected)}catch(e:CancellationException){throw e}catch(e:WorkerQuarantined){throw e}catch(t:Throwable){
-                if(selected=="vulkan" && !sampled && !ThermalPolicy.blocks(thermal.read().thermal)) {
-                    probeLog+="\nVulkan model setup failed: ${t.message}\n${state.value.logTail}"
-                    output.delete();update(r.id){it.copy(stage="GPU setup failed · using paced CPU")};runBackend("cpu")
+                if(selected=="vulkan" && !sampled && !ThermalPolicy.blocks(thermal.read().thermal) && BackendFallback.shouldRetryCpu(t.message.orEmpty(),state.value.logTail,state.value.stage)) {
+                    probeLog+="\nVulkan model setup failed at ${state.value.stage}: ${t.message}\nCPU fallback allowed by classified backend failure.\n${state.value.logTail}"
+                    output.delete();update(r.id){it.copy(stage="Vulkan backend failure · retrying CPU once")};runBackend("cpu")
                 }else throw t
             }
             currentCoroutineContext().ensureActive()
@@ -572,6 +572,6 @@ internal class Session private constructor(private val context:Context) {
     }
     fun diagnostics(s:TaskState=state.value):String {
         val prior=if(s.id.isBlank())runCatching{File(context.filesDir,"last-diagnostics.txt").readText().takeLast(50000)}.getOrDefault("")else ""
-        return "ROSALINA UNIFIED CANDIDATE\nVersion: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\nPackage: ${context.packageName}\n$deviceFacts\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}\nAndroid: ${Build.VERSION.SDK_INT}; ABI: ${Build.SUPPORTED_ABIS.joinToString()}\nCurrent RAM total: ${s.totalBytes}; available: ${s.availableBytes}\nCurrent thermal: ${s.thermal} ${ThermalPolicy.label(s.thermal)}; sampled elapsedRealtime=${s.thermalAt}\nTask: ${s.id} ${s.kind}; stage: ${s.stage}; PID: ${s.pid}; last PID: ${s.lastPid}\nLast native stage: ${s.lastStage}; last sampling: ${s.lastStep}/${s.lastTotal}\nBackend: ${s.backend}\nElapsed: ${s.elapsedMs} ms\nWork pacing: ${s.workHint}\n$chatMetrics\n$speechMetrics\n$liveMetrics\n${learner.snapshot().summary()}\n${OnlineEnhancements.state(context,prefs).summary()}\n${models.diagnostic()}\nError: ${s.error}\nGPU compute check:\n$probeLog\nNative log tail:\n${s.logTail}\n${journal.describe()}\nSamsung output acceptance: candidate; not established by CI\n${if(prior.isBlank())"" else "Previous recorded diagnostics:\n$prior"}"
+        return "ROSALINA UNIFIED CANDIDATE\nVersion: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\nPackage: ${context.packageName}\n$deviceFacts\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}\nAndroid: ${Build.VERSION.SDK_INT}; ABI: ${Build.SUPPORTED_ABIS.joinToString()}\nCurrent RAM total: ${s.totalBytes}; available: ${s.availableBytes}\nCurrent thermal: ${s.thermal} ${ThermalPolicy.label(s.thermal)}; sampled elapsedRealtime=${s.thermalAt}\n${thermal.describe()}\nTask: ${s.id} ${s.kind}; stage: ${s.stage}; PID: ${s.pid}; last PID: ${s.lastPid}\nLast native stage: ${s.lastStage}; last sampling: ${s.lastStep}/${s.lastTotal}\nBackend: ${s.backend}\nElapsed: ${s.elapsedMs} ms\nWork pacing: ${s.workHint}\n$chatMetrics\n$speechMetrics\n$liveMetrics\n${learner.snapshot().summary()}\n${OnlineEnhancements.state(context,prefs).summary()}\n${models.diagnostic()}\nError: ${s.error}\nGPU compute check:\n$probeLog\nNative log tail:\n${s.logTail}\n${journal.describe()}\nSamsung output acceptance: candidate; not established by CI\n${if(prior.isBlank())"" else "Previous recorded diagnostics:\n$prior"}"
     }
 }

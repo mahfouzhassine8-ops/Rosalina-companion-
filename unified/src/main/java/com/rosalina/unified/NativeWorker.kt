@@ -12,20 +12,28 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 internal data class Resources(val available:Long,val total:Long,val low:Boolean,val thermal:Int,val measuredAt:Long,
-    val headroom:Float=Float.NaN,val control:String="",val rssBytes:Long=0)
+    val headroom:Float=Float.NaN,val control:String="",val rssBytes:Long=0,
+    val workerCpuPct:Float=Float.NaN,val cpuCurrentKhz:Long=0,val cpuMaxKhz:Long=0,
+    val gpuBusyPct:Float=Float.NaN,val gpuCurrentHz:Long=0,val gpuMaxHz:Long=0,val thermalZones:String="")
 internal class ThermalManager(context:Context) {
     private val power=context.getSystemService(PowerManager::class.java)
     private val memory=context.getSystemService(ActivityManager::class.java)
     private var headroomAt=Long.MIN_VALUE
     private var headroom=Float.NaN
+    private var lastStatus=Int.MIN_VALUE
+    private val history=ArrayDeque<String>()
     @Synchronized fun read():Resources {
         val now=SystemClock.elapsedRealtime()
         val info=ActivityManager.MemoryInfo();memory.getMemoryInfo(info)
         if(headroomAt==Long.MIN_VALUE || now-headroomAt>=10000) {
             headroom=runCatching{power.getThermalHeadroom(10)}.getOrDefault(Float.NaN);headroomAt=now
         }
-        return Resources(info.availMem,info.totalMem,info.lowMemory,runCatching{power.currentThermalStatus}.getOrDefault(-1),now,headroom)
+        val status=runCatching{power.currentThermalStatus}.getOrDefault(-1)
+        if(status!=lastStatus){history.addLast("$now:$status");while(history.size>12)history.removeFirst();lastStatus=status}
+        return Resources(info.availMem,info.totalMem,info.lowMemory,status,now,headroom)
     }
+    @Synchronized fun describe():String =
+        "Thermal source: Android PowerManager.currentThermalStatus + getThermalHeadroom(10). Not connected to Samsung Good Guardians / Thermal Guardian. Status history(elapsedRealtime:status): "+history.joinToString(", ")
 }
 internal class WorkerQuarantined(message:String):IOException(message)
 
@@ -103,12 +111,19 @@ internal class NativeWorker(private val thermal:ThermalManager) {
             val owned=OwnedChild(p,command[0]);child=owned
             val began=SystemClock.elapsedRealtime()
             var nextState=0L;var resources=initial;var resourceAt=0L;var rss=0L
+            val hardware=HardwareTelemetry()
             while(true) {
                 job.ensureActive();drain();val now=SystemClock.elapsedRealtime()
-                if(now-resourceAt>=1000){resources=thermal.read();rss=owned.rss();resourceAt=now}
+                if(now-resourceAt>=1000){
+                    resources=thermal.read();rss=owned.rss()
+                    val hw=hardware.read(owned.pid.takeIf{it>0} ?:reportedPid)
+                    resources=resources.copy(workerCpuPct=hw.workerCpuPct,cpuCurrentKhz=hw.cpuCurrentKhz,cpuMaxKhz=hw.cpuMaxKhz,gpuBusyPct=hw.gpuBusyPct,gpuCurrentHz=hw.gpuCurrentHz,gpuMaxHz=hw.gpuMaxHz,thermalZones=hw.thermalZones)
+                    resourceAt=now
+                }
                 val percent=if(paced)WorkBudget.percent(resources.thermal,gpu,resources.headroom,parser.stage)else 100
                 if(now>=nextState || !p.isAlive) {
-                    val control=if(paced)"${if(gpu)"GPU" else "CPU"} work budget $percent% · ${if(owned.paused)"cooling interval" else "running"}" else "Backend compute check"
+                    val hw=HardwareSample(resources.workerCpuPct,resources.cpuCurrentKhz,resources.cpuMaxKhz,resources.gpuBusyPct,resources.gpuCurrentHz,resources.gpuMaxHz,resources.thermalZones).short()
+                    val control=if(paced)"${if(gpu)"GPU" else "CPU"} work budget $percent% · ${if(owned.paused)"cooling interval" else "running"} · $hw" else "Backend compute check · $hw"
                     onState(parser.stage,parser.percent,parser.step,parser.total,owned.pid.takeIf{it>0} ?:reportedPid,tail.toString(),resources.copy(control=control,rssBytes=rss))
                     nextState=now+250
                 }

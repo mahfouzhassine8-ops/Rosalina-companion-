@@ -28,6 +28,7 @@ static std::string selected_backend() {
 #endif
 }
 static void report_backend(const std::string& backend) {
+    std::cout << "@@BACKEND_REQUEST compute=" << backend << " params=" << backend << std::endl;
     std::cout << "@@BACKEND " << backend;
 #ifdef ROSALINA_VULKAN
     std::cout << " model context initialized; per-operation CPU fallback may occur";

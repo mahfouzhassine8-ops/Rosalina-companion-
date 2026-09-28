@@ -17,39 +17,42 @@ internal class StreamBatch(private val intervalMs:Long=50) {
     fun flush():String? = if(pending.isEmpty())null else pending.toString().also{pending.setLength(0)}
 }
 
-/** Sustained work budget, not a resolution/quality change. Severe still stops, never throttles through. */
+/** Sustained work budget. Severe throttles hard; Critical+ stops. */
 internal object WorkBudget {
-    /**
-     * Thermal headroom approaches 1.0 near Android's severe-throttling forecast.
-     * Use gradual budgets instead of collapsing all >=0.85 readings to 30% CPU.
-     */
     fun percent(thermal:Int,gpu:Boolean,headroom:Float=Float.NaN,stage:String=""):Int {
         if(ThermalPolicy.blocks(thermal))return 0
         val h=if(headroom.isFinite())headroom else -1f
         val base=if(gpu) {
             when {
-                h>=.98f->45
-                h>=.92f->58
-                h>=.85f->70
-                thermal==2->72
-                thermal==1->88
+                thermal==3->45
+                h>=1.00f->50
+                h>=.95f->65
+                h>=.85f->80
+                thermal==2->85
+                thermal==1->95
                 else->100
             }
         } else {
             when {
-                h>=.98f->30
-                h>=.92f->40
-                h>=.85f->50
-                thermal==2->48
-                thermal==1->68
-                else->82
+                thermal==3->25
+                h>=1.00f->30
+                h>=.95f->45
+                h>=.85f->60
+                thermal==2->70
+                thermal==1->85
+                else->100
             }
         }
-        // Decoding is especially long on CPU in the observed phone trace.
-        // Let it make forward progress while still honoring the thermal forecast.
-        return if(!gpu && stage.contains("Decoding",ignoreCase=true) && h<.92f)max(base,55) else base
+        return if(!gpu && stage.contains("Decoding",ignoreCase=true) && thermal<3 && h<.95f)max(base,65) else base
     }
     fun shouldPause(elapsedMs:Long,percent:Int):Boolean = elapsedMs%1000 >= percent.coerceIn(0,100)*10L
+}
+internal object BackendFallback {
+    fun shouldRetryCpu(message:String,log:String,stage:String):Boolean {
+        val all=(message+"\n"+log+"\n"+stage).lowercase()
+        if(listOf("thermal","critical","emergency","shutdown","stopped","cancel","quarantin").any{it in all})return false
+        return listOf("vulkan","backend","device","unsupported","not support","allocation","alloc failed","out of memory","failed to load","model setup").any{it in all}
+    }
 }
 
 /** Energy gate for local voice capture. Speech recognition, not this gate, supplies words. */

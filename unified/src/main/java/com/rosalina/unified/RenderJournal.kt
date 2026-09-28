@@ -24,7 +24,8 @@ internal class RenderJournal(context: Context) {
         current = JSONObject().put("id", request.id).put("matchKey", key).put("kind", request.kind.name).put("profile", profile)
             .put("requestedBackend", request.backend).put("device", Build.MODEL).put("android", Build.VERSION.SDK_INT)
             .put("initialThermal", resources.thermal).put("peakThermal", resources.thermal).put("minAvailableBytes", resources.available)
-            .put("peakWorkerRssBytes", 0L).put("createdAt", System.currentTimeMillis())
+            .put("peakWorkerRssBytes", 0L).put("peakWorkerCpuPct", JSONObject.NULL).put("peakGpuBusyPct", JSONObject.NULL)
+            .put("maxCpuCurrentKhz",0L).put("maxGpuCurrentHz",0L).put("createdAt", System.currentTimeMillis())
     }
     @Synchronized fun observe(stage: String, backend: String, res: Resources) {
         val c = current ?: return
@@ -34,6 +35,9 @@ internal class RenderJournal(context: Context) {
             .put("minAvailableBytes", minOf(c.optLong("minAvailableBytes"), res.available))
             .put("peakWorkerRssBytes", maxOf(c.optLong("peakWorkerRssBytes"), res.rssBytes))
             .put("workBudget", res.control).put("headroom10s", if (res.headroom.isFinite()) res.headroom else JSONObject.NULL)
+        if(res.workerCpuPct.isFinite())c.put("peakWorkerCpuPct",maxOf(c.optDouble("peakWorkerCpuPct",0.0),res.workerCpuPct.toDouble()))
+        if(res.gpuBusyPct.isFinite())c.put("peakGpuBusyPct",maxOf(c.optDouble("peakGpuBusyPct",0.0),res.gpuBusyPct.toDouble()))
+        c.put("maxCpuCurrentKhz",maxOf(c.optLong("maxCpuCurrentKhz"),res.cpuCurrentKhz)).put("maxGpuCurrentHz",maxOf(c.optLong("maxGpuCurrentHz"),res.gpuCurrentHz)).put("thermalZones",res.thermalZones.ifBlank{"unavailable"})
         liveSummary = "${res.control}\nWorker peak RSS: ${c.optLong("peakWorkerRssBytes") / 1_000_000} MB · stage: $stage"
     }
     @Synchronized fun finish(failure: Throwable?) {
