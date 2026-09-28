@@ -28,6 +28,7 @@ internal object VoicePcm {
 class SpeechService:NativeRpcService() {
     private var tts:OfflineTts?=null
     private var ttsRoot=""
+    private val voiceThreads by lazy{Runtime.getRuntime().availableProcessors().coerceIn(2,4)}
     @Volatile private var track:AudioTrack?=null
     private var focus:AudioFocusRequest?=null
     private val cancelled=AtomicBoolean(false)
@@ -59,7 +60,7 @@ class SpeechService:NativeRpcService() {
         val root=ModelStore(this).bundleFile(ModelKey.TTS,"model.onnx").parentFile ?:error("Voice model folder is missing")
         if(tts==null || root.path!=ttsRoot) {
             emit("stage","Loading Rosalina voice",null);tts?.release()
-            tts=OfflineTts(config=OfflineTtsConfig(model=OfflineTtsModelConfig(kokoro=OfflineTtsKokoroModelConfig(model=File(root,"model.onnx").path,voices=File(root,"voices.bin").path,tokens=File(root,"tokens.txt").path,dataDir=File(root,"espeak-ng-data").path,lexicon=File(root,"lexicon-us-en.txt").takeIf{it.exists()}?.path ?:"",lang="en-us"),numThreads=2,provider="cpu"),maxNumSentences=1));ttsRoot=root.path
+            tts=OfflineTts(config=OfflineTtsConfig(model=OfflineTtsModelConfig(kokoro=OfflineTtsKokoroModelConfig(model=File(root,"model.onnx").path,voices=File(root,"voices.bin").path,tokens=File(root,"tokens.txt").path,dataDir=File(root,"espeak-ng-data").path,lexicon=File(root,"lexicon-us-en.txt").takeIf{it.exists()}?.path ?:"",lang="en-us"),numThreads=voiceThreads,provider="cpu"),maxNumSentences=1));ttsRoot=root.path
         }
         return tts ?:error("Voice unavailable")
     }
@@ -68,7 +69,7 @@ class SpeechService:NativeRpcService() {
         val e=ensureVoice(emit)
         return Bundle().apply{
             putBoolean("prepared",true);putInt("sampleRate",e.sampleRate())
-            putInt("speakers",e.numSpeakers());putLong("elapsedMs",SystemClock.elapsedRealtime()-start)
+            putInt("speakers",e.numSpeakers());putInt("threads",voiceThreads);putLong("elapsedMs",SystemClock.elapsedRealtime()-start)
         }
     }
     private fun routeType(out:AudioTrack)=runCatching{out.routedDevice?.type ?: -1}.getOrDefault(-1)
@@ -88,7 +89,7 @@ class SpeechService:NativeRpcService() {
             intensity=values.getFloat("voiceIntensity",1f)
         ).safe()
         val started=SystemClock.elapsedRealtime()
-        emit("voiceDiag","tts-synthesis-start",Bundle().apply{putInt("sampleRate",rate);putString("profile",expression.summary())})
+        emit("voiceDiag","tts-synthesis-start",Bundle().apply{putInt("sampleRate",rate);putInt("threads",voiceThreads);putString("profile",expression.summary())})
         val generated=engine.generate(text,sid,expression.pace)
         val synthesisMs=SystemClock.elapsedRealtime()-started
         require(generated.sampleRate==rate){"Voice sample-rate changed unexpectedly: ${generated.sampleRate} vs $rate"}
@@ -150,7 +151,7 @@ class SpeechService:NativeRpcService() {
             return Bundle().apply{
                 putLong("synthesisMs",synthesisMs);putLong("firstAudioMs",first)
                 putLong("elapsedMs",SystemClock.elapsedRealtime()-started);putLong("audioMs",total*1000L/rate)
-                putLong("samples",total);putInt("sampleRate",rate);putInt("route",routeType(out))
+                putLong("samples",total);putInt("sampleRate",rate);putInt("route",routeType(out));putInt("threads",voiceThreads)
                 putString("voice","Kokoro82M/speaker-$sid");putString("voiceProfile",expression.summary())
                 putString("playbackPath","PCM16 buffered media path");putBoolean("pitchApplied",false);putBoolean("interrupted",interrupted)
             }
