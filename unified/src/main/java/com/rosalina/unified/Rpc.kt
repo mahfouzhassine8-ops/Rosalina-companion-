@@ -15,7 +15,7 @@ internal const val RPC_SHUTDOWN=99
 internal const val RPC_EVENT=2
 internal class EngineRpc(private val context:Context,private val type:Class<out Service>) {
     private var connection:ServiceConnection?=null
-    private var remote:Messenger?=null
+    @Volatile private var remote:Messenger?=null
     private var remoteDeath:CompletableDeferred<Unit>?=null
     private var deathRecipient:IBinder.DeathRecipient?=null
     private var shuttingDown=false
@@ -79,7 +79,7 @@ internal class EngineRpc(private val context:Context,private val type:Class<out 
                 val graceful=died!=null && withTimeoutOrNull(750){died.await();true}==true
                 if(!graceful && m.binder.isBinderAlive) {
                     withContext(Dispatchers.IO) {
-                        val expected=context.packageName+if(type==ChatService::class.java)":chat"else":speech"
+                        val expected=context.packageName+if(type==ChatService::class.java)":chat" else ":speech"
                         val cmd=runCatching{File("/proc/$oldPid/cmdline").readText().substringBefore('\u0000')}.getOrDefault("")
                         if(oldPid>0 && cmd==expected)android.os.Process.killProcess(oldPid)
                     }

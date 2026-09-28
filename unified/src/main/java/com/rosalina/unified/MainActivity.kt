@@ -66,7 +66,7 @@ class MainActivity:AppCompatActivity() {
             launch(Dispatchers.IO){while(isActive){if(!session.state.value.busy)session.refreshResources();delay(2000)}}
         }}
     }
-    override fun onResume(){super.onResume();lifecycleScope.launch(Dispatchers.IO){session.refreshResources()}}
+    override fun onResume(){super.onResume();lifecycleScope.launch{withContext(Dispatchers.IO){session.refreshResources()};if(mode=="Chat" && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))session.prepareChat()}}
     override fun onSaveInstanceState(outState:Bundle){outState.putString("mode",mode);super.onSaveInstanceState(outState)}
     private fun dp(n:Int)=(n*resources.displayMetrics.density+.5f).toInt()
     private fun text(value:String,size:Float=14f,color:Int=ink)=TextView(this).apply{text=value;textSize=size;setTextColor(color);setLineSpacing(dp(2).toFloat(),1f)}
@@ -75,7 +75,7 @@ class MainActivity:AppCompatActivity() {
     private fun row(vararg views:View)=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;views.forEach{addView(it,LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f).apply{setMargins(dp(2),dp(4),dp(2),dp(4))})}}
     private fun field(hintText:String)=EditText(this).apply{hint=hintText;textSize=16f;setTextColor(ink);setHintTextColor(muted);background=shape(panel);minLines=2;maxLines=6;inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES;setPadding(dp(14),dp(12),dp(14),dp(12));filters=arrayOf(InputFilter.LengthFilter(8000))}
     private fun TextView.change(value:String){if(text.toString()!=value)text=value}
-    private fun backendChoice()=session.prefs.getString("render-backend",null) ?:if(session.prefs.getBoolean("vulkan",false))"vulkan"else"auto"
+    private fun backendChoice()=session.prefs.getString("render-backend",null) ?:if(session.prefs.getBoolean("vulkan",false))"vulkan" else "auto"
     private fun buildUi() {
         val outer=FrameLayout(this).apply{setBackgroundColor(bg)}
         root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(12),dp(6),dp(12),dp(8))}
@@ -89,7 +89,7 @@ class MainActivity:AppCompatActivity() {
         stop=button("Stop"){session.stop()}.apply{visibility=View.GONE}
         val stateBox=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;background=shape(panel);setPadding(dp(12),dp(8),dp(12),dp(8));addView(text("UNIFIED CANDIDATE 2",10f,accent));addView(status);addView(thermal);addView(progress,LinearLayout.LayoutParams(-1,dp(5)));addView(row(button("Diagnostics"){diagnosticsDialog()},stop))}
         root.addView(stateBox,LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(8);bottomMargin=dp(6)})
-        for(label in listOf("Chat","Create","Edit","Animate"))tabs+=button(label){mode=label;session.prefs.edit().putString("tab",mode).apply();buildPane()}
+        for(label in listOf("Chat","Create","Edit","Animate"))tabs+=button(label){mode=label;session.prefs.edit().putString("tab",mode).apply();buildPane();if(mode=="Chat")session.prepareChat()}
         root.addView(row(*tabs.toTypedArray()));content=FrameLayout(this);root.addView(content,LinearLayout.LayoutParams(-1,0,1f));setContentView(outer)
     }
     private fun buildPane() {
@@ -116,14 +116,14 @@ class MainActivity:AppCompatActivity() {
             }
             val options=button(profileDescription()){renderSettings()};controls+=options;body.addView(options)
             generate=button(when(mode){"Animate"->"Animate";"Edit"->"Transform photo";else->"Create image"},true){submit()};controls+=generate;body.addView(generate)
-            body.addView(text(if(mode=="Animate")"Actual local image-to-video diffusion · GPU checked before automatic use"else"One local image · no cloud inference",11f,muted))
+            body.addView(text(if(mode=="Animate")"Actual local image-to-video diffusion · GPU checked before automatic use" else "One local image · no cloud inference",11f,muted))
             preview=ImageView(this).apply{adjustViewBounds=true;maxHeight=dp(380);scaleType=ImageView.ScaleType.FIT_CENTER};body.addView(preview,LinearLayout.LayoutParams(-1,dp(280)))
             resultLabel=text("No generated result yet",12f,muted);body.addView(resultLabel)
             body.addView(row(button("Open"){openResult()},button("Save"){saveResult()},button("Share"){shareResult()}))
         };update(session.state.value)
     }
     private fun profileDescription():String {
-        val profile=if(mode=="Animate")"${session.prefs.getInt("seconds",6)} seconds · ${session.prefs.getString("aspect","256×256")} · 12 steps"else if(session.prefs.getBoolean("standard",false))"Standard · 512×512 · 12 steps"else"Phone Safe · 384×384 · 8 steps"
+        val profile=if(mode=="Animate")"${session.prefs.getInt("seconds",6)} seconds · ${session.prefs.getString("aspect","256×256")} · 12 steps" else if(session.prefs.getBoolean("standard",false))"Standard · 512×512 · 12 steps" else "Phone Safe · 384×384 · 8 steps"
         return "$profile\nProcessing: ${backendChoice()}"
     }
     private fun ensureNotifications(){if(Build.VERSION.SDK_INT>=33 && ContextCompat.checkSelfPermission(this,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)}
@@ -141,15 +141,15 @@ class MainActivity:AppCompatActivity() {
         ensureNotifications();if(ContextCompat.checkSelfPermission(this,Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED)microphonePermission.launch(Manifest.permission.RECORD_AUDIO)else session.interruptAndListen()
     }
     private fun update(s:TaskState) {
-        status.change(s.stage+if(s.voiceStage.isNotBlank())"\n${s.voiceStage}"else"")
-        thermal.change("Thermal: ${ThermalPolicy.label(s.thermal)} · Available RAM: ${String.format("%.1f",s.availableBytes/1e9)} GB"+if(s.busy)"\n${s.elapsedMs/1000}s elapsed${if(s.eta.isBlank())""else" · ${s.eta}"}${if(s.workHint.isBlank() || s.kind==TaskKind.VOICE)""else"\n${s.workHint}"}"else"")
+        status.change(s.stage+if(s.voiceStage.isNotBlank())"\n${s.voiceStage}" else "")
+        thermal.change("Thermal: ${ThermalPolicy.label(s.thermal)} · Available RAM: ${String.format("%.1f",s.availableBytes/1e9)} GB"+if(s.busy)"\n${s.elapsedMs/1000}s elapsed${if(s.eta.isBlank())"" else " · ${s.eta}"}${if(s.workHint.isBlank() || s.kind==TaskKind.VOICE)"" else "\n${s.workHint}"}" else "")
         stop.visibility=if(s.busy)View.VISIBLE else View.GONE;stop.isEnabled=!s.stopping
         progress.visibility=if(s.busy && s.kind !in listOf(TaskKind.CHAT,TaskKind.VOICE))View.VISIBLE else View.GONE
         if(progress.isIndeterminate!=(s.percent==null))progress.isIndeterminate=s.percent==null
         if(s.percent!=null && progress.progress!=s.percent)progress.progress=s.percent
         controls.forEach{it.isEnabled=!s.busy && !s.quarantined}
         val photo=session.prefs.getString("photo","").orEmpty();if(photo!=lastPhoto){lastPhoto=photo;reference?.let{loadPreview(it,photo)}}
-        if(s.result!=lastResult){lastResult=s.result;preview?.let{if(File(s.result).extension=="png")loadPreview(it,s.result)else it.setImageDrawable(null)};resultLabel?.text=if(s.result.isBlank())"No generated result yet"else File(s.result).name+if(s.result.endsWith(".mp4"))" · tap Open to play"else""}
+        if(s.result!=lastResult){lastResult=s.result;preview?.let{if(File(s.result).extension=="png")loadPreview(it,s.result)else it.setImageDrawable(null)};resultLabel?.text=if(s.result.isBlank())"No generated result yet" else File(s.result).name+if(s.result.endsWith(".mp4"))" · tap Open to play" else ""}
         chatList?.let{list->
             val scroll=chatScroll;val follow=scroll==null || list.height-scroll.height-scroll.scrollY<dp(72)
             val history=session.transcript();var changed=false
@@ -162,9 +162,9 @@ class MainActivity:AppCompatActivity() {
                 }
                 streaming=text("",16f).apply{setTextIsSelectable(true);setPadding(dp(4),dp(6),dp(4),dp(12))};list.addView(streaming);liveText="";changed=true
             }
-            val incoming=if(history.lastOrNull()?.second==s.answer)""else s.answer
+            val incoming=if(history.lastOrNull()?.second==s.answer)"" else s.answer
             if(incoming!=liveText){if(incoming.startsWith(liveText))streaming?.append(incoming.substring(liveText.length))else streaming?.text=incoming;liveText=incoming;changed=true}
-            if(changed && follow)scroll?.post{scroll.scrollTo(0,list.height)}
+            if(changed && follow)scroll?.let{it.post{it.scrollTo(0,list.height)}}
         }
     }
     private fun modelDialog() {
@@ -211,7 +211,7 @@ class MainActivity:AppCompatActivity() {
     }
     private fun loadPreview(view:ImageView,path:String){if(path.isBlank() || !File(path).isFile){view.setImageDrawable(null);return};view.setImageBitmap(BitmapFactory.decodeFile(path,BitmapFactory.Options().apply{inSampleSize=2}))}
     private fun resultFile():File?=File(session.state.value.result).takeIf{it.isFile}
-    private fun mime(file:File)=if(file.extension=="mp4")"video/mp4"else"image/png"
+    private fun mime(file:File)=if(file.extension=="mp4")"video/mp4" else "image/png"
     private fun openResult(){val file=resultFile() ?:return;val uri=FileProvider.getUriForFile(this,"$packageName.files",file);runCatching{startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri,mime(file)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))}.onFailure{session.notice("No application available to open this result")}}
     private fun shareResult(){val file=resultFile() ?:return;val uri=FileProvider.getUriForFile(this,"$packageName.files",file);startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(mime(file)).putExtra(Intent.EXTRA_STREAM,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),"Share Rosalina result"))}
     private fun saveResult() {
@@ -219,7 +219,7 @@ class MainActivity:AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             var uri:Uri?=null
             try {
-                val video=file.extension=="mp4";val values=ContentValues().apply{put(MediaStore.MediaColumns.DISPLAY_NAME,file.name);put(MediaStore.MediaColumns.MIME_TYPE,mime(file));put(MediaStore.MediaColumns.RELATIVE_PATH,if(video)"Movies/Rosalina"else"Pictures/Rosalina");put(MediaStore.MediaColumns.IS_PENDING,1)}
+                val video=file.extension=="mp4";val values=ContentValues().apply{put(MediaStore.MediaColumns.DISPLAY_NAME,file.name);put(MediaStore.MediaColumns.MIME_TYPE,mime(file));put(MediaStore.MediaColumns.RELATIVE_PATH,if(video)"Movies/Rosalina" else "Pictures/Rosalina");put(MediaStore.MediaColumns.IS_PENDING,1)}
                 uri=contentResolver.insert(if(video)MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Images.Media.EXTERNAL_CONTENT_URI,values) ?:error("Android could not create a gallery item")
                 contentResolver.openOutputStream(uri)?.use{out->file.inputStream().use{it.copyTo(out)}} ?:error("Gallery output unavailable")
                 contentResolver.update(uri,ContentValues().apply{put(MediaStore.MediaColumns.IS_PENDING,0)},null,null);session.notice("Saved to your gallery")
