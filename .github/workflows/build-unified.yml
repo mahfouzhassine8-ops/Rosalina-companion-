@@ -1,7 +1,7 @@
 name: Rosalina Unified Candidate
 on:
   push:
-    branches: [rosalina-unified-v1-candidate, rosalina-voice-v2-expressive-candidate, rosalina-live-voice-candidate, rosalina-hybrid-live-candidate]
+    branches: [rosalina-unified-v1-candidate, rosalina-voice-v2-expressive-candidate, rosalina-live-voice-candidate, rosalina-hybrid-live-candidate, rosalina-voice-c1.2-speech-repair]
   workflow_dispatch:
 permissions:
   contents: read
