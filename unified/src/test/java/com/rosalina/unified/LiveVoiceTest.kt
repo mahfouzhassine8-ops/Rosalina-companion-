@@ -9,8 +9,8 @@ class LiveVoiceTest {
         assertEquals(1400,LiveVoiceTuning(endpointMs=9999).safe().endpointMs)
     }
     @Test fun liveChunkPrefersSentence(){
-        val s="That sounds good. I can keep going with the next thought."
-        assertEquals("That sounds good. ".length,LiveSpeechChunker.cut(s))
+        val s="That sounds very good and natural to me. I can keep going with the next thought."
+        assertEquals("That sounds very good and natural to me. ".length,LiveSpeechChunker.cut(s))
     }
     @Test fun liveChunkCanUseNaturalClause(){
         val s="I can do that for you, and I can make the delivery softer after that."
