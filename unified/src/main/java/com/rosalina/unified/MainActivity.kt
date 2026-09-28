@@ -88,7 +88,7 @@ class MainActivity:AppCompatActivity() {
         status=text("Ready",14f);thermal=text("",11f,muted)
         progress=ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal).apply{max=100;visibility=View.GONE}
         stop=button("Stop"){session.stop()}.apply{visibility=View.GONE}
-        val stateBox=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;background=shape(panel);setPadding(dp(12),dp(8),dp(12),dp(8));addView(text("UNIFIED CANDIDATE 2 · ADAPTIVE HYBRID LIVE C1.1",10f,accent));addView(status);addView(thermal);addView(progress,LinearLayout.LayoutParams(-1,dp(5)));addView(row(button("Diagnostics"){diagnosticsDialog()},stop))}
+        val stateBox=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;background=shape(panel);setPadding(dp(12),dp(8),dp(12),dp(8));addView(text("UNIFIED · ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",10f,accent));addView(status);addView(thermal);addView(progress,LinearLayout.LayoutParams(-1,dp(5)));addView(row(button("Diagnostics"){diagnosticsDialog()},stop))}
         root.addView(stateBox,LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(8);bottomMargin=dp(6)})
         for(label in listOf("Chat","Create","Edit","Animate"))tabs+=button(label){mode=label;session.prefs.edit().putString("tab",mode).apply();buildPane();if(mode=="Chat")session.prepareChat()}
         root.addView(row(*tabs.toTypedArray()));content=FrameLayout(this);root.addView(content,LinearLayout.LayoutParams(-1,0,1f));setContentView(outer)
@@ -105,7 +105,7 @@ class MainActivity:AppCompatActivity() {
             body.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));body.addView(prompt)
             generate=button("Send",true){submit()};controls+=generate
             body.addView(row(button("Photo"){pickPhoto.launch(arrayOf("image/*"))},button("Mic"){voice()},generate))
-            body.addView(text(if(session.prefs.getBoolean("live-voice",true))"Live Voice · tap Mic once, speak naturally, and interrupt Rosalina by talking. Stop ends the session." else "Classic Voice V2 · Stop ends the session. Tap Mic remains available to interrupt.",11f,muted))
+            body.addView(text(if(session.prefs.getBoolean("live-voice",true))"Live Companion · tap Mic once and speak naturally. Rosalina starts from an early phrase instead of waiting for the full reply. Stop ends the session." else "Classic Voice V2 · Stop ends the session. Tap Mic remains available to interrupt.",11f,muted))
             content.addView(body,FrameLayout.LayoutParams(-1,-1))
         }else {
             content.addView(ScrollView(this).apply{isFillViewport=true;addView(body)})
@@ -191,10 +191,10 @@ class MainActivity:AppCompatActivity() {
         val tokens=field("Maximum response tokens").apply{inputType=InputType.TYPE_CLASS_NUMBER;minLines=1;setText(session.prefs.getInt("max-tokens",1024).toString())};body.addView(text("Maximum response length · 64–4096 tokens",13f));body.addView(tokens)
         val spoken=Switch(this).apply{text="Read text-chat replies aloud";setTextColor(ink);isChecked=session.prefs.getBoolean("spoken-replies",false)};body.addView(spoken)
         val handsFree=Switch(this).apply{text="Hands-free interruption in Voice mode";setTextColor(ink);isChecked=session.prefs.getBoolean("hands-free",true)};body.addView(handsFree)
-        val liveVoice=Switch(this).apply{text="Live conversation mode · keep local voice engines warm";setTextColor(ink);isChecked=session.prefs.getBoolean("live-voice",true)};body.addView(liveVoice)
+        val liveVoice=Switch(this).apply{text="Live Companion mode · keep local conversation engines warm";setTextColor(ink);isChecked=session.prefs.getBoolean("live-voice",true)};body.addView(liveVoice)
         val liveEndpoint=SeekBar(this).apply{max=850;progress=(session.prefs.getInt("live-endpoint-ms",820)-550).coerceIn(0,850)}
         body.addView(text("Live turn timing · quicker ← pause before Rosalina answers → more patient",13f));body.addView(liveEndpoint)
-        body.addView(text("Live mode keeps Qwen, Whisper and Rosalina's voice in separate local processes during the session. It listens while she speaks and supports barge-in. If free RAM is too low, use Classic Voice V2.",12f,muted))
+        body.addView(text("Live Companion keeps Qwen, Whisper and Rosalina's voice in separate local processes. Early phrase handoff reduces text-to-voice delay while the protected PCM16 playback path remains in place. If free RAM is too low, use Classic Voice V2.",12f,muted))
         val adaptiveLive=Switch(this).apply{text="Adaptive Live learning · learn my conversation rhythm";setTextColor(ink);isChecked=session.prefs.getBoolean("adaptive-live-learning",true)};body.addView(adaptiveLive)
         body.addView(text(session.liveLearningSummary(),11f,muted))
         val online=Switch(this).apply{text="Allow internet enhancements · local fallback always available";setTextColor(ink);isChecked=session.prefs.getBoolean("online-enhancements",true)};body.addView(online)
@@ -212,8 +212,8 @@ class MainActivity:AppCompatActivity() {
 
         val expression=SeekBar(this).apply{max=100;progress=session.prefs.getInt("voice-expression",75).coerceIn(0,100)}
         body.addView(text("Expression strength · subtle → full",13f));body.addView(expression)
-        val pitch=SeekBar(this).apply{max=160;progress=(80+session.prefs.getInt("voice-pitch",0)).coerceIn(0,160)}
-        body.addView(text("Pitch · low ← natural → high · ±8 semitones manual range",13f));body.addView(pitch)
+        val pitch=SeekBar(this).apply{max=160;progress=(80+session.prefs.getInt("voice-pitch",0)).coerceIn(0,160);isEnabled=false}
+        body.addView(text("Pitch · temporarily held at natural on the protected PCM16 path",13f));body.addView(pitch)
         val breath=SeekBar(this).apply{max=60;progress=session.prefs.getInt("voice-breath",0).coerceIn(0,60)}
         body.addView(text("Breathiness · clean → airy/breathy",13f));body.addView(breath)
         val tone=SeekBar(this).apply{max=160;progress=(80+session.prefs.getInt("voice-tone",0)).coerceIn(0,160)}
@@ -228,7 +228,7 @@ class MainActivity:AppCompatActivity() {
 
         val voices=arrayOf("Alloy","Aoede","Bella","Heart · Rosalina default","Jessica","Kore","Nicole","Nova","River","Sarah","Sky")
         val spinner=Spinner(this).apply{adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,voices);setSelection(session.prefs.getInt("speaker",3).coerceIn(0,10))};body.addView(text("Base Rosalina voice identity",13f));body.addView(spinner)
-        body.addView(text("Pitch is changed independently from pace when Android's pitch-preserving playback is available. Breath/tone/rasp are streamed locally with smoothing and clipping protection. Local voice remains available even when online enhancements are disabled or unavailable.",12f,muted))
+        body.addView(text("The protected playback path keeps pitch neutral while pace, breath, tone, rasp and energy remain available. This avoids reintroducing the audio crash fixed in C1.2. Local voice remains available even when online enhancements are disabled or unavailable.",12f,muted))
         body.addView(text("Live Voice starts only after you tap Mic. Speaker interruption requires enabled echo cancellation; otherwise use a supported headphone route or tap Mic. Stop ends listening. Classic mode remains available above.",12f,muted))
         body.addView(button("Reset Live learning"){if(!session.state.value.busy)session.resetLiveLearning()})
         body.addView(button("Clear conversation"){if(!session.state.value.busy)AlertDialog.Builder(this).setMessage("Clear this app's conversation? Models and other apps will not change.").setNegativeButton("Keep",null).setPositiveButton("Clear"){_,_->session.clearConversation()}.show()})
