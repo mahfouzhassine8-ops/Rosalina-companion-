@@ -221,8 +221,9 @@ internal class Session private constructor(private val context:Context) {
         update(r.id){it.copy(answer="",voiceStage="",stage="Preparing response")};addTurn("You",prompt)
         val queue=Channel<String>(64);var shortened=false
         val liveSpeech=voiceActive && prefs.getBoolean("live-voice",true)
-        val liveTuning=LiveVoiceTuning(endpointMs=prefs.getInt("live-endpoint-ms",820),clauseChars=prefs.getInt("live-clause-chars",120))
-        fun cutSpoken(value:String)=if(liveSpeech)LiveSpeechChunker.cut(value,liveTuning)else SpeechText.cut(value)
+        val liveTuning=LiveVoiceTuning(endpointMs=prefs.getInt("live-endpoint-ms",820),clauseChars=prefs.getInt("live-clause-chars",96),firstChunkChars=prefs.getInt("live-first-chars",44))
+        var spoken=0
+        fun cutSpoken(value:String)=if(liveSpeech)LiveSpeechChunker.cut(value,liveTuning,eager=spoken==0)else SpeechText.cut(value)
         fun enqueue(text:String){if(text.isNotBlank() && !shortened && !queue.trySend(text).isSuccess){shortened=true;update(r.id){it.copy(voiceStage="Spoken reply shortened · full reply remains in Chat")}}}
         val speechJob=if(readAloud)launch {
             var unavailable=false
@@ -242,8 +243,12 @@ internal class Session private constructor(private val context:Context) {
                             when(event.getString("type")) {
                                 "stage"->update(r.id){it.copy(voiceStage=event.getString("text").orEmpty())}
                                 "voiceDiag"->{
+                                    val voiceStep=event.getString("text").orEmpty()
+                                    if(voiceStep=="tts-synthesis-start")update(r.id){it.copy(voiceStage="Preparing Rosalina's voice…")}
+                                    else if(voiceStep=="pcm16-ready")update(r.id){it.copy(voiceStage="Starting voice…")}
+                                    else if(voiceStep=="first-audio-written" && firstAudioWall==0L)firstAudioWall=SystemClock.elapsedRealtime()
                                     speechTrace=buildString{
-                                        append(event.getString("text").orEmpty())
+                                        append(voiceStep)
                                         val samples=event.getInt("samples",-1);if(samples>=0)append(" · samples=").append(samples)
                                         val rate=event.getInt("sampleRate",-1);if(rate>0)append(" · ").append(rate).append("Hz")
                                         val route=event.getInt("route",-1);if(route>=0)append(" · route=").append(route)
@@ -254,6 +259,7 @@ internal class Session private constructor(private val context:Context) {
                             }
                         }
                         val wasInterrupted=result.getBoolean("interrupted")
+                        speechChunks++
                         speechMetrics="Kokoro Voice V2; ${result.getString("voiceProfile")}; playback=${result.getString("playbackPath")}; pitch path=${if(result.getBoolean("pitchApplied"))"Android pitch-preserving playback" else "safe neutral playback"}; synthesis ${result.getLong("synthesisMs")} ms; first audio ${result.getLong("firstAudioMs")} ms; audio ${result.getLong("audioMs")} ms; elapsed ${result.getLong("elapsedMs")} ms; interrupted=$wasInterrupted; restart attempts=${attempt-1}"
                         if(wasInterrupted){unavailable=true;update(r.id){it.copy(voiceStage="")}}
                         completed=true
@@ -276,7 +282,8 @@ internal class Session private constructor(private val context:Context) {
                 }
             }
         }else null
-        val answer=StringBuilder();var spoken=0;var lastSpeechScan=0L
+        val answer=StringBuilder();var lastSpeechScan=0L
+        var firstTextWall=0L;var firstAudioWall=0L;var speechChunks=0
         chatNeedsReset=true
         try {
             val responseLimit=if(liveSpeech)learner.responseLimit(prefs.getInt("max-tokens",1024))else prefs.getInt("max-tokens",1024)
@@ -285,7 +292,7 @@ internal class Session private constructor(private val context:Context) {
                     "stage"->update(r.id){it.copy(stage=event.getString("text").orEmpty(),pid=event.getInt("pid"),backend="Qwen · preserved CPU engine")}
                     "token"->{
                         answer.append(event.getString("text").orEmpty());update(r.id){it.copy(answer=answer.toString(),pid=event.getInt("pid"))}
-                        val now=SystemClock.elapsedRealtime()
+                        val now=SystemClock.elapsedRealtime();if(firstTextWall==0L && answer.isNotEmpty())firstTextWall=now
                         if(readAloud && now-lastSpeechScan>=100 && !shortened) {
                             lastSpeechScan=now;val visible=SpeechText.spoken(answer.toString())
                             if(spoken<=visible.length){var cut=cutSpoken(visible.substring(spoken));while(cut>0){enqueue(visible.substring(spoken,spoken+cut).trim());spoken+=cut;cut=cutSpoken(visible.substring(spoken))}}
@@ -295,9 +302,23 @@ internal class Session private constructor(private val context:Context) {
             }
             chatNeedsReset=false;warmSystem=prefs.getString("system",DEFAULT_SYSTEM);lastChatFirstTextMs=result.getLong("firstTextMs")
             chatMetrics="Chat warm model=${result.getBoolean("warmModel")}; clean recovery=${result.getBoolean("recovered")}; setup=${result.getLong("modelSetupMs")} ms; first text=${result.getLong("firstTextMs")} ms; response=${result.getLong("responseMs")} ms; characters=${result.getInt("characters")}; emitted text pieces=${result.getInt("textPieces")} (not native token count); chat PSS=${result.getLong("chatPssKb")} KiB"
-            if(readAloud){val visible=SpeechText.spoken(answer.toString());val span=if(liveSpeech)220 else 500;while(spoken<visible.length){val end=minOf(visible.length,spoken+span);enqueue(visible.substring(spoken,end).trim());spoken=end}}
+            if(readAloud){
+                val visible=SpeechText.spoken(answer.toString())
+                while(spoken<visible.length){
+                    val remaining=visible.substring(spoken)
+                    val natural=cutSpoken(remaining)
+                    val cut=if(natural>0)natural else minOf(remaining.length,if(liveSpeech)96 else 500)
+                    val safeCut=if(cut<remaining.length)remaining.lastIndexOf(' ',cut).takeIf{it>=12}?.plus(1) ?:cut else cut
+                    enqueue(remaining.substring(0,safeCut).trim());spoken+=safeCut
+                }
+            }
         } finally {queue.close();if(answer.isNotBlank())addTurn("Rosalina",answer.toString())}
-        speechJob?.join();update(r.id){it.copy(answer="",voiceStage="")}
+        speechJob?.join()
+        if(readAloud){
+            val textToAudio=if(firstTextWall>0L && firstAudioWall>=firstTextWall)firstAudioWall-firstTextWall else -1L
+            speechMetrics += "; chunks=$speechChunks; first-text→first-audio=${if(textToAudio>=0)textToAudio.toString()+" ms" else "unavailable"}"
+        }
+        update(r.id){it.copy(answer="",voiceStage="")}
     }
     private suspend fun performVoice(r:TaskRequest) {
         if(prefs.getBoolean("live-voice",true))performLiveVoice(r)else performClassicVoice(r)
