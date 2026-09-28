@@ -225,6 +225,7 @@ internal class Session private constructor(private val context:Context) {
         var spoken=0
         fun cutSpoken(value:String)=if(liveSpeech)LiveSpeechChunker.cut(value,liveTuning,eager=spoken==0)else SpeechText.cut(value)
         fun enqueue(text:String){if(text.isNotBlank() && !shortened && !queue.trySend(text).isSuccess){shortened=true;update(r.id){it.copy(voiceStage="Spoken reply shortened · full reply remains in Chat")}}}
+        var firstTextWall=0L;var firstAudioWall=0L;var speechChunks=0
         val speechJob=if(readAloud)launch {
             var unavailable=false
             for(text in queue) {
@@ -284,7 +285,6 @@ internal class Session private constructor(private val context:Context) {
             }
         }else null
         val answer=StringBuilder();var lastSpeechScan=0L
-        var firstTextWall=0L;var firstAudioWall=0L;var speechChunks=0
         chatNeedsReset=true
         try {
             val responseLimit=if(liveSpeech)learner.responseLimit(prefs.getInt("max-tokens",1024))else prefs.getInt("max-tokens",1024)
