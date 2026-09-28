@@ -19,6 +19,8 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 class RosalinaApp:Application(){override fun onCreate(){super.onCreate();if(getProcessName()==packageName)Session.get(this)}}
 internal class Session private constructor(private val context:Context) {
@@ -39,7 +41,7 @@ internal class Session private constructor(private val context:Context) {
     private val turns=mutableListOf<Pair<String,String>>()
     @Volatile private var snapshot:List<Pair<String,String>> = emptyList()
     private val historyReady=CompletableDeferred<Unit>()
-    private val mutable=MutableStateFlow(TaskState(result=prefs.getString("result","").orEmpty(),stage=if(prefs.getString("active-id","").isNullOrBlank())"Ready"else"Previous work was interrupted. No task restarted."))
+    private val mutable=MutableStateFlow(TaskState(result=prefs.getString("result","").orEmpty(),stage=if(prefs.getString("active-id","").isNullOrBlank())"Ready" else "Previous work was interrupted. No task restarted."))
     val state:StateFlow<TaskState> = mutable.asStateFlow()
     @Volatile private var request:TaskRequest?=null
     @Volatile private var activeJob:Job?=null
@@ -50,6 +52,7 @@ internal class Session private constructor(private val context:Context) {
     @Volatile private var voiceInterrupt=false
     @Volatile private var capture:VoiceCapture?=null
     @Volatile private var chatNeedsReset=false
+    @Volatile private var warmSystem:String?=null
     private var speechMetrics=""
     private var chatMetrics=""
     private var probeLog=""
@@ -62,6 +65,24 @@ internal class Session private constructor(private val context:Context) {
         }
     }
     fun transcript():List<Pair<String,String>> = snapshot
+    /** Invoked only when Chat is visible. Uses the same lease/FGS as every major engine. */
+    fun prepareChat() {
+        if(state.value.busy || state.value.quarantined || models.path(ModelKey.CHAT)==null)return
+        if(chat.pid>0 && warmSystem==prefs.getString("system",DEFAULT_SYSTEM))return
+        if(ThermalPolicy.blocks(state.value.thermal))return
+        begin(TaskRequest(kind=TaskKind.CHAT,modelKey="prepare"))
+    }
+    private suspend fun warmChat(r:TaskRequest) {
+        val res=thermal.read()
+        require(!res.low && !ThermalPolicy.blocks(res.thermal)){"Chat preparation deferred: Android reports memory or thermal pressure"}
+        chatNeedsReset=true
+        val result=chat.call(Bundle().apply{putString("operation","prepare");putString("model",models.requirePath(ModelKey.CHAT).path);putString("system",prefs.getString("system",DEFAULT_SYSTEM));putString("history",SpeechText.history(snapshot))}){event->
+            if(event.getString("type")=="stage")update(r.id){it.copy(stage=event.getString("text").orEmpty(),pid=event.getInt("pid"),backend="Qwen · preparing preserved CPU engine")}
+        }
+        check(result.getBoolean("prepared")){"Chat model did not confirm preparation"}
+        chatNeedsReset=false;warmSystem=prefs.getString("system",DEFAULT_SYSTEM)
+        chatMetrics="Prepared chat on opening; model setup=${result.getLong("modelSetupMs")} ms; already warm=${result.getBoolean("warmModel")}"
+    }
     @Synchronized private fun addTurn(role:String,text:String) {
         turns.add(role to text);snapshot=turns.toList()
         val a=JSONArray();turns.forEach{(r,t)->a.put(JSONObject().put("role",r).put("text",t))};atomicText(transcriptFile,a.toString())
@@ -73,9 +94,9 @@ internal class Session private constructor(private val context:Context) {
         mutable.update{it.copy(id=id,busy=true,stage="Clearing conversation")}
         val job=scope.launch(Dispatchers.IO,start=CoroutineStart.LAZY) {
             var failure:Throwable?=null
-            try{historyReady.await();chat.shutdown();currentCoroutineContext().ensureActive();synchronized(this@Session){atomicText(transcriptFile,"[]");turns.clear();snapshot=emptyList()}}
+            try{historyReady.await();chat.shutdown();warmSystem=null;currentCoroutineContext().ensureActive();synchronized(this@Session){atomicText(transcriptFile,"[]");turns.clear();snapshot=emptyList()}}
             catch(t:Throwable){failure=t}
-            finally{withContext(NonCancellable+Dispatchers.Main.immediate){activeJob=null;if(lease.release(id))mutable.update{it.copy(busy=false,stopping=false,answer="",revision=it.revision+1,stage=if(failure==null)"Conversation cleared"else failure?.message ?:"Clear stopped",error=failure?.toString().orEmpty(),quarantined=failure is WorkerQuarantined)}}}
+            finally{withContext(NonCancellable+Dispatchers.Main.immediate){activeJob=null;if(lease.release(id))mutable.update{it.copy(busy=false,stopping=false,answer="",revision=it.revision+1,stage=if(failure==null)"Conversation cleared" else failure?.message ?:"Clear stopped",error=failure?.toString().orEmpty(),quarantined=failure is WorkerQuarantined)}}}
         };activeJob=job;job.start()
     }
     private fun update(id:String,change:(TaskState)->TaskState) {
@@ -91,7 +112,7 @@ internal class Session private constructor(private val context:Context) {
         if(state.value.quarantined){notice("Force-stop Rosalina before starting another worker");return false}
         if(!lease.acquire(r.id))return false
         request=r;stopReason="";finishListening=false;voiceInterrupt=false;probeLog=""
-        mutable.value=TaskState(id=r.id,kind=r.kind,busy=true,stage="Preparing",result=state.value.result,revision=state.value.revision,eta=if(r.kind in listOf(TaskKind.CREATE,TaskKind.EDIT,TaskKind.ANIMATE))"ETA calibrating…"else"")
+        mutable.value=TaskState(id=r.id,kind=r.kind,busy=true,stage="Preparing",result=state.value.result,revision=state.value.revision,eta=if(r.kind in listOf(TaskKind.CREATE,TaskKind.EDIT,TaskKind.ANIMATE))"ETA calibrating…" else "")
         prefs.edit().putString("active-id",r.id).apply()
         try{ContextCompat.startForegroundService(context,Intent(context,GenerationService::class.java).putExtra("task",r.id))}
         catch(t:Throwable){lease.release(r.id);request=null;prefs.edit().remove("active-id").apply();mutable.update{it.copy(busy=false,error=t.toString(),stage="Android could not start foreground work")};return false}
@@ -129,8 +150,8 @@ internal class Session private constructor(private val context:Context) {
             try {
                 historyReady.await()
                 when(r.kind) {
-                    TaskKind.IMPORT->{chat.shutdown();speech.shutdown();models.import(ModelKey.valueOf(r.modelKey),Uri.parse(r.uri)){text,p->update(r.id){it.copy(stage=text,percent=p)}}}
-                    TaskKind.CHAT->performChat(r,r.prompt,prefs.getBoolean("spoken-replies",false))
+                    TaskKind.IMPORT->{chat.shutdown();warmSystem=null;speech.shutdown();models.import(ModelKey.valueOf(r.modelKey),Uri.parse(r.uri)){text,p->update(r.id){it.copy(stage=text,percent=p)}}}
+                    TaskKind.CHAT->if(r.modelKey=="prepare")warmChat(r)else performChat(r,r.prompt,prefs.getBoolean("spoken-replies",false))
                     TaskKind.VOICE->performVoice(r)
                     else->render(r)
                 }
@@ -141,7 +162,7 @@ internal class Session private constructor(private val context:Context) {
                     var finalFailure=failure
                     try{speech.shutdown()}catch(t:Throwable){finalFailure=if(t is WorkerQuarantined)t else finalFailure ?:t}
                     if(chatNeedsReset || r.kind !in listOf(TaskKind.CHAT,TaskKind.VOICE) || thermal.read().low) {
-                        try{chat.shutdown();chatNeedsReset=false}catch(t:Throwable){finalFailure=if(t is WorkerQuarantined)t else finalFailure ?:t}
+                        try{chat.shutdown();warmSystem=null;chatNeedsReset=false}catch(t:Throwable){finalFailure=if(t is WorkerQuarantined)t else finalFailure ?:t}
                     }
                     runCatching{journal.finish(finalFailure)}
                     finish(r,service,finalFailure)
@@ -152,7 +173,7 @@ internal class Session private constructor(private val context:Context) {
     private suspend fun finish(r:TaskRequest,service:GenerationService,failure:Throwable?)=withContext(NonCancellable+Dispatchers.Main.immediate) {
         if(lease.current()!=r.id)return@withContext
         val old=state.value
-        val message=when{failure is CancellationException->stopReason.ifBlank{"Stopped"};failure!=null->failure.message ?:failure.javaClass.simpleName;old.result.isNotBlank() && old.kind in listOf(TaskKind.CREATE,TaskKind.EDIT,TaskKind.ANIMATE)->"Ready · saved privately";else->"Ready"}
+        val message=when{failure is CancellationException->stopReason.ifBlank{"Stopped"};failure!=null->failure.message ?:failure.javaClass.simpleName;r.modelKey=="prepare"->"Ready · chat model prepared";old.result.isNotBlank() && old.kind in listOf(TaskKind.CREATE,TaskKind.EDIT,TaskKind.ANIMATE)->"Ready · saved privately";else->"Ready"}
         val done=old.copy(busy=false,stopping=false,stage=message,percent=null,step=0,total=0,eta="",pid=0,voiceStage="",workHint="",error=if(failure!=null && failure !is CancellationException)failure.stackTraceToString()else old.error,quarantined=old.quarantined || failure is WorkerQuarantined)
         service.finishTask(r.id)
         val report=diagnostics(done);withContext(Dispatchers.IO){runCatching{atomicText(File(context.filesDir,"last-diagnostics.txt"),report)}}
@@ -166,7 +187,6 @@ internal class Session private constructor(private val context:Context) {
         setTaskMode(r,readAloud)
         val model=models.requirePath(ModelKey.CHAT);val history=SpeechText.history(snapshot)
         update(r.id){it.copy(answer="",voiceStage="",stage="Preparing response")};addTurn("You",prompt)
-        // Never suspend token collection behind audio playback. Overflow is explicit, not hidden.
         val queue=Channel<String>(64);var shortened=false
         fun enqueue(text:String){if(text.isNotBlank() && !shortened && !queue.trySend(text).isSuccess){shortened=true;update(r.id){it.copy(voiceStage="Spoken reply shortened · full reply remains in Chat")}}}
         val speechJob=if(readAloud)launch {
@@ -202,7 +222,7 @@ internal class Session private constructor(private val context:Context) {
                     }
                 }
             }
-            chatNeedsReset=false
+            chatNeedsReset=false;warmSystem=prefs.getString("system",DEFAULT_SYSTEM)
             chatMetrics="Chat warm model=${result.getBoolean("warmModel")}; setup=${result.getLong("modelSetupMs")} ms; first text=${result.getLong("firstTextMs")} ms; response=${result.getLong("responseMs")} ms; characters=${result.getInt("characters")}; emitted text pieces=${result.getInt("textPieces")} (not native token count); chat PSS=${result.getLong("chatPssKb")} KiB"
             if(readAloud){val visible=SpeechText.spoken(answer.toString());while(spoken<visible.length){val end=minOf(visible.length,spoken+500);enqueue(visible.substring(spoken,end).trim());spoken=end}}
         } finally {queue.close();if(answer.isNotBlank())addTurn("Rosalina",answer.toString())}
@@ -240,28 +260,31 @@ internal class Session private constructor(private val context:Context) {
                     render(r.copy(kind=routed,prompt=transcript,photo=prefs.getString("photo","").orEmpty(),seconds=Route.seconds(transcript),width=aspect.getOrNull(0)?.toIntOrNull() ?:256,height=aspect.getOrNull(1)?.toIntOrNull() ?:256,backend=prefs.getString("render-backend","auto") ?:"auto",profile=if(prefs.getBoolean("standard",false))RenderProfile.Standard else RenderProfile.Draft));return
                 }
                 supervisorScope {
-                    var interrupted=false
-                    var responseDone=false
+                    val interrupted=AtomicBoolean(false)
+                    val responseDone=AtomicBoolean(false)
+                    val recorded=AtomicReference<VoiceRecording?>(null)
                     val response=async{performChat(r,transcript,true)}
                     val next=async {
-                        input.capture(::manual,::finished,{responseDone}) {
-                            interrupted=true;speech.interruptNow();response.cancel(CancellationException("User voice interruption"))
+                        input.capture(::manual,::finished,{responseDone.get()}) {
+                            interrupted.set(true);response.cancel(CancellationException("User voice interruption"));speech.interruptNow()
                             update(r.id){it.copy(stage="Listening · interrupted",voiceStage="")}
-                        }
+                        }?.also{recorded.set(it)}
                     }
                     try {
-                        try{response.await()}catch(e:CancellationException){currentCoroutineContext().ensureActive();if(!interrupted)throw e}
+                        try{response.await()}catch(e:CancellationException){currentCoroutineContext().ensureActive();if(!interrupted.get())throw e}
                         finally {
                             withContext(NonCancellable) {
                                 speech.shutdown();input.outputActive=false
-                                if(chatNeedsReset){chat.shutdown();chatNeedsReset=false}
+                                if(chatNeedsReset){chat.shutdown();warmSystem=null;chatNeedsReset=false}
                             }
                         }
                         previousOutput=snapshot.lastOrNull{it.first=="Rosalina"}?.second.orEmpty()
-                        responseDone=true
+                        responseDone.set(true)
                         update(r.id){it.copy(stage="Listening · speak or tap Stop to finish",answer="",voiceStage="")}
-                        pending=next.await()
-                    } finally {response.cancelAndJoin();next.cancelAndJoin()}
+                        pending=next.await();recorded.set(null)
+                    } finally {
+                        withContext(NonCancellable){response.cancelAndJoin();next.cancelAndJoin();recorded.getAndSet(null)?.file?.delete()}
+                    }
                 }
                 if(pending==null)return
             }
@@ -269,7 +292,7 @@ internal class Session private constructor(private val context:Context) {
     }
     private suspend fun render(r:TaskRequest) {
         setTaskMode(r);update(r.id){it.copy(kind=r.kind)}
-        chat.shutdown();speech.shutdown();chatNeedsReset=false
+        chat.shutdown();warmSystem=null;speech.shutdown();chatNeedsReset=false
         val resources=thermal.read()
         require(!resources.low){"Android reports low memory. Available RAM: ${String.format("%.2f",resources.available/1e9)} GB. Close other large applications."}
         require(!ThermalPolicy.blocks(resources.thermal)){"Android reports ${ThermalPolicy.label(resources.thermal)} heat. Cool the phone before retrying."}
@@ -283,17 +306,17 @@ internal class Session private constructor(private val context:Context) {
         journal.begin(r,resources)
         try {
             File(dir,"prompt.txt").writeText(r.prompt);File(dir,"negative.txt").writeText("")
-            val input=if(video || edit){require(r.photo.isNotBlank()){"Choose a photo first"};prepareRgb(File(r.photo),File(dir,"input.rgb"),w,h);File(dir,"input.rgb").path}else"-"
-            val output=File(dir,if(video)"output.rvf"else"output.rimg")
+            val input=if(video || edit){require(r.photo.isNotBlank()){"Choose a photo first"};prepareRgb(File(r.photo),File(dir,"input.rgb"),w,h);File(dir,"input.rgb").path}else "-"
+            val output=File(dir,if(video)"output.rvf" else "output.rimg")
             val args=if(video)listOf(models.requirePath(ModelKey.VIDEO).path,models.requirePath(ModelKey.VIDEO_TEXT).path,decoder().path,File(dir,"prompt.txt").path,File(dir,"negative.txt").path,input,output.path,w.toString(),h.toString(),(r.seconds*8+1).toString(),steps.toString(),r.seed.toString(),threads.toString())
                 else listOf(models.requirePath(ModelKey.IMAGE).path,File(dir,"prompt.txt").path,File(dir,"negative.txt").path,input,output.path,w.toString(),h.toString(),steps.toString(),r.seed.toString(),r.strength.toString(),threads.toString())
-            val engine=if(video)"motion"else"image"
-            fun executable(backend:String)=File(context.applicationInfo.nativeLibraryDir,"librosalina-$engine${if(backend=="cpu")""else"-vulkan"}.so")
-            var selected=if(r.backend=="cpu")"cpu"else"vulkan"
+            val engine=if(video)"motion" else "image"
+            fun executable(backend:String)=File(context.applicationInfo.nativeLibraryDir,"librosalina-$engine${if(backend=="cpu")"" else "-vulkan"}.so")
+            var selected=if(r.backend=="cpu")"cpu" else "vulkan"
             if(selected=="vulkan") {
                 val checkDir=File(dir,"probe").apply{mkdirs()}
                 try {
-                    val report=withTimeout(20000){NativeWorker(thermal).run(listOf(executable("vulkan").path,"--probe"),checkDir,1){stage,p,s,t,pid,tail,res->probeLog=tail;update(r.id){it.copy(stage="Checking GPU computation",pid=pid,logTail=tail,backend="Vulkan · checking actual compute")}}}
+                    val report=withTimeout(20000){NativeWorker(thermal).run(listOf(executable("vulkan").path,"--probe"),checkDir,1){_,_,_,_,pid,tail,_->probeLog=tail;update(r.id){it.copy(stage="Checking GPU computation",pid=pid,logTail=tail,backend="Vulkan · checking actual compute")}}}
                     check(report.contains("@@PROBE PASS")){"GPU did not complete its compute check"};probeLog=report
                 } catch(e:TimeoutCancellationException){currentCoroutineContext().ensureActive();selected="cpu";probeLog+="\nGPU check timed out; CPU fallback selected."}
                 catch(e:CancellationException){throw e}
@@ -302,7 +325,7 @@ internal class Session private constructor(private val context:Context) {
             }
             var sampled=false
             suspend fun runBackend(backend:String) {
-                update(r.id){it.copy(stage="Preparing",backend=if(backend=="cpu")"CPU"else"Vulkan · compute checked, loading model",percent=null)}
+                update(r.id){it.copy(stage="Preparing",backend=if(backend=="cpu")"CPU" else "Vulkan · compute checked, loading model",percent=null)}
                 NativeWorker(thermal).run(listOf(executable(backend).path)+args,dir,steps){stage,p,step,total,pid,tail,res->
                     if(step>0)sampled=true
                     val assigned=Regex("@@BACKEND ([^\\r\\n]+)").findAll(tail).lastOrNull()?.groupValues?.get(1) ?:state.value.backend
@@ -317,9 +340,9 @@ internal class Session private constructor(private val context:Context) {
                 }else throw t
             }
             currentCoroutineContext().ensureActive()
-            update(r.id){it.copy(stage=if(video)"Saving MP4"else"Saving image",percent=null,pid=0,workHint="")}
+            update(r.id){it.copy(stage=if(video)"Saving MP4" else "Saving image",percent=null,pid=0,workHint="")}
             val results=File(context.filesDir,"results").apply{mkdirs()}
-            val result=File(results,"Rosalina-${System.currentTimeMillis()}.${if(video)"mp4"else"png"}");val part=File(result.path+".part")
+            val result=File(results,"Rosalina-${System.currentTimeMillis()}.${if(video)"mp4" else "png"}");val part=File(result.path+".part")
             try {
                 if(video){val spec=MotionSpec(r.seconds,w,h,steps,r.seed);Mp4Encoder.encode(output,part,spec){p->update(r.id){it.copy(stage="Saving MP4 · encoding frames",percent=p)}};verifyVideo(part,spec)}
                 else saveImage(output,part,w,h)
@@ -381,7 +404,7 @@ internal class Session private constructor(private val context:Context) {
         }
     }
     fun diagnostics(s:TaskState=state.value):String {
-        val prior=if(s.id.isBlank())runCatching{File(context.filesDir,"last-diagnostics.txt").readText().takeLast(50000)}.getOrDefault("")else""
-        return "ROSALINA UNIFIED CANDIDATE\nVersion: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\nPackage: ${context.packageName}\n$deviceFacts\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}\nAndroid: ${Build.VERSION.SDK_INT}; ABI: ${Build.SUPPORTED_ABIS.joinToString()}\nCurrent RAM total: ${s.totalBytes}; available: ${s.availableBytes}\nCurrent thermal: ${s.thermal} ${ThermalPolicy.label(s.thermal)}; sampled elapsedRealtime=${s.thermalAt}\nTask: ${s.id} ${s.kind}; stage: ${s.stage}; PID: ${s.pid}; last PID: ${s.lastPid}\nLast native stage: ${s.lastStage}; last sampling: ${s.lastStep}/${s.lastTotal}\nBackend: ${s.backend}\nElapsed: ${s.elapsedMs} ms\nWork pacing: ${s.workHint}\n$chatMetrics\n$speechMetrics\n${models.diagnostic()}\nError: ${s.error}\nGPU compute check:\n$probeLog\nNative log tail:\n${s.logTail}\n${journal.describe()}\nSamsung output acceptance: candidate; not established by CI\n${if(prior.isBlank())""else"Previous recorded diagnostics:\n$prior"}"
+        val prior=if(s.id.isBlank())runCatching{File(context.filesDir,"last-diagnostics.txt").readText().takeLast(50000)}.getOrDefault("")else ""
+        return "ROSALINA UNIFIED CANDIDATE\nVersion: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\nPackage: ${context.packageName}\n$deviceFacts\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}\nAndroid: ${Build.VERSION.SDK_INT}; ABI: ${Build.SUPPORTED_ABIS.joinToString()}\nCurrent RAM total: ${s.totalBytes}; available: ${s.availableBytes}\nCurrent thermal: ${s.thermal} ${ThermalPolicy.label(s.thermal)}; sampled elapsedRealtime=${s.thermalAt}\nTask: ${s.id} ${s.kind}; stage: ${s.stage}; PID: ${s.pid}; last PID: ${s.lastPid}\nLast native stage: ${s.lastStage}; last sampling: ${s.lastStep}/${s.lastTotal}\nBackend: ${s.backend}\nElapsed: ${s.elapsedMs} ms\nWork pacing: ${s.workHint}\n$chatMetrics\n$speechMetrics\n${models.diagnostic()}\nError: ${s.error}\nGPU compute check:\n$probeLog\nNative log tail:\n${s.logTail}\n${journal.describe()}\nSamsung output acceptance: candidate; not established by CI\n${if(prior.isBlank())"" else "Previous recorded diagnostics:\n$prior"}"
     }
 }

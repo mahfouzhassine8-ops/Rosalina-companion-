@@ -20,10 +20,10 @@ class GenerationService:Service() {
         val flags=PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val open=PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java),flags)
         val stop=PendingIntent.getService(this,1,Intent(this,GenerationService::class.java).setAction("STOP").putExtra("task",s.id),flags)
-        val detail="${s.elapsedMs/1000}s elapsed · ${if(s.eta.isBlank())""else s.eta+" · "}Thermal: ${ThermalPolicy.label(s.thermal)}"
+        val detail="${s.elapsedMs/1000}s elapsed · ${if(s.eta.isBlank())"" else s.eta+" · "}Thermal: ${ThermalPolicy.label(s.thermal)}"
         return NotificationCompat.Builder(this,"rosalina-tasks").setSmallIcon(R.drawable.ic_rosalina)
             .setContentTitle("Rosalina · ${s.kind?.name?.lowercase()?.replaceFirstChar{it.uppercase()} ?:"Local task"}")
-            .setContentText(s.stage).setSubText(detail).setStyle(NotificationCompat.BigTextStyle().bigText(s.stage+"\n"+detail+if(s.workHint.isBlank())""else"\n${s.workHint}"))
+            .setContentText(s.stage).setSubText(detail).setStyle(NotificationCompat.BigTextStyle().bigText(s.stage+"\n"+detail+if(s.workHint.isBlank())"" else "\n${s.workHint}"))
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setProgress(100,s.percent ?:0,s.percent==null).addAction(0,"Stop",stop).build()
     }
@@ -46,7 +46,6 @@ class GenerationService:Service() {
         try {
             setMode(r.id,r.kind,microphone=r.kind==TaskKind.VOICE,playback=r.kind==TaskKind.CHAT && session.prefs.getBoolean("spoken-replies",false))
             if(wake==null)wake=getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"Rosalina:UnifiedTask").apply{setReferenceCounted(false);acquire(6*60*60*1000L)}
-            // Notifications do not rebuild for each streamed token or UI update.
             if(observer==null)observer=scope.launch {
                 var previous=""
                 while(isActive) {

@@ -49,7 +49,7 @@ internal class OwnedChild(private val process:Process,private val executable:Str
         if(value==paused)return
         if(!owns()){if(value && process.isAlive)error("Worker identity unavailable; safe workload pacing could not be enabled");return}
         try {Os.kill(pid,if(value)OsConstants.SIGSTOP else OsConstants.SIGCONT);paused=value}
-        catch(t:Throwable){if(process.isAlive)throw IOException("Could not ${if(value)"pace"else"resume"} the owned worker",t)}
+        catch(t:Throwable){if(process.isAlive)throw IOException("Could not ${if(value)"pace" else "resume"} the owned worker",t)}
     }
     fun rss():Long=if(!owns())0 else runCatching{
         Regex("(?m)^VmRSS:\\s*(\\d+) kB").find(File("/proc/$pid/status").readText())?.groupValues?.get(1)?.toLong()?.times(1024) ?:0
@@ -91,31 +91,31 @@ internal class NativeWorker(private val thermal:ThermalManager) {
             job.ensureActive()
             val initial=thermal.read()
             check(!ThermalPolicy.blocks(initial.thermal)){"Android reports ${ThermalPolicy.label(initial.thermal)} heat. Cool the phone before rendering."}
-            process=ProcessBuilder(command).directory(directory).redirectErrorStream(true).redirectOutput(log).start()
-            val p=process;child=OwnedChild(p,command[0]);val began=SystemClock.elapsedRealtime()
+            val p=ProcessBuilder(command).directory(directory).redirectErrorStream(true).redirectOutput(log).start()
+            process=p
+            val owned=OwnedChild(p,command[0]);child=owned;val began=SystemClock.elapsedRealtime()
             var nextState=0L;var resources=initial;var resourceAt=0L;var rss=0L
             while(true) {
                 job.ensureActive();drain();val now=SystemClock.elapsedRealtime()
-                if(now-resourceAt>=1000){resources=thermal.read();rss=child.rss();resourceAt=now}
+                if(now-resourceAt>=1000){resources=thermal.read();rss=owned.rss();resourceAt=now}
                 val percent=if(paced)WorkBudget.percent(resources.thermal,gpu,resources.headroom)else 100
                 if(now>=nextState || !p.isAlive) {
-                    val control=if(paced)"${if(gpu)"GPU"else"CPU"} work budget $percent% · ${if(child.paused)"cooling interval"else"running"}"else "Backend compute check"
-                    onState(parser.stage,parser.percent,parser.step,parser.total,child.pid.takeIf{it>0} ?:reportedPid,tail.toString(),resources.copy(control=control,rssBytes=rss))
+                    val control=if(paced)"${if(gpu)"GPU" else "CPU"} work budget $percent% · ${if(owned.paused)"cooling interval" else "running"}" else "Backend compute check"
+                    onState(parser.stage,parser.percent,parser.step,parser.total,owned.pid.takeIf{it>0} ?:reportedPid,tail.toString(),resources.copy(control=control,rssBytes=rss))
                     nextState=now+250
                 }
                 check(!ThermalPolicy.blocks(resources.thermal)){"Stopped safely: Android reported ${ThermalPolicy.label(resources.thermal)} heat during ${parser.stage}"}
                 if(!p.isAlive)break
-                if(paced && (child.pid>0 || now-began>3000))child.pause(WorkBudget.shouldPause(now-began,percent))
+                if(paced && (owned.pid>0 || now-began>3000))owned.pause(WorkBudget.shouldPause(now-began,percent))
                 delay(50)
             }
             drain();if(pending.size()>0)consume(pending.toString("UTF-8"))
-            onState(parser.stage,parser.percent,parser.step,parser.total,child.pid.takeIf{it>0} ?:reportedPid,tail.toString(),thermal.read().copy(rssBytes=rss))
+            onState(parser.stage,parser.percent,parser.step,parser.total,owned.pid.takeIf{it>0} ?:reportedPid,tail.toString(),thermal.read().copy(rssBytes=rss))
             val code=p.waitFor();check(code==0){"Native engine exited with code $code. See Copy diagnostics."}
             return tail.toString()
         } finally {
             withContext(NonCancellable) {
                 process?.let{p->
-                    // SIGKILL works on stopped tasks, but SIGTERM needs SIGCONT to be handled gracefully.
                     runCatching{child?.pause(false)}
                     if(p.isAlive){p.destroy();p.waitFor(350,TimeUnit.MILLISECONDS)}
                     if(p.isAlive){p.destroyForcibly();p.waitFor(1800,TimeUnit.MILLISECONDS)}
