@@ -3,7 +3,7 @@
 Base: Image Lab V2 RC1 commit 37bb610977054fe20626acbdc3ba14483354d578.
 Preserved snapshots: locked-image-lab-v2-rc1 and locked-local-chat-v1.2-device-passed.
 The existing app/, lib/, studio/, and image-engine/ trees are unchanged and checked in CI.
-This is a separate package, com.rosalina.motionlab. Keep the original apps installed.
+RC2 is a separate test package, com.rosalina.motionlab.rc2. Keep RC1 installed as the protected fallback. The original RC1 CI signing key was not persisted, so RC2 intentionally installs alongside it rather than forcing an uninstall/data loss.
 
 ## RC2 scoped changes
 - Fix intentional renderer shutdown so a native stdout stream closing during Stop/service/thermal cancellation is treated as cancellation instead of the misleading `InterruptedIOException: read interrupted by close() on another thread`.
