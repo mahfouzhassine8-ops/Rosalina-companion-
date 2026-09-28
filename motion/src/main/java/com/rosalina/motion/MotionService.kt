@@ -21,20 +21,50 @@ class MotionService:Service(){
    }
   }.also{pm.addThermalStatusListener(it)}
  }
- private fun notification(text:String):Notification{
+ private fun notification(state:MotionState):Notification{
   val flags=PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
   val open=PendingIntent.getActivity(this,0,Intent(this,MotionActivity::class.java),flags)
   val stop=PendingIntent.getService(this,1,Intent(this,MotionService::class.java).setAction("STOP"),flags)
-  return NotificationCompat.Builder(this,"motion").setSmallIcon(R.drawable.ic_motion).setContentTitle("Rosalina · making your video").setContentText(text).setSubText("Background rendering active").setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).setCategory(NotificationCompat.CATEGORY_PROGRESS).addAction(0,"Stop",stop).build()
+  val now=SystemClock.elapsedRealtime()
+  val elapsed=if(state.started>0)maxOf(0L,(now-state.started)/1000) else 0L
+  val remaining=if(state.expectedFinish>now)(state.expectedFinish-now)/1000 else null
+  val meta=buildString{
+   state.progress?.let{append("$it% · ")}
+   append(MotionProgressMath.formatDuration(elapsed)).append(" elapsed")
+   if(remaining!=null)append(" · ~").append(MotionProgressMath.formatDuration(remaining)).append(" left")
+   else if(state.busy&&state.work=="render")append(" · ETA calibrating")
+  }
+  return NotificationCompat.Builder(this,"motion")
+   .setSmallIcon(R.drawable.ic_motion)
+   .setContentTitle("Rosalina · making your video")
+   .setContentText(state.status)
+   .setSubText(meta)
+   .setContentIntent(open)
+   .setOngoing(true)
+   .setOnlyAlertOnce(true)
+   .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+   .setProgress(100,state.progress?:0,state.progress==null)
+   .setUsesChronometer(state.started>0)
+   .setWhen(if(state.started>0)System.currentTimeMillis()-(now-state.started) else System.currentTimeMillis())
+   .addAction(0,"Stop",stop)
+   .build()
  }
  override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int{
   if(intent?.action=="STOP"){MotionSession.cancel();stopSelf();return START_STICKY}
   val type=if(Build.VERSION.SDK_INT>=35)ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING else if(Build.VERSION.SDK_INT>=34)ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
-  startForeground(30,notification("Preparing local video renderer"),type)
+  startForeground(30,notification(MotionSession.state.value),type)
   val s=MotionSession.state.value
   if(!s.busy||s.work!="render"){stopSelf();return START_NOT_STICKY}
   MotionSession.runPending()
-  scope.launch{MotionSession.state.collectLatest{if(it.busy)getSystemService(NotificationManager::class.java).notify(30,notification(it.status))}}
+  scope.launch{MotionSession.state.collectLatest{if(it.busy)getSystemService(NotificationManager::class.java).notify(30,notification(it))}}
+  scope.launch{
+   while(isActive){
+    delay(5000)
+    val current=MotionSession.state.value
+    if(!current.busy)break
+    getSystemService(NotificationManager::class.java).notify(30,notification(current))
+   }
+  }
   return START_NOT_STICKY
  }
  override fun onTimeout(startId:Int,fgsType:Int){MotionSession.cancel("Android ended the rendering time window");stopSelf()}
