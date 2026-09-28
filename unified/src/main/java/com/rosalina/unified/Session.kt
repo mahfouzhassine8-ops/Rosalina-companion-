@@ -251,6 +251,7 @@ internal class Session private constructor(private val context:Context) {
                                         append(voiceStep)
                                         val samples=event.getInt("samples",-1);if(samples>=0)append(" · samples=").append(samples)
                                         val rate=event.getInt("sampleRate",-1);if(rate>0)append(" · ").append(rate).append("Hz")
+                                        val threads=event.getInt("threads",-1);if(threads>0)append(" · threads=").append(threads)
                                         val route=event.getInt("route",-1);if(route>=0)append(" · route=").append(route)
                                         val synth=event.getLong("synthesisMs",-1);if(synth>=0)append(" · synthesis=").append(synth).append("ms")
                                     }
@@ -260,7 +261,7 @@ internal class Session private constructor(private val context:Context) {
                         }
                         val wasInterrupted=result.getBoolean("interrupted")
                         speechChunks++
-                        speechMetrics="Kokoro Voice V2; ${result.getString("voiceProfile")}; playback=${result.getString("playbackPath")}; pitch path=${if(result.getBoolean("pitchApplied"))"Android pitch-preserving playback" else "safe neutral playback"}; synthesis ${result.getLong("synthesisMs")} ms; first audio ${result.getLong("firstAudioMs")} ms; audio ${result.getLong("audioMs")} ms; elapsed ${result.getLong("elapsedMs")} ms; interrupted=$wasInterrupted; restart attempts=${attempt-1}"
+                        speechMetrics="Kokoro Voice V2; threads=${result.getInt("threads")}; ${result.getString("voiceProfile")}; playback=${result.getString("playbackPath")}; pitch path=${if(result.getBoolean("pitchApplied"))"Android pitch-preserving playback" else "safe neutral playback"}; synthesis ${result.getLong("synthesisMs")} ms; first audio ${result.getLong("firstAudioMs")} ms; audio ${result.getLong("audioMs")} ms; elapsed ${result.getLong("elapsedMs")} ms; interrupted=$wasInterrupted; restart attempts=${attempt-1}"
                         if(wasInterrupted){unavailable=true;update(r.id){it.copy(voiceStage="")}}
                         completed=true
                     }catch(e:CancellationException){throw e}
@@ -413,7 +414,7 @@ internal class Session private constructor(private val context:Context) {
         }
         val stt=listenWarm.await();val tts=speechWarm.await();val qwen=chatWarm.await()
         warmSystem=system
-        liveMetrics="Live Voice = cascaded local full-duplex coordinator (not audio-native); warmup "+(SystemClock.elapsedRealtime()-started)+" ms; Qwen setup="+qwen.getLong("modelSetupMs")+" ms; Whisper setup="+stt.getLong("setupMs")+" ms / PSS="+stt.getLong("pssKb")+" KiB; voice setup="+tts.getLong("elapsedMs")+" ms"
+        liveMetrics="Live Companion = cascaded local full-duplex coordinator (not audio-native); warmup "+(SystemClock.elapsedRealtime()-started)+" ms; Qwen setup="+qwen.getLong("modelSetupMs")+" ms; Whisper setup="+stt.getLong("setupMs")+" ms / PSS="+stt.getLong("pssKb")+" KiB; voice setup="+tts.getLong("elapsedMs")+" ms / threads="+tts.getInt("threads")
         update(r.id){it.copy(stage="Listening · LIVE · speak naturally",voiceStage="",backend="Live coordinator · all engines warm")}
     }
 
