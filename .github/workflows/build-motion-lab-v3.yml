@@ -1,12 +1,12 @@
 name: Rosalina Motion Lab V3
 on:
   push:
-    branches: [motion-lab-v3-rc3-live-progress]
+    branches: [motion-lab-v3-rc4-stop-thermal-audit]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: motion-lab-v3-rc3-live-progress
+  group: motion-lab-v3-rc4-stop-thermal-audit
   cancel-in-progress: true
 jobs:
   android:
@@ -73,7 +73,7 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > delivery/package.txt
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$APK" > delivery/permissions.txt
           if grep -q android.permission.INTERNET delivery/permissions.txt; then exit 1; fi
-          cp "$APK" delivery/Rosalina-Motion-Lab-V3-rc3-ci-arm64.apk
+          cp "$APK" delivery/Rosalina-Motion-Lab-V3-rc4-ci-arm64.apk
           cp MOTION_LAB_V3.md delivery/
           cp motion/src/main/assets/tae.sha256 delivery/
           git rev-parse HEAD > delivery/commit.txt
@@ -92,14 +92,14 @@ jobs:
           EOF
           python3 - <<'PY'
           import zipfile,struct,pathlib
-          with zipfile.ZipFile('delivery/Rosalina-Motion-Lab-V3-rc3-ci-arm64.apk') as z:
+          with zipfile.ZipFile('delivery/Rosalina-Motion-Lab-V3-rc4-ci-arm64.apk') as z:
               libs=[n for n in z.namelist() if n.endswith('.so')]
               assert libs==['lib/arm64-v8a/librosalina-motion.so'],libs
               b=z.read(libs[0]); assert b[:4]==b'\x7fELF' and struct.unpack('<H',b[18:20])[0]==183
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: Rosalina-Motion-Lab-V3-RC3-CI
+          name: Rosalina-Motion-Lab-V3-RC4-CI
           path: delivery/
       - uses: actions/upload-artifact@v4
         if: always()
