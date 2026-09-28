@@ -63,8 +63,7 @@ internal object SpeechText {
     private val thinking=Regex("<think>.*?(?:</think>|$)",RegexOption.DOT_MATCHES_ALL)
     private val code=Regex("```.*?(?:```|$)",RegexOption.DOT_MATCHES_ALL)
     private val marks=Regex("[\\*`#]")
-    fun spoken(text:String)=text.replace(thinking,"").replace(code,"").replace(marks,"")
-    fun cut(text:String):Int {
+    fun visible(text:String)=text.replace(thinking,"").trimStart()\n    fun spoken(text:String)=visible(text).replace(code,"").replace(marks,"")\n    fun cut(text:String):Int {
         val match=punctuation.find(text)
         if(match!=null && match.range.last>=20)return match.range.last+1
         if(text.length>=220)return text.lastIndexOf(' ',220).takeIf{it>=60} ?:220

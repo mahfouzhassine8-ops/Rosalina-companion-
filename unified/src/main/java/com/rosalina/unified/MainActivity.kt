@@ -31,6 +31,9 @@ class MainActivity:AppCompatActivity() {
     private val session by lazy{Session.get(this)}
     private val bg=Color.rgb(13,10,19);private val panel=Color.rgb(30,24,41)
     private val ink=Color.rgb(247,241,255);private val muted=Color.rgb(179,168,194);private val accent=Color.rgb(194,166,255)
+    private var section=ShellSection.COMPANION
+    private var companionMode=CompanionMode.CHAT
+    private var photoMode=PhotoMode.CREATE
     private var mode="Chat"
     private lateinit var root:LinearLayout
     private lateinit var content:FrameLayout
@@ -51,7 +54,8 @@ class MainActivity:AppCompatActivity() {
     private var liveText=""
     private var chatWindow=60
     private var lastResult="";private var lastPhoto=""
-    private val tabs=mutableListOf<Button>()
+    private lateinit var drawer:LinearLayout
+    private val railButtons=mutableMapOf<ShellSection,Button>()
     private val controls=mutableListOf<View>()
     private val pickModel=registerForActivityResult(ActivityResultContracts.OpenDocument()){uri->if(uri!=null){runCatching{contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION)};session.begin(TaskRequest(kind=TaskKind.IMPORT,modelKey=session.prefs.getString("pending-model",ModelKey.CHAT.name).orEmpty(),uri=uri.toString()))}}
     private val pickPhoto=registerForActivityResult(ActivityResultContracts.OpenDocument()){uri->if(uri!=null)session.importPhoto(uri)}
@@ -60,16 +64,22 @@ class MainActivity:AppCompatActivity() {
     private val microphonePermission=registerForActivityResult(ActivityResultContracts.RequestPermission()){allowed->if(allowed)session.interruptAndListen()else session.notice("Microphone permission declined; text chat remains available")}
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState)
-        mode=savedInstanceState?.getString("mode") ?:session.prefs.getString("tab","Chat").orEmpty()
-        if(mode !in listOf("Chat","Create","Edit","Animate"))mode="Chat"
+        val legacy=savedInstanceState?.getString("mode") ?:session.prefs.getString("tab","Chat").orEmpty()
+        section=ShellSection.parse(savedInstanceState?.getString("section") ?:session.prefs.getString("section",null),legacy)
+        companionMode=CompanionMode.parse(savedInstanceState?.getString("companion-mode") ?:session.prefs.getString("companion-mode","CHAT"))
+        photoMode=PhotoMode.parse(savedInstanceState?.getString("photo-mode") ?:session.prefs.getString("photo-mode",if(legacy=="Edit")"EDIT" else "CREATE"))
+        syncMode()
         buildUi();buildPane()
         lifecycleScope.launch{repeatOnLifecycle(Lifecycle.State.STARTED){
             launch{session.state.sample(50).collect{update(it)}}
             launch(Dispatchers.IO){while(isActive){if(!session.state.value.busy)session.refreshResources();delay(2000)}}
         }}
     }
-    override fun onResume(){super.onResume();lifecycleScope.launch{withContext(Dispatchers.IO){session.refreshResources()};if(mode=="Chat" && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))session.prepareChat()}}
-    override fun onSaveInstanceState(outState:Bundle){outState.putString("mode",mode);super.onSaveInstanceState(outState)}
+    override fun onResume(){super.onResume();lifecycleScope.launch{withContext(Dispatchers.IO){session.refreshResources()};if(section==ShellSection.COMPANION && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))session.prepareChat()}}
+    override fun onSaveInstanceState(outState:Bundle){
+        outState.putString("mode",mode);outState.putString("section",section.name);outState.putString("companion-mode",companionMode.name);outState.putString("photo-mode",photoMode.name)
+        super.onSaveInstanceState(outState)
+    }
     private fun dp(n:Int)=(n*resources.displayMetrics.density+.5f).toInt()
     private fun text(value:String,size:Float=14f,color:Int=ink)=TextView(this).apply{text=value;textSize=size;setTextColor(color);setLineSpacing(dp(2).toFloat(),1f)}
     private fun shape(color:Int)=GradientDrawable().apply{setColor(color);cornerRadius=dp(16).toFloat();setStroke(dp(1),Color.rgb(70,57,91))}
@@ -78,71 +88,216 @@ class MainActivity:AppCompatActivity() {
     private fun field(hintText:String)=EditText(this).apply{hint=hintText;textSize=16f;setTextColor(ink);setHintTextColor(muted);background=shape(panel);minLines=2;maxLines=6;inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES;setPadding(dp(14),dp(12),dp(14),dp(12));filters=arrayOf(InputFilter.LengthFilter(8000))}
     private fun TextView.change(value:String){if(text.toString()!=value)text=value}
     private fun backendChoice()=session.prefs.getString("render-backend",null) ?:if(session.prefs.getBoolean("vulkan",false))"vulkan" else "auto"
+    private fun syncMode() {
+        mode=when(section){
+            ShellSection.COMPANION->"Chat"
+            ShellSection.PHOTO->if(photoMode==PhotoMode.CREATE)"Create" else "Edit"
+            ShellSection.ANIMATE->"Animate"
+            ShellSection.SETTINGS_MODELS->"Chat"
+        }
+    }
+    private fun sectionLabel(value:ShellSection)=when(value){
+        ShellSection.COMPANION->"Companion"
+        ShellSection.PHOTO->"Photo"
+        ShellSection.ANIMATE->"Animate"
+        ShellSection.SETTINGS_MODELS->"Settings & Models"
+    }
+    private fun sectionGlyph(value:ShellSection)=when(value){
+        ShellSection.COMPANION->"♥"
+        ShellSection.PHOTO->"▧"
+        ShellSection.ANIMATE->"▶"
+        ShellSection.SETTINGS_MODELS->"⚙"
+    }
+    private fun selectSection(next:ShellSection) {
+        drawer.visibility=View.GONE
+        if(session.state.value.busy && next!=section){session.notice("Stop the current task before switching sections");return}
+        section=next;syncMode()
+        session.prefs.edit().putString("section",section.name).putString("tab",mode).apply()
+        buildPane()
+        if(section==ShellSection.COMPANION)session.prepareChat()
+    }
+    private fun refreshRail() {
+        railButtons.forEach{(key,value)->
+            val selected=key==section
+            value.setTextColor(if(selected)bg else ink);value.background=shape(if(selected)accent else panel)
+        }
+    }
+    private fun toggleDrawer(){drawer.visibility=if(drawer.visibility==View.VISIBLE)View.GONE else View.VISIBLE}
+    private fun buildDrawer() {
+        drawer.removeAllViews()
+        drawer.addView(text("ROSALINA",24f))
+        drawer.addView(text("PRIVATE  ·  ON DEVICE",10f,accent).apply{letterSpacing=.12f})
+        drawer.addView(text("MENU",10f,muted).apply{setPadding(0,dp(24),0,dp(6))})
+        for(item in ShellSection.entries) {
+            val sub=when(item){
+                ShellSection.COMPANION->"Chat & Live"
+                ShellSection.PHOTO->"Create & Edit"
+                ShellSection.ANIMATE->"Motion workspace"
+                ShellSection.SETTINGS_MODELS->"Preferences, diagnostics & models"
+            }
+            drawer.addView(button("${sectionGlyph(item)}   ${sectionLabel(item)}\n$sub"){selectSection(item)},LinearLayout.LayoutParams(-1,dp(68)).apply{bottomMargin=dp(6)})
+        }
+        drawer.addView(text("Tap a choice and this menu collapses.",11f,muted).apply{setPadding(dp(4),dp(18),dp(4),0)})
+    }
     private fun buildUi() {
         val outer=FrameLayout(this).apply{setBackgroundColor(bg)}
-        root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(12),dp(6),dp(12),dp(8))}
-        outer.addView(root,FrameLayout.LayoutParams(-1,-1,Gravity.CENTER))
-        outer.addOnLayoutChangeListener{v,_,_,_,_,_,_,_,_->val width=minOf(v.width-v.paddingLeft-v.paddingRight,dp(840));if(width>0 && root.layoutParams.width!=width)root.layoutParams=root.layoutParams.apply{this.width=width}}
+        val shell=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}
+        val rail=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER_HORIZONTAL;setPadding(dp(4),dp(6),dp(4),dp(6));background=shape(Color.rgb(20,15,29))}
+        rail.addView(button("☰"){toggleDrawer()},LinearLayout.LayoutParams(-1,dp(52)))
+        for(item in ShellSection.entries) {
+            val b=button(sectionGlyph(item)){selectSection(item)};railButtons[item]=b
+            rail.addView(b,LinearLayout.LayoutParams(-1,dp(58)).apply{topMargin=dp(7)})
+        }
+        shell.addView(rail,LinearLayout.LayoutParams(dp(62),-1))
+        root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(6),dp(10),dp(8))}
+        shell.addView(root,LinearLayout.LayoutParams(0,-1,1f))
+        outer.addView(shell,FrameLayout.LayoutParams(-1,-1))
+        drawer=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;visibility=View.GONE;setPadding(dp(16),dp(18),dp(16),dp(18));background=shape(Color.rgb(24,18,34));elevation=dp(18).toFloat()}
+        outer.addView(drawer,FrameLayout.LayoutParams(dp(270),-1,Gravity.START))
+        buildDrawer()
         ViewCompat.setOnApplyWindowInsetsListener(outer){v,insets->val b=insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime());v.setPadding(b.left,b.top,b.right,b.bottom);insets}
-        val title=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;addView(text("ROSALINA",24f));addView(text("PRIVATE  ·  ON DEVICE",11f,accent).apply{letterSpacing=.12f})}
-        root.addView(LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;addView(title,LinearLayout.LayoutParams(0,-2,1f));addView(button("Models"){modelDialog()},LinearLayout.LayoutParams(dp(82),dp(50)));addView(button("Settings"){settingsDialog()},LinearLayout.LayoutParams(dp(82),dp(50)))})
-        status=text("Ready",14f);thermal=text("",11f,muted)
+        val title=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;addView(text("ROSALINA",22f));addView(text("PRIVATE  ·  ON DEVICE",10f,accent).apply{letterSpacing=.12f})}
+        status=text("Ready",12f);thermal=text("",10f,muted)
         progress=ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal).apply{max=100;visibility=View.GONE}
         stop=button("Stop"){session.stop()}.apply{visibility=View.GONE}
-        val stateBox=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;background=shape(panel);setPadding(dp(12),dp(8),dp(12),dp(8));addView(text("UNIFIED · ADAPTIVE HYBRID LIVE · AVATAR C1",10f,accent));addView(status);addView(thermal);addView(progress,LinearLayout.LayoutParams(-1,dp(5)));addView(row(button("Diagnostics"){diagnosticsDialog()},stop))}
-        root.addView(stateBox,LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(8);bottomMargin=dp(6)})
-        for(label in listOf("Chat","Create","Edit","Animate"))tabs+=button(label){mode=label;session.prefs.edit().putString("tab",mode).apply();buildPane();if(mode=="Chat")session.prepareChat()}
-        root.addView(row(*tabs.toTypedArray()));content=FrameLayout(this);root.addView(content,LinearLayout.LayoutParams(-1,0,1f));setContentView(outer)
+        val statusCol=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER_VERTICAL;addView(status);addView(thermal)}
+        root.addView(LinearLayout(this).apply{
+            orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL
+            addView(title,LinearLayout.LayoutParams(0,-2,.75f))
+            addView(statusCol,LinearLayout.LayoutParams(0,-2,1.1f))
+            addView(button("Diagnostics"){diagnosticsDialog()},LinearLayout.LayoutParams(dp(94),dp(48)))
+            addView(stop,LinearLayout.LayoutParams(dp(72),dp(48)))
+        })
+        root.addView(progress,LinearLayout.LayoutParams(-1,dp(4)).apply{topMargin=dp(4)})
+        content=FrameLayout(this);root.addView(content,LinearLayout.LayoutParams(-1,0,1f))
+        setContentView(outer);refreshRail()
     }
     private fun buildPane() {
         content.removeAllViews();controls.clear();preview=null;reference=null;resultLabel=null;chatList=null;chatScroll=null;streaming=null;avatar=null;liveText="";lastResult="";lastPhoto="";rendered=emptyList()
-        tabs.forEach{it.setTextColor(if(it.text==mode)bg else ink);it.background=shape(if(it.text==mode)accent else panel)}
-        val body=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(4),dp(8),dp(4),dp(8))}
-        val draftKey="draft-$mode"
-        prompt=field(when(mode){"Chat"->"Message Rosalina…";"Animate"->"Describe the motion…";"Edit"->"Describe how to transform your photo…";else->"Describe what you want to create…"}).apply{id=1001;setText(session.prefs.getString(draftKey,""));addTextChangedListener(object:TextWatcher{override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){};override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){session.prefs.edit().putString(draftKey,s.toString()).apply()};override fun afterTextChanged(s:Editable?){} })}
-        if(mode=="Chat") {
-            if(session.prefs.getBoolean("live-avatar",true)) {
-                val live=LiveAvatarView(this).apply{contentDescription="Rosalina live avatar";bind(session.state.value)};avatar=live
-                body.addView(live,LinearLayout.LayoutParams(-1,dp(320)).apply{bottomMargin=dp(8)})
-            }
-            val messages=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};chatList=messages
-            val scroll=ScrollView(this).apply{isFillViewport=true;isSmoothScrollingEnabled=true;addView(messages)};chatScroll=scroll
-            body.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));body.addView(prompt)
-            generate=button("Send",true){submit()};controls+=generate
-            body.addView(row(button("Photo"){pickPhoto.launch(arrayOf("image/*"))},button("Mic"){voice()},generate))
-            body.addView(text(if(session.prefs.getBoolean("live-voice",true))"Live Voice · tap Mic once, speak naturally, and interrupt Rosalina by talking. Stop ends the session." else "Classic Voice V2 · Stop ends the session. Tap Mic remains available to interrupt.",11f,muted))
-            content.addView(body,FrameLayout.LayoutParams(-1,-1))
-        }else {
-            content.addView(ScrollView(this).apply{isFillViewport=true;addView(body)})
-            body.addView(text(when(mode){"Animate"->"Bring a photo to life";"Edit"->"Transform your photo";else->"Describe what you want to create"},20f));body.addView(prompt)
-            if(mode!="Create") {
-                reference=ImageView(this).apply{adjustViewBounds=true;maxHeight=dp(180);scaleType=ImageView.ScaleType.FIT_CENTER};body.addView(reference,LinearLayout.LayoutParams(-1,dp(160)))
-                val pick=button("Choose photo"){pickPhoto.launch(arrayOf("image/*"))};controls+=pick;body.addView(pick)
-                val reuse=button("Use last generated image"){val f=File(session.state.value.result);if(f.extension=="png" && f.exists()){session.prefs.edit().putString("photo",f.path).apply();lastPhoto="";update(session.state.value)}else session.notice("Generate an image first")};controls+=reuse;body.addView(reuse)
-            }
-            val options=button(profileDescription()){renderSettings()};controls+=options;body.addView(options)
-            generate=button(when(mode){"Animate"->"Animate";"Edit"->"Transform photo";else->"Create image"},true){submit()};controls+=generate;body.addView(generate)
-            body.addView(text(if(mode=="Animate")"Actual local image-to-video diffusion · GPU checked before automatic use" else "One local image · no cloud inference",11f,muted))
-            preview=ImageView(this).apply{adjustViewBounds=true;maxHeight=dp(380);scaleType=ImageView.ScaleType.FIT_CENTER};body.addView(preview,LinearLayout.LayoutParams(-1,dp(280)))
-            resultLabel=text("No generated result yet",12f,muted);body.addView(resultLabel)
-            body.addView(row(button("Open"){openResult()},button("Save"){saveResult()},button("Share"){shareResult()}))
-        };update(session.state.value)
+        refreshRail();syncMode()
+        when(section) {
+            ShellSection.COMPANION->buildCompanionPane()
+            ShellSection.PHOTO->buildPhotoPane()
+            ShellSection.ANIMATE->buildAnimatePane()
+            ShellSection.SETTINGS_MODELS->buildSettingsModelsPane()
+        }
+        update(session.state.value)
     }
-    private fun profileDescription():String {
+    private fun buildCompanionPane() {
+        val stage=FrameLayout(this).apply{setPadding(dp(2),dp(6),dp(2),dp(2))}
+        if(session.prefs.getBoolean("live-avatar",true)) {
+            avatar=LiveAvatarView(this).apply{contentDescription="Rosalina live avatar";bind(session.state.value)}
+            stage.addView(avatar,FrameLayout.LayoutParams(-1,-1))
+        } else {
+            stage.addView(text("Rosalina\nLive Avatar is off in Settings.",22f,muted).apply{gravity=Gravity.CENTER},FrameLayout.LayoutParams(-1,-1))
+        }
+        val glass=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(10),dp(10),dp(10));background=shape(Color.argb(235,30,24,41))}
+        val chatButton=button("Chat",companionMode==CompanionMode.CHAT){
+            if(companionMode!=CompanionMode.CHAT){companionMode=CompanionMode.CHAT;session.prefs.edit().putString("companion-mode",companionMode.name).apply();buildPane();session.prepareChat()}
+        }
+        val liveButton=button("Live",companionMode==CompanionMode.LIVE){
+            if(companionMode!=CompanionMode.LIVE){companionMode=CompanionMode.LIVE;session.prefs.edit().putString("companion-mode",companionMode.name).apply();buildPane()}
+        }
+        glass.addView(row(chatButton,liveButton))
+        if(companionMode==CompanionMode.CHAT) {
+            val messages=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};chatList=messages
+            chatScroll=ScrollView(this).apply{isFillViewport=false;isSmoothScrollingEnabled=true;addView(messages)}
+            glass.addView(chatScroll,LinearLayout.LayoutParams(-1,dp(150)).apply{topMargin=dp(4);bottomMargin=dp(6)})
+            prompt=field("Message Rosalina…").apply{id=1001;minLines=1;maxLines=3;setText(session.prefs.getString("draft-Chat",""));addTextChangedListener(object:TextWatcher{override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){};override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){session.prefs.edit().putString("draft-Chat",s.toString()).apply()};override fun afterTextChanged(s:Editable?){} })}
+            glass.addView(prompt)
+            generate=button("Send",true){submit()};controls+=generate
+            glass.addView(generate,LinearLayout.LayoutParams(-1,dp(50)).apply{topMargin=dp(6)})
+        } else {
+            glass.addView(text("Live with Rosalina",20f,accent).apply{gravity=Gravity.CENTER_HORIZONTAL;setPadding(0,dp(8),0,dp(2))})
+            glass.addView(text("Speak naturally. Interrupt by talking. Bluetooth routing and Adaptive Hybrid Live remain active.",11f,muted).apply{gravity=Gravity.CENTER_HORIZONTAL})
+            val mic=button("◉  Start / Speak",true){voice()};controls+=mic
+            val end=button("■  End"){session.stop()}
+            glass.addView(row(mic,end),LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(10)})
+        }
+        stage.addView(glass,FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM).apply{setMargins(dp(8),dp(8),dp(8),dp(8))})
+        content.addView(stage,FrameLayout.LayoutParams(-1,-1))
+    }
+    private fun buildPhotoPane() {
+        val body=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(8),dp(10),dp(8),dp(12))}
+        body.addView(text("Photo",28f));body.addView(text("Create something new or edit one of your images.",12f,muted))
+        val create=button("Create",photoMode==PhotoMode.CREATE){if(photoMode!=PhotoMode.CREATE){photoMode=PhotoMode.CREATE;session.prefs.edit().putString("photo-mode",photoMode.name).apply();buildPane()}}
+        val edit=button("Edit",photoMode==PhotoMode.EDIT){if(photoMode!=PhotoMode.EDIT){photoMode=PhotoMode.EDIT;session.prefs.edit().putString("photo-mode",photoMode.name).apply();buildPane()}}
+        body.addView(row(create,edit))
+        mode=if(photoMode==PhotoMode.CREATE)"Create" else "Edit"
+        val draftKey="draft-$mode"
+        prompt=field(if(photoMode==PhotoMode.CREATE)"Describe what you want to create…" else "Describe how to transform your photo…").apply{setText(session.prefs.getString(draftKey,""));addTextChangedListener(object:TextWatcher{override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){};override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){session.prefs.edit().putString(draftKey,s.toString()).apply()};override fun afterTextChanged(s:Editable?){} })}
+        body.addView(prompt)
+        if(photoMode==PhotoMode.EDIT) {
+            reference=ImageView(this).apply{adjustViewBounds=true;scaleType=ImageView.ScaleType.FIT_CENTER;background=shape(panel)}
+            body.addView(reference,LinearLayout.LayoutParams(-1,dp(190)).apply{topMargin=dp(8)})
+            body.addView(row(button("Choose photo"){pickPhoto.launch(arrayOf("image/*"))},button("Use last result"){val f=File(session.state.value.result);if(f.extension=="png"&&f.exists()){session.prefs.edit().putString("photo",f.path).apply();lastPhoto="";update(session.state.value)}else session.notice("Generate an image first")}))
+        }
+        body.addView(button(profileDescription()){renderSettings()},LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(8)})
+        generate=button(if(photoMode==PhotoMode.CREATE)"Create image" else "Transform photo",true){submit()};controls+=generate;body.addView(generate)
+        preview=ImageView(this).apply{adjustViewBounds=true;scaleType=ImageView.ScaleType.FIT_CENTER;background=shape(panel)}
+        body.addView(preview,LinearLayout.LayoutParams(-1,dp(300)).apply{topMargin=dp(10)})
+        resultLabel=text("No generated result yet",12f,muted);body.addView(resultLabel)
+        body.addView(row(button("Open"){openResult()},button("Save"){saveResult()},button("Share"){shareResult()}))
+        content.addView(ScrollView(this).apply{isFillViewport=true;addView(body)},FrameLayout.LayoutParams(-1,-1))
+    }
+    private fun buildAnimatePane() {
+        mode="Animate"
+        val body=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(8),dp(10),dp(8),dp(12))}
+        body.addView(text("Animate",28f));body.addView(text("Turn an image into a living moment.",12f,muted))
+        reference=ImageView(this).apply{adjustViewBounds=true;scaleType=ImageView.ScaleType.FIT_CENTER;background=shape(panel)}
+        body.addView(reference,LinearLayout.LayoutParams(-1,dp(220)).apply{topMargin=dp(8)})
+        body.addView(row(button("Choose image"){pickPhoto.launch(arrayOf("image/*"))},button("Use last generated image"){val f=File(session.state.value.result);if(f.extension=="png"&&f.exists()){session.prefs.edit().putString("photo",f.path).apply();lastPhoto="";update(session.state.value)}else session.notice("Generate an image first")}))
+        prompt=field("Describe the motion…").apply{setText(session.prefs.getString("draft-Animate",""));addTextChangedListener(object:TextWatcher{override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){};override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){session.prefs.edit().putString("draft-Animate",s.toString()).apply()};override fun afterTextChanged(s:Editable?){} })}
+        body.addView(prompt);body.addView(button(profileDescription()){renderSettings()})
+        generate=button("Render",true){submit()};controls+=generate;body.addView(generate)
+        preview=ImageView(this).apply{adjustViewBounds=true;scaleType=ImageView.ScaleType.FIT_CENTER;background=shape(panel)}
+        body.addView(preview,LinearLayout.LayoutParams(-1,dp(300)).apply{topMargin=dp(10)})
+        resultLabel=text("No generated result yet",12f,muted);body.addView(resultLabel)
+        body.addView(row(button("Open"){openResult()},button("Save MP4"){saveResult()},button("Share"){shareResult()}))
+        content.addView(ScrollView(this).apply{isFillViewport=true;addView(body)},FrameLayout.LayoutParams(-1,-1))
+    }
+    private fun buildSettingsModelsPane() {
+        val body=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(8),dp(10),dp(8),dp(18))}
+        body.addView(text("Settings & Models",28f));body.addView(text("One place for Companion, Live Voice, avatar, diagnostics and local models.",12f,muted))
+        body.addView(text("APP SETTINGS",11f,accent).apply{setPadding(0,dp(18),0,dp(4))})
+        body.addView(button("Companion · Live Voice · Live Avatar\nOpen conversation, voice and avatar preferences"){settingsDialog()})
+        body.addView(button("Diagnostics\nDevice, audio route, model and runtime details"){diagnosticsDialog()})
+        body.addView(text("MODELS",11f,accent).apply{setPadding(0,dp(18),0,dp(4))})
+        for(key in ModelKey.entries){
+            val installed=session.models.path(key)!=null
+            body.addView(LinearLayout(this).apply{
+                orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;background=shape(panel);setPadding(dp(12),dp(10),dp(12),dp(10))
+                addView(text(key.label,15f),LinearLayout.LayoutParams(0,-2,1f))
+                addView(text(if(installed)"Installed" else key.approximate,11f,if(installed)Color.rgb(124,235,167) else muted))
+            },LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(6)})
+        }
+        body.addView(button("Models Manager\nDownload, import and inspect local models"){modelDialog()},LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(4)})
+        body.addView(text("Rosalina remains private and on-device unless you explicitly enable an implemented online provider. Existing local models and app data are preserved.",11f,muted).apply{setPadding(0,dp(14),0,0)})
+        content.addView(ScrollView(this).apply{isFillViewport=true;addView(body)},FrameLayout.LayoutParams(-1,-1))
+    }
+    private fun profileDescription():String {    private fun profileDescription():String {
         val profile=if(mode=="Animate")"${session.prefs.getInt("seconds",6)} seconds · ${session.prefs.getString("aspect","256×256")} · 12 steps" else if(session.prefs.getBoolean("standard",false))"Standard · 512×512 · 12 steps" else "Phone Safe · 384×384 · 8 steps"
         return "$profile\nProcessing: ${backendChoice()}"
     }
     private fun ensureNotifications(){if(Build.VERSION.SDK_INT>=33 && ContextCompat.checkSelfPermission(this,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)}
     private fun submit() {
         if(session.state.value.busy)return
+        if(section==ShellSection.SETTINGS_MODELS)return
         val p=prompt.text.toString().trim();if(p.isBlank()){session.notice("Enter a message first");return}
-        val kind=if(mode=="Chat")Route.kind(p)else TaskKind.valueOf(mode.uppercase());val photo=session.prefs.getString("photo","").orEmpty()
+        val kind=when(section){
+            ShellSection.COMPANION->TaskKind.CHAT
+            ShellSection.PHOTO->if(photoMode==PhotoMode.CREATE)TaskKind.CREATE else TaskKind.EDIT
+            ShellSection.ANIMATE->TaskKind.ANIMATE
+            ShellSection.SETTINGS_MODELS->return
+        }
+        mode=when(kind){TaskKind.CHAT->"Chat";TaskKind.CREATE->"Create";TaskKind.EDIT->"Edit";TaskKind.ANIMATE->"Animate";else->mode}
+        val photo=session.prefs.getString("photo","").orEmpty()
         if(kind in listOf(TaskKind.EDIT,TaskKind.ANIMATE) && photo.isBlank()){session.notice("Choose a photo, then send the request again");pickPhoto.launch(arrayOf("image/*"));return}
         ensureNotifications();val aspect=session.prefs.getString("aspect","256×256").orEmpty().split('×')
-        val r=TaskRequest(kind=kind,prompt=p,photo=photo,profile=if(session.prefs.getBoolean("standard",false))RenderProfile.Standard else RenderProfile.Draft,seconds=if(mode=="Chat")Route.seconds(p)else session.prefs.getInt("seconds",6),width=aspect.getOrNull(0)?.toIntOrNull() ?:256,height=aspect.getOrNull(1)?.toIntOrNull() ?:256,strength=session.prefs.getFloat("strength",.65f),seed=session.prefs.getLong("seed",42),backend=backendChoice())
-        if(session.begin(r)){if(mode=="Chat" && kind!=TaskKind.CHAT){mode=kind.name.lowercase().replaceFirstChar{it.uppercase()};session.prefs.edit().putString("tab",mode).putString("draft-$mode",p).apply();buildPane()}else if(mode=="Chat")prompt.text.clear()}
+        val r=TaskRequest(kind=kind,prompt=p,photo=photo,profile=if(session.prefs.getBoolean("standard",false))RenderProfile.Standard else RenderProfile.Draft,seconds=session.prefs.getInt("seconds",6),width=aspect.getOrNull(0)?.toIntOrNull() ?:256,height=aspect.getOrNull(1)?.toIntOrNull() ?:256,strength=session.prefs.getFloat("strength",.65f),seed=session.prefs.getLong("seed",42),backend=backendChoice())
+        if(session.begin(r) && section==ShellSection.COMPANION)prompt.text.clear()
     }
-    private fun continueVoiceAfterBluetooth() {
+    private fun continueVoiceAfterBluetooth() {    private fun continueVoiceAfterBluetooth() {
         if(ContextCompat.checkSelfPermission(this,Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED)microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
         else session.interruptAndListen()
     }
@@ -175,12 +330,13 @@ class MainActivity:AppCompatActivity() {
                 if(history.size>chatWindow)list.addView(button("Earlier messages"){chatWindow+=60;streaming=null;update(session.state.value)})
                 for((role,message)in history.takeLast(chatWindow)) {
                     list.addView(text(role.uppercase(),10f,accent).apply{setPadding(dp(4),dp(2),0,dp(5))})
-                    list.addView(text(message,16f).apply{setTextIsSelectable(true);background=shape(panel);setPadding(dp(14),dp(11),dp(14),dp(11))},LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(14)})
+                    val visible=if(role=="Rosalina")SpeechText.visible(message)else message
+                    if(visible.isNotBlank())list.addView(text(visible,16f).apply{setTextIsSelectable(true);background=shape(panel);setPadding(dp(14),dp(11),dp(14),dp(11))},LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(14)})
                 }
                 streaming=text("",16f).apply{setTextIsSelectable(true);setPadding(dp(4),dp(6),dp(4),dp(12))};list.addView(streaming);liveText="";changed=true
             }
-            val incoming=if(history.lastOrNull()?.second==s.answer)"" else s.answer
-            if(incoming!=liveText){if(incoming.startsWith(liveText))streaming?.append(incoming.substring(liveText.length))else streaming?.text=incoming;liveText=incoming;changed=true}
+            val incoming=if(history.lastOrNull()?.second==s.answer)"" else SpeechText.visible(s.answer)
+            if(incoming!=liveText){streaming?.text=incoming;liveText=incoming;changed=true}
             if(changed && follow)scroll?.let{it.post{it.scrollTo(0,list.height)}}
         }
     }

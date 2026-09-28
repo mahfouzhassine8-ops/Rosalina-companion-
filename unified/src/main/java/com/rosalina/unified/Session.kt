@@ -285,7 +285,7 @@ internal class Session private constructor(private val context:Context) {
             chatNeedsReset=false;warmSystem=prefs.getString("system",DEFAULT_SYSTEM);lastChatFirstTextMs=result.getLong("firstTextMs")
             chatMetrics="Chat warm model=${result.getBoolean("warmModel")}; clean recovery=${result.getBoolean("recovered")}; setup=${result.getLong("modelSetupMs")} ms; first text=${result.getLong("firstTextMs")} ms; response=${result.getLong("responseMs")} ms; characters=${result.getInt("characters")}; emitted text pieces=${result.getInt("textPieces")} (not native token count); chat PSS=${result.getLong("chatPssKb")} KiB"
             if(readAloud){val visible=SpeechText.spoken(answer.toString());val span=if(liveSpeech)220 else 500;while(spoken<visible.length){val end=minOf(visible.length,spoken+span);enqueue(visible.substring(spoken,end).trim());spoken=end}}
-        } finally {queue.close();if(answer.isNotBlank())addTurn("Rosalina",answer.toString())}
+        } finally {queue.close();val visible=SpeechText.visible(answer.toString());if(visible.isNotBlank())addTurn("Rosalina",visible)}
         speechJob?.join();update(r.id){it.copy(answer="",voiceStage="",avatarEnergy=0f)}
     }
     private suspend fun performVoice(r:TaskRequest) {

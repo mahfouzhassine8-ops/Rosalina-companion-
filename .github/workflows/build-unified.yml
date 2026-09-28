@@ -1,7 +1,7 @@
 name: Rosalina Unified Candidate
 on:
   push:
-    branches: [rosalina-unified-v1-candidate, rosalina-voice-v2-expressive-candidate, rosalina-live-voice-candidate, rosalina-hybrid-live-candidate, rosalina-live-avatar-candidate]
+    branches: [rosalina-unified-v1-candidate, rosalina-voice-v2-expressive-candidate, rosalina-live-voice-candidate, rosalina-hybrid-live-candidate, rosalina-live-avatar-candidate, rosalina-companion-shell-candidate]
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,7 +26,7 @@ jobs:
           mkdir -p source-backup
           git archive --format=zip HEAD -o source-backup/Rosalina-Unified-source.zip
           git rev-parse HEAD > source-backup/commit.txt
-          cp UNIFIED_AUDIT.md UNIFIED_SCOPE_CHANGE.md SIGNING.md VOICE_V2.md VOICE_V2_1_REPAIR.md LIVE_VOICE.md HYBRID_LIVE.md LIVE_AVATAR.md source-backup/
+          cp UNIFIED_AUDIT.md UNIFIED_SCOPE_CHANGE.md SIGNING.md VOICE_V2.md VOICE_V2_1_REPAIR.md LIVE_VOICE.md HYBRID_LIVE.md LIVE_AVATAR.md COMPANION_SHELL.md source-backup/
       - uses: actions/upload-artifact@v4
         with: {name: Rosalina-Unified-source, path: source-backup/}
   native:
