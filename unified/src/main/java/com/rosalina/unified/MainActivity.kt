@@ -55,6 +55,7 @@ class MainActivity:AppCompatActivity() {
     private val pickModel=registerForActivityResult(ActivityResultContracts.OpenDocument()){uri->if(uri!=null){runCatching{contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION)};session.begin(TaskRequest(kind=TaskKind.IMPORT,modelKey=session.prefs.getString("pending-model",ModelKey.CHAT.name).orEmpty(),uri=uri.toString()))}}
     private val pickPhoto=registerForActivityResult(ActivityResultContracts.OpenDocument()){uri->if(uri!=null)session.importPhoto(uri)}
     private val notificationPermission=registerForActivityResult(ActivityResultContracts.RequestPermission()){}
+    private val bluetoothPermission=registerForActivityResult(ActivityResultContracts.RequestPermission()){allowed->session.prefs.edit().putBoolean("bluetooth-permission-asked",true).apply();if(!allowed)session.notice("Nearby devices permission declined · Live Voice will use Android default audio routing");continueVoiceAfterBluetooth()}
     private val microphonePermission=registerForActivityResult(ActivityResultContracts.RequestPermission()){allowed->if(allowed)session.interruptAndListen()else session.notice("Microphone permission declined; text chat remains available")}
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState)
@@ -87,7 +88,7 @@ class MainActivity:AppCompatActivity() {
         status=text("Ready",14f);thermal=text("",11f,muted)
         progress=ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal).apply{max=100;visibility=View.GONE}
         stop=button("Stop"){session.stop()}.apply{visibility=View.GONE}
-        val stateBox=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;background=shape(panel);setPadding(dp(12),dp(8),dp(12),dp(8));addView(text("UNIFIED CANDIDATE 2 · LIVE VOICE C1",10f,accent));addView(status);addView(thermal);addView(progress,LinearLayout.LayoutParams(-1,dp(5)));addView(row(button("Diagnostics"){diagnosticsDialog()},stop))}
+        val stateBox=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;background=shape(panel);setPadding(dp(12),dp(8),dp(12),dp(8));addView(text("UNIFIED CANDIDATE 2 · ADAPTIVE HYBRID LIVE C1.1",10f,accent));addView(status);addView(thermal);addView(progress,LinearLayout.LayoutParams(-1,dp(5)));addView(row(button("Diagnostics"){diagnosticsDialog()},stop))}
         root.addView(stateBox,LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(8);bottomMargin=dp(6)})
         for(label in listOf("Chat","Create","Edit","Animate"))tabs+=button(label){mode=label;session.prefs.edit().putString("tab",mode).apply();buildPane();if(mode=="Chat")session.prepareChat()}
         root.addView(row(*tabs.toTypedArray()));content=FrameLayout(this);root.addView(content,LinearLayout.LayoutParams(-1,0,1f));setContentView(outer)
@@ -136,9 +137,19 @@ class MainActivity:AppCompatActivity() {
         val r=TaskRequest(kind=kind,prompt=p,photo=photo,profile=if(session.prefs.getBoolean("standard",false))RenderProfile.Standard else RenderProfile.Draft,seconds=if(mode=="Chat")Route.seconds(p)else session.prefs.getInt("seconds",6),width=aspect.getOrNull(0)?.toIntOrNull() ?:256,height=aspect.getOrNull(1)?.toIntOrNull() ?:256,strength=session.prefs.getFloat("strength",.65f),seed=session.prefs.getLong("seed",42),backend=backendChoice())
         if(session.begin(r)){if(mode=="Chat" && kind!=TaskKind.CHAT){mode=kind.name.lowercase().replaceFirstChar{it.uppercase()};session.prefs.edit().putString("tab",mode).putString("draft-$mode",p).apply();buildPane()}else if(mode=="Chat")prompt.text.clear()}
     }
+    private fun continueVoiceAfterBluetooth() {
+        if(ContextCompat.checkSelfPermission(this,Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED)microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+        else session.interruptAndListen()
+    }
     private fun voice() {
         if(session.state.value.stage.startsWith("Listening")){session.finishListening=true;return}
-        ensureNotifications();if(ContextCompat.checkSelfPermission(this,Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED)microphonePermission.launch(Manifest.permission.RECORD_AUDIO)else session.interruptAndListen()
+        ensureNotifications()
+        if(Build.VERSION.SDK_INT>=31 &&
+            ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_CONNECT)!=PackageManager.PERMISSION_GRANTED &&
+            !session.prefs.getBoolean("bluetooth-permission-asked",false)) {
+            bluetoothPermission.launch(Manifest.permission.BLUETOOTH_CONNECT);return
+        }
+        continueVoiceAfterBluetooth()
     }
     private fun update(s:TaskState) {
         status.change(s.stage+if(s.voiceStage.isNotBlank())"\n${s.voiceStage}" else "")

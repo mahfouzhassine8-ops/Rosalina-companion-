@@ -1,10 +1,14 @@
 package com.rosalina.unified
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.media.*
+import android.os.Build
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
 import android.os.SystemClock
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
 import java.io.File
 import java.io.FileOutputStream
@@ -22,19 +26,33 @@ internal class VoiceCapture(private val context: Context, private val handsFree:
     private var noise: NoiseSuppressor? = null
     private var previousMode = AudioManager.MODE_NORMAL
     private var changedMode = false
+    private var routedByApp = false
+    private var previousCommunicationDevice: AudioDeviceInfo? = null
     @Volatile private var closed = false
     @Volatile var outputActive = false
     @Volatile var outputRoute = -1
-    fun headphones() = outputRoute in intArrayOf(AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_BLE_HEADSET)
+    fun headphones() = outputRoute in intArrayOf(AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLUETOOTH_SCO)
     fun canInterrupt() = handsFree && (headphones() || (echo?.enabled == true && changedMode))
-    fun describe() = "Hands-free requested=$handsFree; output route=$outputRoute; AEC available=${AcousticEchoCanceler.isAvailable()}; AEC enabled=${echo?.enabled == true}; acoustic interruption=${canInterrupt()}"
+    fun describe() = "Hands-free requested=$handsFree; output route=$outputRoute; app communication route=$routedByApp; Bluetooth permission=${if(Build.VERSION.SDK_INT<31) "legacy" else ContextCompat.checkSelfPermission(context,Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED}; AEC available=${AcousticEchoCanceler.isAvailable()}; AEC enabled=${echo?.enabled == true}; acoustic interruption=${canInterrupt()}"
+    private fun preferredCommunicationDevice():AudioDeviceInfo? {
+        if(Build.VERSION.SDK_INT<31 || ContextCompat.checkSelfPermission(context,Manifest.permission.BLUETOOTH_CONNECT)!=PackageManager.PERMISSION_GRANTED)return null
+        val devices=runCatching{audio.availableCommunicationDevices}.getOrDefault(emptyList())
+        val priority=intArrayOf(AudioDeviceInfo.TYPE_BLE_HEADSET,AudioDeviceInfo.TYPE_BLUETOOTH_SCO,AudioDeviceInfo.TYPE_USB_HEADSET,AudioDeviceInfo.TYPE_WIRED_HEADSET)
+        return priority.firstNotNullOfOrNull{type->devices.firstOrNull{it.type==type}}
+    }
     fun start() {
         check(record == null && !closed)
         previousMode = audio.mode
         check(previousMode != AudioManager.MODE_IN_CALL) { "Voice is unavailable during a telephone call" }
         try {
-            val communication = handsFree && AcousticEchoCanceler.isAvailable() && previousMode == AudioManager.MODE_NORMAL
+            val preferred=preferredCommunicationDevice()
+            val communication = handsFree && previousMode == AudioManager.MODE_NORMAL && (preferred!=null || AcousticEchoCanceler.isAvailable())
             if (communication) { audio.mode = AudioManager.MODE_IN_COMMUNICATION; changedMode = true }
+            if(Build.VERSION.SDK_INT>=31 && preferred!=null) {
+                previousCommunicationDevice=audio.communicationDevice
+                routedByApp=runCatching{audio.setCommunicationDevice(preferred)}.getOrDefault(false)
+                if(routedByApp)outputRoute=preferred.type
+            }
             val source = if (communication) MediaRecorder.AudioSource.VOICE_COMMUNICATION else MediaRecorder.AudioSource.VOICE_RECOGNITION
             val minimum = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
             require(minimum > 0) { "Microphone format unsupported" }
@@ -97,6 +115,8 @@ internal class VoiceCapture(private val context: Context, private val handsFree:
         closed = true
         runCatching { record?.stop() }; runCatching { record?.release() }; record = null
         runCatching { echo?.release() }; runCatching { noise?.release() }; echo = null; noise = null
+        if(Build.VERSION.SDK_INT>=31 && routedByApp)runCatching{previousCommunicationDevice?.let{audio.setCommunicationDevice(it)} ?: audio.clearCommunicationDevice()}
+        routedByApp=false;previousCommunicationDevice=null
         if (changedMode && audio.mode == AudioManager.MODE_IN_COMMUNICATION) runCatching { audio.mode = previousMode }
     }
 }

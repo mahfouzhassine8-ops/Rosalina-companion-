@@ -124,6 +124,9 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions deliverables/*.apk | tee qa/permissions.txt
           grep -q android.permission.INTERNET qa/permissions.txt
           grep -q android.permission.ACCESS_NETWORK_STATE qa/permissions.txt
+          grep -q android.permission.BLUETOOTH_CONNECT qa/permissions.txt
+          ! grep -q android.permission.BLUETOOTH_SCAN qa/permissions.txt
+          ! grep -q android.permission.ACCESS_FINE_LOCATION qa/permissions.txt
           ! grep -R -E "sk-[A-Za-z0-9_-]{16,}" unified/src/main || false
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging deliverables/*.apk > qa/package.txt
           python3 tools/verify_unified_apk.py deliverables/Rosalina-Unified-Candidate-2-Voice-V2-arm64-UNSIGNED.apk
