@@ -3,7 +3,7 @@ import org.junit.Assert.*
 import org.junit.Test
 class PolicyTest {
  @Test fun thermalAllowsNormalLightModerate(){for(s in listOf(-1,0,1,2))assertFalse(ThermalPolicy.blocks(s))}
- @Test fun severeAndAboveStop(){for(s in 3..6)assertTrue(ThermalPolicy.blocks(s))}
+ @Test fun severeThrottlesCriticalAndAboveStop(){assertFalse(ThermalPolicy.blocks(3));for(s in 4..6)assertTrue(ThermalPolicy.blocks(s))}
  @Test fun routesExplicitImageRequests(){assertEquals(TaskKind.CREATE,Route.kind("Create a picture of a garden"));assertEquals(TaskKind.CREATE,Route.kind("draw an image of a red vase"))}
  @Test fun routesEditAndMotion(){assertEquals(TaskKind.EDIT,Route.kind("Edit this photo and remove the rain"));assertEquals(TaskKind.ANIMATE,Route.kind("Animate this photo for six seconds"))}
  @Test fun normalConversationStaysChat(){assertEquals(TaskKind.CHAT,Route.kind("How can I create a picture?"));assertEquals(TaskKind.CHAT,Route.kind("Tell me about animation"))}
