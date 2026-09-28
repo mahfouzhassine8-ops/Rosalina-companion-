@@ -63,8 +63,10 @@ internal object MotionSession {
     }
     fun fail(stage:String,t:Throwable,tail:String="") {
         val mem=ActivityManager.MemoryInfo().also{app.getSystemService(ActivityManager::class.java).getMemoryInfo(it)}
+        val workerPid=process.get()?.let{runCatching{it.pid()}.getOrNull()}
         val d="Stage: $stage\n${t.javaClass.simpleName}: ${MotionMath.error(t)}\nBuild: ${BuildConfig.VERSION_NAME}\n"+
-            "Device: ${Build.MANUFACTURER} ${Build.MODEL}\nABI: ${Build.SUPPORTED_ABIS.joinToString()}\nRAM total=${mem.totalMem}, available=${mem.availMem}\n"+tail.takeLast(12000)
+            "Device: ${Build.MANUFACTURER} ${Build.MODEL}\nABI: ${Build.SUPPORTED_ABIS.joinToString()}\nRAM total=${mem.totalMem}, available=${mem.availMem}\n"+
+            "Thermal: ${state.value.thermal.ifBlank{"unknown"}}\nStopping: ${state.value.stopping}\nWorker pid: ${workerPid?:"none"}\n"+tail.takeLast(12000)
         mutable.update{it.copy(status="$stage: ${MotionMath.error(t)}",details=d,expectedFinish=0,stopping=false)}
         scope.launch(Dispatchers.IO){runCatching{File(app.filesDir,"last-diagnostic.txt").writeText(d)}}
     }
