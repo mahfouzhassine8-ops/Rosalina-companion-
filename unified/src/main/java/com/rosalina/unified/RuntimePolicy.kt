@@ -69,7 +69,7 @@ internal class VoiceGate {
         if(onset)started=true
         return onset
     }
-    fun finished()=started && quietMs>=1100
+    fun finished(silenceMs:Int=1100)=started && quietMs>=silenceMs.coerceIn(400,2500)
 }
 
 internal object EchoText {

@@ -36,6 +36,7 @@ internal class Session private constructor(private val context:Context) {
     private val journal=RenderJournal(context)
     private val lease=EngineLease()
     private val chat=EngineRpc(context,ChatService::class.java)
+    private val listen=EngineRpc(context,ListenService::class.java)
     private val speech=EngineRpc(context,SpeechService::class.java)
     private val transcriptFile=File(context.filesDir,"conversation.json")
     private val turns=mutableListOf<Pair<String,String>>()
@@ -54,6 +55,7 @@ internal class Session private constructor(private val context:Context) {
     @Volatile private var chatNeedsReset=false
     @Volatile private var warmSystem:String?=null
     private var speechMetrics=""
+    private var liveMetrics=""
     private var chatMetrics=""
     private var probeLog=""
     private val deviceFacts by lazy{DeviceFacts.describe(context)}
@@ -150,7 +152,7 @@ internal class Session private constructor(private val context:Context) {
             try {
                 historyReady.await()
                 when(r.kind) {
-                    TaskKind.IMPORT->{chat.shutdown();warmSystem=null;speech.shutdown();models.import(ModelKey.valueOf(r.modelKey),Uri.parse(r.uri)){text,p->update(r.id){it.copy(stage=text,percent=p)}}}
+                    TaskKind.IMPORT->{chat.shutdown();warmSystem=null;listen.shutdown();speech.shutdown();models.import(ModelKey.valueOf(r.modelKey),Uri.parse(r.uri)){text,p->update(r.id){it.copy(stage=text,percent=p)}}}
                     TaskKind.CHAT->if(r.modelKey=="prepare")warmChat(r)else performChat(r,r.prompt,prefs.getBoolean("spoken-replies",false))
                     TaskKind.VOICE->performVoice(r)
                     else->render(r)
@@ -160,6 +162,7 @@ internal class Session private constructor(private val context:Context) {
                 withContext(NonCancellable) {
                     ticker.cancelAndJoin();capture?.close();capture=null;voiceActive=false
                     var finalFailure=failure
+                    try{listen.shutdown()}catch(t:Throwable){finalFailure=if(t is WorkerQuarantined)t else finalFailure ?:t}
                     try{speech.shutdown()}catch(t:Throwable){finalFailure=if(t is WorkerQuarantined)t else finalFailure ?:t}
                     if(chatNeedsReset || r.kind !in listOf(TaskKind.CHAT,TaskKind.VOICE) || thermal.read().low) {
                         try{chat.shutdown();warmSystem=null;chatNeedsReset=false}catch(t:Throwable){finalFailure=if(t is WorkerQuarantined)t else finalFailure ?:t}
@@ -212,6 +215,9 @@ internal class Session private constructor(private val context:Context) {
         val model=models.requirePath(ModelKey.CHAT)
         update(r.id){it.copy(answer="",voiceStage="",stage="Preparing response")};addTurn("You",prompt)
         val queue=Channel<String>(64);var shortened=false
+        val liveSpeech=voiceActive && prefs.getBoolean("live-voice",true)
+        val liveTuning=LiveVoiceTuning(endpointMs=prefs.getInt("live-endpoint-ms",820),clauseChars=prefs.getInt("live-clause-chars",120))
+        fun cutSpoken(value:String)=if(liveSpeech)LiveSpeechChunker.cut(value,liveTuning)else SpeechText.cut(value)
         fun enqueue(text:String){if(text.isNotBlank() && !shortened && !queue.trySend(text).isSuccess){shortened=true;update(r.id){it.copy(voiceStage="Spoken reply shortened · full reply remains in Chat")}}}
         val speechJob=if(readAloud)launch {
             var unavailable=false
@@ -245,18 +251,21 @@ internal class Session private constructor(private val context:Context) {
                         val now=SystemClock.elapsedRealtime()
                         if(readAloud && now-lastSpeechScan>=100 && !shortened) {
                             lastSpeechScan=now;val visible=SpeechText.spoken(answer.toString())
-                            if(spoken<=visible.length){var cut=SpeechText.cut(visible.substring(spoken));while(cut>0){enqueue(visible.substring(spoken,spoken+cut).trim());spoken+=cut;cut=SpeechText.cut(visible.substring(spoken))}}
+                            if(spoken<=visible.length){var cut=cutSpoken(visible.substring(spoken));while(cut>0){enqueue(visible.substring(spoken,spoken+cut).trim());spoken+=cut;cut=cutSpoken(visible.substring(spoken))}}
                         }
                     }
                 }
             }
             chatNeedsReset=false;warmSystem=prefs.getString("system",DEFAULT_SYSTEM)
             chatMetrics="Chat warm model=${result.getBoolean("warmModel")}; clean recovery=${result.getBoolean("recovered")}; setup=${result.getLong("modelSetupMs")} ms; first text=${result.getLong("firstTextMs")} ms; response=${result.getLong("responseMs")} ms; characters=${result.getInt("characters")}; emitted text pieces=${result.getInt("textPieces")} (not native token count); chat PSS=${result.getLong("chatPssKb")} KiB"
-            if(readAloud){val visible=SpeechText.spoken(answer.toString());while(spoken<visible.length){val end=minOf(visible.length,spoken+500);enqueue(visible.substring(spoken,end).trim());spoken=end}}
+            if(readAloud){val visible=SpeechText.spoken(answer.toString());val span=if(liveSpeech)220 else 500;while(spoken<visible.length){val end=minOf(visible.length,spoken+span);enqueue(visible.substring(spoken,end).trim());spoken=end}}
         } finally {queue.close();if(answer.isNotBlank())addTurn("Rosalina",answer.toString())}
         speechJob?.join();update(r.id){it.copy(answer="",voiceStage="")}
     }
     private suspend fun performVoice(r:TaskRequest) {
+        if(prefs.getBoolean("live-voice",true))performLiveVoice(r)else performClassicVoice(r)
+    }
+    private suspend fun performClassicVoice(r:TaskRequest) {
         require(ContextCompat.checkSelfPermission(context,Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED){"Microphone permission is required"}
         models.requirePath(ModelKey.STT);models.requirePath(ModelKey.TTS);models.requirePath(ModelKey.CHAT)
         speech.shutdown();voiceActive=true
@@ -318,9 +327,112 @@ internal class Session private constructor(private val context:Context) {
             }
         } finally {pending?.file?.delete();input.close();capture=null;voiceActive=false}
     }
+
+    private suspend fun prepareLiveVoice(r:TaskRequest)=coroutineScope {
+        val res=thermal.read()
+        require(!res.low && res.available>=3_500_000_000L){"Live Voice needs more free RAM. Close other large apps or turn off Live conversation mode to use Classic Voice."}
+        val system=prefs.getString("system",DEFAULT_SYSTEM) ?:DEFAULT_SYSTEM
+        val model=models.requirePath(ModelKey.CHAT)
+        val started=SystemClock.elapsedRealtime()
+        update(r.id){it.copy(stage="Listening · LIVE · warming local voice",backend="Live coordinator · Qwen + Whisper + Kokoro")}
+
+        val listenWarm=async {
+            listen.call(Bundle().apply{putString("operation","prepare")}){event->
+                if(event.getString("type")=="stage")update(r.id){it.copy(voiceStage=event.getString("text").orEmpty())}
+            }
+        }
+        val speechWarm=async {
+            speech.call(Bundle().apply{putString("operation","prepare")}){event->
+                if(event.getString("type")=="stage")update(r.id){it.copy(voiceStage=event.getString("text").orEmpty())}
+            }
+        }
+        val chatWarm=async {
+            chat.call(Bundle().apply{
+                putString("operation","prepare");putString("model",model.path);putString("system",system)
+            }){event->
+                if(event.getString("type")=="stage")update(r.id){it.copy(stage="Listening · LIVE · "+event.getString("text").orEmpty(),pid=event.getInt("pid"),backend="Live coordinator · Qwen + Whisper + Kokoro")}
+            }
+        }
+        val stt=listenWarm.await();val tts=speechWarm.await();val qwen=chatWarm.await()
+        warmSystem=system
+        liveMetrics="Live Voice = cascaded local full-duplex coordinator (not audio-native); warmup "+(SystemClock.elapsedRealtime()-started)+" ms; Qwen setup="+qwen.getLong("modelSetupMs")+" ms; Whisper setup="+stt.getLong("setupMs")+" ms / PSS="+stt.getLong("pssKb")+" KiB; voice setup="+tts.getLong("elapsedMs")+" ms"
+        update(r.id){it.copy(stage="Listening · LIVE · speak naturally",voiceStage="",backend="Live coordinator · all engines warm")}
+    }
+
+    private suspend fun performLiveVoice(r:TaskRequest) {
+        require(ContextCompat.checkSelfPermission(context,Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED){"Microphone permission is required"}
+        models.requirePath(ModelKey.STT);models.requirePath(ModelKey.TTS);models.requirePath(ModelKey.CHAT)
+        voiceActive=true
+        val endpoint=prefs.getInt("live-endpoint-ms",820).coerceIn(550,1400)
+        val input=VoiceCapture(context,prefs.getBoolean("hands-free",true),endpoint);capture=input
+        var pending:VoiceRecording?=null;var previousOutput=""
+        fun manual():Boolean {val value=voiceInterrupt;voiceInterrupt=false;return value}
+        fun finished():Boolean {val value=finishListening;finishListening=false;return value}
+        try {
+            input.start()
+            val warm=CoroutineScope(currentCoroutineContext()).async{prepareLiveVoice(r)}
+            speechMetrics=input.describe()+"\nLive endpoint="+endpoint+" ms"
+            while(currentCoroutineContext().isActive) {
+                if(pending==null) {
+                    update(r.id){it.copy(stage="Listening · LIVE · speak naturally",voiceStage="",answer="",workHint=input.describe())}
+                    pending=input.capture(::manual,::finished,{true}){} ?:return
+                }
+                warm.await()
+                val recording=pending!!;pending=null
+                update(r.id){it.copy(stage="Understanding you · LIVE",backend="Whisper tiny.en · warm :listen process",voiceStage="")}
+                val transcript=try {
+                    val result=listen.call(Bundle().apply{putString("operation","transcribe");putString("pcm",recording.file.path)}){}
+                    speechMetrics=input.describe()+"\nLive Whisper "+result.getLong("inferenceMs")+" ms for "+result.getLong("audioMs")+" ms audio · PSS "+result.getLong("pssKb")+" KiB"
+                    result.getString("transcript").orEmpty()
+                }finally{recording.file.delete()}
+
+                if(recording.duringSpeakerOutput && EchoText.resemblesOutput(transcript,previousOutput)) {
+                    update(r.id){it.copy(stage="Listening · LIVE · speaker echo ignored")};continue
+                }
+                val routed=Route.kind(transcript)
+                if(routed!=TaskKind.CHAT) {
+                    addTurn("You",transcript);input.close();capture=null;voiceActive=false
+                    val aspect=prefs.getString("aspect","256×256").orEmpty().split('×')
+                    render(r.copy(kind=routed,prompt=transcript,photo=prefs.getString("photo","").orEmpty(),seconds=Route.seconds(transcript),width=aspect.getOrNull(0)?.toIntOrNull() ?:256,height=aspect.getOrNull(1)?.toIntOrNull() ?:256,backend=prefs.getString("render-backend","auto") ?:"auto",profile=if(prefs.getBoolean("standard",false))RenderProfile.Standard else RenderProfile.Draft));return
+                }
+
+                supervisorScope {
+                    val interrupted=AtomicBoolean(false)
+                    val responseDone=AtomicBoolean(false)
+                    val recorded=AtomicReference<VoiceRecording?>(null)
+                    val response=async{performChat(r,transcript,true)}
+                    val next=async {
+                        input.capture(::manual,::finished,{responseDone.get()}) {
+                            interrupted.set(true)
+                            response.cancel(CancellationException("User live-voice interruption"))
+                            speech.interruptNow()
+                            update(r.id){it.copy(stage="Listening · LIVE · interrupted",voiceStage="")}
+                        }?.also{recorded.set(it)}
+                    }
+                    try {
+                        try{response.await()}catch(e:CancellationException){currentCoroutineContext().ensureActive();if(!interrupted.get())throw e}
+                        finally {
+                            withContext(NonCancellable) {
+                                input.outputActive=false
+                                if(chatNeedsReset){chat.shutdown();warmSystem=null;chatNeedsReset=false}
+                            }
+                        }
+                        previousOutput=snapshot.lastOrNull{it.first=="Rosalina"}?.second.orEmpty()
+                        responseDone.set(true)
+                        update(r.id){it.copy(stage="Listening · LIVE · your turn",answer="",voiceStage="",backend="Live coordinator · warm")}
+                        pending=next.await();recorded.set(null)
+                    } finally {
+                        withContext(NonCancellable){response.cancelAndJoin();next.cancelAndJoin();recorded.getAndSet(null)?.file?.delete()}
+                    }
+                }
+                if(pending==null)return
+            }
+        } finally {pending?.file?.delete();input.close();capture=null;voiceActive=false}
+    }
+
     private suspend fun render(r:TaskRequest) {
         setTaskMode(r);update(r.id){it.copy(kind=r.kind)}
-        chat.shutdown();warmSystem=null;speech.shutdown();chatNeedsReset=false
+        chat.shutdown();warmSystem=null;listen.shutdown();speech.shutdown();chatNeedsReset=false
         val resources=thermal.read()
         require(!resources.low){"Android reports low memory. Available RAM: ${String.format("%.2f",resources.available/1e9)} GB. Close other large applications."}
         require(!ThermalPolicy.blocks(resources.thermal)){"Android reports ${ThermalPolicy.label(resources.thermal)} heat. Cool the phone before retrying."}
@@ -433,6 +545,6 @@ internal class Session private constructor(private val context:Context) {
     }
     fun diagnostics(s:TaskState=state.value):String {
         val prior=if(s.id.isBlank())runCatching{File(context.filesDir,"last-diagnostics.txt").readText().takeLast(50000)}.getOrDefault("")else ""
-        return "ROSALINA UNIFIED CANDIDATE\nVersion: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\nPackage: ${context.packageName}\n$deviceFacts\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}\nAndroid: ${Build.VERSION.SDK_INT}; ABI: ${Build.SUPPORTED_ABIS.joinToString()}\nCurrent RAM total: ${s.totalBytes}; available: ${s.availableBytes}\nCurrent thermal: ${s.thermal} ${ThermalPolicy.label(s.thermal)}; sampled elapsedRealtime=${s.thermalAt}\nTask: ${s.id} ${s.kind}; stage: ${s.stage}; PID: ${s.pid}; last PID: ${s.lastPid}\nLast native stage: ${s.lastStage}; last sampling: ${s.lastStep}/${s.lastTotal}\nBackend: ${s.backend}\nElapsed: ${s.elapsedMs} ms\nWork pacing: ${s.workHint}\n$chatMetrics\n$speechMetrics\n${models.diagnostic()}\nError: ${s.error}\nGPU compute check:\n$probeLog\nNative log tail:\n${s.logTail}\n${journal.describe()}\nSamsung output acceptance: candidate; not established by CI\n${if(prior.isBlank())"" else "Previous recorded diagnostics:\n$prior"}"
+        return "ROSALINA UNIFIED CANDIDATE\nVersion: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\nPackage: ${context.packageName}\n$deviceFacts\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}\nAndroid: ${Build.VERSION.SDK_INT}; ABI: ${Build.SUPPORTED_ABIS.joinToString()}\nCurrent RAM total: ${s.totalBytes}; available: ${s.availableBytes}\nCurrent thermal: ${s.thermal} ${ThermalPolicy.label(s.thermal)}; sampled elapsedRealtime=${s.thermalAt}\nTask: ${s.id} ${s.kind}; stage: ${s.stage}; PID: ${s.pid}; last PID: ${s.lastPid}\nLast native stage: ${s.lastStage}; last sampling: ${s.lastStep}/${s.lastTotal}\nBackend: ${s.backend}\nElapsed: ${s.elapsedMs} ms\nWork pacing: ${s.workHint}\n$chatMetrics\n$speechMetrics\n$liveMetrics\n${models.diagnostic()}\nError: ${s.error}\nGPU compute check:\n$probeLog\nNative log tail:\n${s.logTail}\n${journal.describe()}\nSamsung output acceptance: candidate; not established by CI\n${if(prior.isBlank())"" else "Previous recorded diagnostics:\n$prior"}"
     }
 }

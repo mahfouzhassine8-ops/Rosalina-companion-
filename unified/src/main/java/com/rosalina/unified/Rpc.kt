@@ -11,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 
 internal const val RPC_RUN=1
+internal const val RPC_INTERRUPT=98
 internal const val RPC_SHUTDOWN=99
 internal const val RPC_EVENT=2
 internal class EngineRpc(private val context:Context,private val type:Class<out Service>) {
@@ -27,10 +28,10 @@ internal class EngineRpc(private val context:Context,private val type:Class<out 
     })
     /** Capture the current binder: a late interrupt may never target a successor process. */
     fun interruptNow() {
-        if(Looper.myLooper()==Looper.getMainLooper()){val m=remote;runCatching{m?.send(Message.obtain().apply{what=RPC_SHUTDOWN})}}
+        if(Looper.myLooper()==Looper.getMainLooper()){val m=remote;runCatching{m?.send(Message.obtain().apply{what=RPC_INTERRUPT})}}
         else {
             val current=remote
-            main.post{if(remote===current)runCatching{current?.send(Message.obtain().apply{what=RPC_SHUTDOWN})}}
+            main.post{if(remote===current)runCatching{current?.send(Message.obtain().apply{what=RPC_INTERRUPT})}}
         }
     }
     private suspend fun bind():Messenger=withContext(Dispatchers.Main.immediate) {
@@ -79,7 +80,8 @@ internal class EngineRpc(private val context:Context,private val type:Class<out 
                 val graceful=died!=null && withTimeoutOrNull(750){died.await();true}==true
                 if(!graceful && m.binder.isBinderAlive) {
                     withContext(Dispatchers.IO) {
-                        val expected=context.packageName+if(type==ChatService::class.java)":chat" else ":speech"
+                        val suffix=when(type){ChatService::class.java->":chat";ListenService::class.java->":listen";else->":speech"}
+                        val expected=context.packageName+suffix
                         val cmd=runCatching{File("/proc/$oldPid/cmdline").readText().substringBefore('\u0000')}.getOrDefault("")
                         if(oldPid>0 && cmd==expected)android.os.Process.killProcess(oldPid)
                     }
@@ -95,6 +97,7 @@ abstract class NativeRpcService:Service() {
     private val owner=AtomicReference<String?>(null)
     private val messenger=Messenger(Handler(Looper.getMainLooper()){msg->
         when(msg.what) {
+            RPC_INTERRUPT->{interrupt()}
             RPC_SHUTDOWN->{interrupt();scope.cancel();android.os.Process.killProcess(android.os.Process.myPid())}
             RPC_RUN->{
                 val reply=msg.replyTo;val values=Bundle(msg.data);val id=values.getString("id") ?:""

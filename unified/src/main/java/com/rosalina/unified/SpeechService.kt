@@ -21,7 +21,11 @@ class SpeechService:NativeRpcService() {
     override fun interrupt(){cancelled.set(true);runCatching{track?.pause();track?.flush()};focus?.let{getSystemService(AudioManager::class.java).abandonAudioFocusRequest(it)}}
     override suspend fun execute(values:Bundle,emit:(String,String,Bundle?)->Unit):Bundle {
         cancelled.set(false)
-        return if(values.getString("operation")=="transcribe")transcribe(values,emit)else speak(values,emit)
+        return when(values.getString("operation")) {
+            "transcribe"->transcribe(values,emit)
+            "prepare"->prepareVoice(emit)
+            else->speak(values,emit)
+        }
     }
     private suspend fun transcribe(values:Bundle,emit:(String,String,Bundle?)->Unit):Bundle {
         tts?.release();tts=null;ttsRoot=""
@@ -38,13 +42,24 @@ class SpeechService:NativeRpcService() {
             try{stream.acceptWaveform(samples,16000);recognizer.decode(stream);val text=recognizer.getResult(stream).text.trim();require(text.isNotBlank()){"No speech recognized. Try speaking closer to the microphone."};return Bundle().apply{putString("transcript",text);putLong("inferenceMs",SystemClock.elapsedRealtime()-start);putLong("audioMs",samples.size*1000L/16000)}}finally{stream.release()}
         }finally{recognizer.release()}
     }
-    private suspend fun speak(values:Bundle,emit:(String,String,Bundle?)->Unit):Bundle {
+    private fun ensureVoice(emit:(String,String,Bundle?)->Unit):OfflineTts {
         val root=ModelStore(this).bundleFile(ModelKey.TTS,"model.onnx").parentFile ?:error("Voice model folder is missing")
         if(tts==null || root.path!=ttsRoot) {
             emit("stage","Loading Rosalina voice",null);tts?.release()
             tts=OfflineTts(config=OfflineTtsConfig(model=OfflineTtsModelConfig(kokoro=OfflineTtsKokoroModelConfig(model=File(root,"model.onnx").path,voices=File(root,"voices.bin").path,tokens=File(root,"tokens.txt").path,dataDir=File(root,"espeak-ng-data").path,lexicon=File(root,"lexicon-us-en.txt").takeIf{it.exists()}?.path ?:"",lang="en-us"),numThreads=2,provider="cpu"),maxNumSentences=1));ttsRoot=root.path
         }
-        val engine=tts ?:error("Voice unavailable")
+        return tts ?:error("Voice unavailable")
+    }
+    private fun prepareVoice(emit:(String,String,Bundle?)->Unit):Bundle {
+        val start=SystemClock.elapsedRealtime()
+        val e=ensureVoice(emit)
+        return Bundle().apply{
+            putBoolean("prepared",true);putInt("sampleRate",e.sampleRate())
+            putInt("speakers",e.numSpeakers());putLong("elapsedMs",SystemClock.elapsedRealtime()-start)
+        }
+    }
+    private suspend fun speak(values:Bundle,emit:(String,String,Bundle?)->Unit):Bundle {
+        val engine=ensureVoice(emit)
         val text=values.getString("text").orEmpty().trim();require(text.isNotBlank() && text.length<=1000){"Invalid speech chunk"}
         val rate=engine.sampleRate()
         val sid=values.getInt("speaker",3).coerceIn(0,engine.numSpeakers()-1)

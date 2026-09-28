@@ -15,7 +15,7 @@ import java.util.UUID
 import kotlin.math.sqrt
 
 internal data class VoiceRecording(val file: File, val duringSpeakerOutput: Boolean)
-internal class VoiceCapture(private val context: Context, private val handsFree: Boolean) : AutoCloseable {
+internal class VoiceCapture(private val context: Context, private val handsFree: Boolean, private val endpointMs:Int=1100) : AutoCloseable {
     private val audio = context.getSystemService(AudioManager::class.java)
     private var record: AudioRecord? = null
     private var echo: AcousticEchoCanceler? = null
@@ -81,7 +81,7 @@ internal class VoiceCapture(private val context: Context, private val handsFree:
                         preRoll.clear()
                     } else if (began) { writeBounded(data); preRoll.clear() }
                     if (began) manualQuiet = if (rms < 500) manualQuiet + n * 1000 / 16000 else 0
-                    if (began && (gate.finished() || manualQuiet >= 1800 || finish())) break
+                    if (began && (gate.finished(endpointMs.coerceIn(550,1400)) || manualQuiet >= maxOf(1300,endpointMs+500) || finish())) break
                     if (!idle() || began) idleSince = SystemClock.elapsedRealtime()
                     if (!began && SystemClock.elapsedRealtime() - idleSince >= 45000) break
                 }
