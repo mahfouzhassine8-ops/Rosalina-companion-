@@ -22,7 +22,7 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
-class RosalinaApp:Application(){override fun onCreate(){super.onCreate();if(getProcessName()==packageName)Session.get(this)}}
+class RosalinaApp:Application(){override fun onCreate(){super.onCreate();CrashJournal.install(this);if(getProcessName()==packageName)Session.get(this)}}
 internal class Session private constructor(private val context:Context) {
     companion object {
         @Volatile private var instance:Session?=null
@@ -56,7 +56,10 @@ internal class Session private constructor(private val context:Context) {
     @Volatile private var chatNeedsReset=false
     @Volatile private var warmSystem:String?=null
     private var speechMetrics=""
-    private var liveMetrics=""
+    @Volatile private var liveMetrics=""
+    @Volatile private var liveWarmMetrics=""
+    @Volatile private var voiceStartJob:Job?=null
+    private var photoImportJob:Job?=null
     private var chatMetrics=""
     @Volatile private var lastChatFirstTextMs=0L
     private var probeLog=""
@@ -65,7 +68,7 @@ internal class Session private constructor(private val context:Context) {
         prefs.edit().remove("active-id").apply()
         scope.launch(Dispatchers.IO) {
             runCatching{val a=JSONArray(transcriptFile.readText());synchronized(this@Session){for(i in 0 until a.length()){val o=a.getJSONObject(i);turns.add(o.getString("role") to o.getString("text"))};snapshot=turns.toList()}}
-            historyReady.complete(Unit);mutable.update{it.copy(revision=it.revision+1)};refreshResources()
+            historyReady.complete(Unit);mutable.update{it.copy(revision=it.revision+1)};runCatching{refreshResources()}
         }
     }
     fun transcript():List<Pair<String,String>> = snapshot
@@ -126,16 +129,27 @@ internal class Session private constructor(private val context:Context) {
     }
     fun currentRequest()=request
     fun stop(reason:String="Stopped by you") {
+        voiceStartJob?.cancel();voiceStartJob=null
         if(!state.value.busy)return
         stopReason=reason;mutable.update{it.copy(stopping=true,stage="Stopping…",percent=null,eta="")}
         speech.interruptNow();activeJob?.cancel(CancellationException(reason))
     }
     fun interruptAndListen() {
         if(voiceActive){voiceInterrupt=true;return}
-        scope.launch {
-            if(state.value.busy){stop();withTimeoutOrNull(8000){activeJob?.join()}}
-            if(!state.value.busy)begin(TaskRequest(kind=TaskKind.VOICE))
+        if(voiceStartJob?.isActive==true)return
+        val job=scope.launch(start=CoroutineStart.LAZY) {
+            try {
+                if(state.value.busy) {
+                    // Cancel only the current task, not this queued transition.
+                    stopReason="Switching to Live";mutable.update{it.copy(stopping=true,stage="Stopping…",percent=null,eta="")}
+                    speech.interruptNow();activeJob?.cancel(CancellationException(stopReason))
+                    withTimeoutOrNull(8000){state.first{!it.busy}}
+                }
+                ensureActive()
+                if(!state.value.busy)begin(TaskRequest(kind=TaskKind.VOICE))
+            } finally { if(voiceStartJob===currentCoroutineContext()[Job])voiceStartJob=null }
         }
+        voiceStartJob=job;job.start()
     }
     fun launchPending(service:GenerationService,taskId:String) {
         val r=request ?:run{service.finishTask(taskId);return}
@@ -147,7 +161,12 @@ internal class Session private constructor(private val context:Context) {
             val ticker=scope.launch(Dispatchers.IO) {
                 var savedAt=0L
                 while(isActive && state.value.id==r.id && state.value.busy) {
-                    val res=thermal.read();update(r.id){it.copy(elapsedMs=SystemClock.elapsedRealtime()-start,availableBytes=res.available,totalBytes=res.total,thermal=res.thermal,thermalAt=res.measuredAt)}
+                    val res=try{thermal.read()}catch(t:Throwable){
+                        if(t is CancellationException)throw t
+                        update(r.id){it.copy(error="Resource monitor: ${t.stackTraceToString()}")}
+                        stop("Resource monitoring failed; work stopped safely");break
+                    }
+                    update(r.id){it.copy(elapsedMs=SystemClock.elapsedRealtime()-start,availableBytes=res.available,totalBytes=res.total,thermal=res.thermal,thermalAt=res.measuredAt)}
                     if(ThermalPolicy.blocks(res.thermal) && r.kind!=TaskKind.IMPORT){stop("Stopped safely: Android reported ${ThermalPolicy.label(res.thermal)} heat");break}
                     if(SystemClock.elapsedRealtime()-savedAt>=10000){runCatching{atomicText(File(context.filesDir,"last-diagnostics.txt"),diagnostics())};savedAt=SystemClock.elapsedRealtime()}
                     delay(1000)
@@ -155,12 +174,12 @@ internal class Session private constructor(private val context:Context) {
             }
             try {
                 historyReady.await()
-                when(r.kind) {
+                coroutineScope { when(r.kind) {
                     TaskKind.IMPORT->{chat.shutdown();warmSystem=null;listen.shutdown();speech.shutdown();models.import(ModelKey.valueOf(r.modelKey),Uri.parse(r.uri)){text,p->update(r.id){it.copy(stage=text,percent=p)}}}
                     TaskKind.CHAT->if(r.modelKey=="prepare")warmChat(r)else performChat(r,r.prompt,prefs.getBoolean("spoken-replies",false))
                     TaskKind.VOICE->performVoice(r)
                     else->render(r)
-                }
+                } }
             }catch(t:Throwable){failure=t}
             finally {
                 withContext(NonCancellable) {
@@ -168,7 +187,7 @@ internal class Session private constructor(private val context:Context) {
                     var finalFailure=failure
                     try{listen.shutdown()}catch(t:Throwable){finalFailure=if(t is WorkerQuarantined)t else finalFailure ?:t}
                     try{speech.shutdown()}catch(t:Throwable){finalFailure=if(t is WorkerQuarantined)t else finalFailure ?:t}
-                    if(chatNeedsReset || r.kind !in listOf(TaskKind.CHAT,TaskKind.VOICE) || thermal.read().low) {
+                    if(chatNeedsReset || r.kind !in listOf(TaskKind.CHAT,TaskKind.VOICE) || runCatching{thermal.read().low}.getOrDefault(true)) {
                         try{chat.shutdown();warmSystem=null;chatNeedsReset=false}catch(t:Throwable){finalFailure=if(t is WorkerQuarantined)t else finalFailure ?:t}
                     }
                     runCatching{journal.finish(finalFailure)}
@@ -181,10 +200,17 @@ internal class Session private constructor(private val context:Context) {
         if(lease.current()!=r.id)return@withContext
         val old=state.value
         val message=when{failure is CancellationException->stopReason.ifBlank{"Stopped"};failure!=null->failure.message ?:failure.javaClass.simpleName;r.modelKey=="prepare"->"Ready · chat model prepared";old.result.isNotBlank() && old.kind in listOf(TaskKind.CREATE,TaskKind.EDIT,TaskKind.ANIMATE)->"Ready · saved privately";else->"Ready"}
-        val done=old.copy(busy=false,stopping=false,stage=message,percent=null,step=0,total=0,eta="",pid=0,voiceStage="",workHint="",avatarEnergy=0f,error=if(failure!=null && failure !is CancellationException)failure.stackTraceToString()else old.error,quarantined=old.quarantined || failure is WorkerQuarantined)
-        service.finishTask(r.id)
-        val report=diagnostics(done);withContext(Dispatchers.IO){runCatching{atomicText(File(context.filesDir,"last-diagnostics.txt"),report)}}
-        taskService=null;request=null;activeJob=null;prefs.edit().remove("active-id").apply();lease.release(r.id);mutable.value=done
+        var done=old.copy(busy=false,stopping=false,stage=message,percent=null,step=0,total=0,eta="",pid=0,voiceStage="",workHint="",avatarEnergy=0f,error=if(failure!=null && failure !is CancellationException)failure.stackTraceToString()else old.error,quarantined=old.quarantined || failure is WorkerQuarantined)
+        try {
+            try{service.finishTask(r.id)}catch(t:Throwable){done=done.copy(error=(done.error+"\nForeground cleanup: "+t.stackTraceToString()).takeLast(24000),stage="Task ended; foreground cleanup failed")}
+            withContext(Dispatchers.IO) {
+                if(failure!=null && failure !is CancellationException)CrashJournal.recordTaskFailure(context,r.kind.name,failure)
+                runCatching{atomicText(File(context.filesDir,"last-diagnostics.txt"),diagnostics(done))}
+            }
+        } finally {
+            taskService=null;request=null;activeJob=null;prefs.edit().remove("active-id").apply()
+            lease.release(r.id);mutable.value=done
+        }
     }
     private suspend fun setTaskMode(r:TaskRequest,playback:Boolean=false)=withContext(Dispatchers.Main.immediate) {
         currentCoroutineContext().ensureActive();taskService?.setMode(r.id,r.kind,microphone=voiceActive,playback=playback)
@@ -239,7 +265,11 @@ internal class Session private constructor(private val context:Context) {
                         }){event->
                             when(event.getString("type")) {
                                 "stage"->update(r.id){it.copy(voiceStage=event.getString("text").orEmpty())}
-                                "playback"->{capture?.outputRoute=event.getInt("route",-1);capture?.outputActive=event.getString("text")=="start"}
+                                "playback"->{
+                                    val playing=event.getString("text")=="start"
+                                    capture?.outputRoute=event.getInt("route",-1);capture?.outputActive=playing
+                                    update(r.id){it.copy(voiceStage=if(playing)"Speaking · ${expression.name}" else "",avatarEnergy=if(playing)it.avatarEnergy else 0f)}
+                                }
                                 "avatar"->update(r.id){it.copy(avatarEnergy=event.getFloat("energy",0f).coerceIn(0f,1f))}
                             }
                         }
@@ -249,17 +279,18 @@ internal class Session private constructor(private val context:Context) {
                         completed=true
                     }catch(e:CancellationException){throw e}
                     catch(t:Throwable){
+                        if(t is WorkerQuarantined)throw t
                         if(!currentCoroutineContext().isActive || state.value.stopping)throw CancellationException("Speech stopped").apply{initCause(t)}
                         val processExit=t.message?.contains("SpeechService process exited")==true
                         if(liveSpeech && processExit && attempt<2) {
                             speechMetrics="Speech process exited · restarting once"
                             update(r.id){it.copy(voiceStage="Restarting Rosalina voice")}
-                            try{speech.shutdown()}catch(_:Throwable){}
+                            speech.shutdown()
                             delay(80)
                         } else {
                             unavailable=true;completed=true
                             update(r.id){it.copy(voiceStage="Voice unavailable · ${t.message}",avatarEnergy=0f,error="Speech: ${t.stackTraceToString()}")}
-                            try{speech.shutdown()}catch(_:Throwable){}
+                            speech.shutdown()
                         }
                     } finally {capture?.outputActive=false}
                 }
@@ -373,6 +404,7 @@ internal class Session private constructor(private val context:Context) {
             }
         }
         val chatWarm=async {
+            chatNeedsReset=true
             chat.call(Bundle().apply{
                 putString("operation","prepare");putString("model",model.path);putString("system",system)
             }){event->
@@ -380,12 +412,14 @@ internal class Session private constructor(private val context:Context) {
             }
         }
         val stt=listenWarm.await();val tts=speechWarm.await();val qwen=chatWarm.await()
-        warmSystem=system
-        liveMetrics="Live Voice = cascaded local full-duplex coordinator (not audio-native); warmup "+(SystemClock.elapsedRealtime()-started)+" ms; Qwen setup="+qwen.getLong("modelSetupMs")+" ms; Whisper setup="+stt.getLong("setupMs")+" ms / PSS="+stt.getLong("pssKb")+" KiB; voice setup="+tts.getLong("elapsedMs")+" ms"
+        check(stt.getBoolean("prepared") && tts.getBoolean("prepared") && qwen.getBoolean("prepared")){"Live engines did not confirm preparation"}
+        chatNeedsReset=false;warmSystem=system
+        liveWarmMetrics="Live Voice = cascaded local full-duplex coordinator (not audio-native); warmup "+(SystemClock.elapsedRealtime()-started)+" ms; Qwen setup="+qwen.getLong("modelSetupMs")+" ms; Whisper setup="+stt.getLong("setupMs")+" ms / PSS="+stt.getLong("pssKb")+" KiB; voice setup="+tts.getLong("elapsedMs")+" ms"
+        liveMetrics=liveWarmMetrics
         update(r.id){it.copy(stage="Listening · LIVE · speak naturally",voiceStage="",backend="Live coordinator · all engines warm")}
     }
 
-    private suspend fun performLiveVoice(r:TaskRequest) {
+    private suspend fun performLiveVoice(r:TaskRequest) = coroutineScope {
         require(ContextCompat.checkSelfPermission(context,Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED){"Microphone permission is required"}
         models.requirePath(ModelKey.STT);models.requirePath(ModelKey.TTS);models.requirePath(ModelKey.CHAT)
         voiceActive=true
@@ -394,16 +428,17 @@ internal class Session private constructor(private val context:Context) {
         var pending:VoiceRecording?=null;var previousOutput=""
         fun manual():Boolean {val value=voiceInterrupt;voiceInterrupt=false;return value}
         fun finished():Boolean {val value=finishListening;finishListening=false;return value}
+        var warm:Deferred<Unit>?=null
         try {
             input.start()
-            val warm=CoroutineScope(currentCoroutineContext()).async{prepareLiveVoice(r)}
+            val startup=async { withTimeout(300_000) { prepareLiveVoice(r) } };warm=startup
             speechMetrics=input.describe()+"\nLive endpoint="+endpoint+" ms"
             while(currentCoroutineContext().isActive) {
                 if(pending==null) {
                     update(r.id){it.copy(stage="Listening · LIVE · speak naturally",voiceStage="",answer="",workHint=input.describe())}
-                    pending=input.capture(::manual,::finished,{true}){} ?:return
+                    pending=input.capture(::manual,::finished,{true}){} ?:return@coroutineScope
                 }
-                warm.await()
+                startup.await()
                 val recording=pending!!;pending=null
                 update(r.id){it.copy(stage="Understanding you · LIVE",backend="Whisper tiny.en · warm :listen process",voiceStage="")}
                 val transcript=try {
@@ -419,7 +454,7 @@ internal class Session private constructor(private val context:Context) {
                 if(routed!=TaskKind.CHAT) {
                     addTurn("You",transcript);input.close();capture=null;voiceActive=false
                     val aspect=prefs.getString("aspect","256×256").orEmpty().split('×')
-                    render(r.copy(kind=routed,prompt=transcript,photo=prefs.getString("photo","").orEmpty(),seconds=Route.seconds(transcript),width=aspect.getOrNull(0)?.toIntOrNull() ?:256,height=aspect.getOrNull(1)?.toIntOrNull() ?:256,backend=prefs.getString("render-backend","auto") ?:"auto",profile=if(prefs.getBoolean("standard",false))RenderProfile.Standard else RenderProfile.Draft));return
+                    render(r.copy(kind=routed,prompt=transcript,photo=prefs.getString("photo","").orEmpty(),seconds=Route.seconds(transcript),width=aspect.getOrNull(0)?.toIntOrNull() ?:256,height=aspect.getOrNull(1)?.toIntOrNull() ?:256,backend=prefs.getString("render-backend","auto") ?:"auto",profile=if(prefs.getBoolean("standard",false))RenderProfile.Standard else RenderProfile.Draft));return@coroutineScope
                 }
 
                 supervisorScope {
@@ -443,7 +478,7 @@ internal class Session private constructor(private val context:Context) {
                             }
                         }
                         learner.recordTurn(interrupted.get(),lastChatFirstTextMs)
-                        liveMetrics=liveMetrics+"\n"+learner.snapshot().summary()+"\n"+OnlineEnhancements.state(context,prefs).summary()
+                        liveMetrics=liveWarmMetrics+"\n"+learner.snapshot().summary()+"\n"+OnlineEnhancements.state(context,prefs).summary()
                         previousOutput=snapshot.lastOrNull{it.first=="Rosalina"}?.second.orEmpty()
                         responseDone.set(true)
                         update(r.id){it.copy(stage="Listening · LIVE · your turn",answer="",voiceStage="",backend="Live coordinator · warm")}
@@ -452,9 +487,13 @@ internal class Session private constructor(private val context:Context) {
                         withContext(NonCancellable){response.cancelAndJoin();next.cancelAndJoin();recorded.getAndSet(null)?.file?.delete()}
                     }
                 }
-                if(pending==null)return
+                if(pending==null)return@coroutineScope
             }
-        } finally {pending?.file?.delete();input.close();capture=null;voiceActive=false}
+        } finally {
+            // Do not release input/task ownership until startup children have terminated.
+            withContext(NonCancellable) { warm?.cancelAndJoin() }
+            pending?.file?.delete();input.close();capture=null;voiceActive=false
+        }
     }
 
     private suspend fun render(r:TaskRequest) {
@@ -560,18 +599,29 @@ internal class Session private constructor(private val context:Context) {
         return file
     }
     fun importPhoto(uri:Uri) {
-        scope.launch(Dispatchers.IO) {
+        photoImportJob?.cancel()
+        photoImportJob=scope.launch(Dispatchers.IO) {
+            var file:File?=null;var committed=false
             try {
                 val source=ImageDecoder.createSource(context.contentResolver,uri)
-                val bitmap=ImageDecoder.decodeBitmap(source){decoder,info,_->decoder.allocator=ImageDecoder.ALLOCATOR_SOFTWARE;val max=maxOf(info.size.width,info.size.height);if(max>2048)decoder.setTargetSize(info.size.width*2048/max,info.size.height*2048/max)}
-                val file=File(context.filesDir,"photos/${UUID.randomUUID()}.png");file.parentFile?.mkdirs()
-                try{FileOutputStream(file).use{check(bitmap.compress(Bitmap.CompressFormat.PNG,100,it));it.fd.sync()}}finally{bitmap.recycle()}
-                prefs.edit().putString("photo",file.path).apply();notice("Photo selected")
-            }catch(t:Throwable){notice("Photo import failed: ${t.message}")}
+                val bitmap=ImageDecoder.decodeBitmap(source){decoder,info,_->
+                    decoder.allocator=ImageDecoder.ALLOCATOR_SOFTWARE
+                    val maximum=maxOf(info.size.width,info.size.height)
+                    if(maximum>2048)decoder.setTargetSize((info.size.width*2048/maximum).coerceAtLeast(1),(info.size.height*2048/maximum).coerceAtLeast(1))
+                }
+                val output=File(context.filesDir,"photos/${UUID.randomUUID()}.png");file=output;output.parentFile?.mkdirs()
+                try{FileOutputStream(output).use{check(bitmap.compress(Bitmap.CompressFormat.PNG,100,it));it.fd.sync()}}finally{bitmap.recycle()}
+                ensureActive()
+                withContext(Dispatchers.Main.immediate) {
+                    ensureActive();prefs.edit().putString("photo",output.path).apply();committed=true;notice("Photo selected")
+                }
+            }catch(e:CancellationException){throw e}
+            catch(t:Throwable){notice("Photo import failed: ${t.message}")}
+            finally{if(!committed)file?.delete()}
         }
     }
-    fun diagnostics(s:TaskState=state.value):String {
+    fun diagnostics(s:TaskState=state.value,includeExits:Boolean=false):String {
         val prior=if(s.id.isBlank())runCatching{File(context.filesDir,"last-diagnostics.txt").readText().takeLast(50000)}.getOrDefault("")else ""
-        return "ROSALINA UNIFIED CANDIDATE\nVersion: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\nPackage: ${context.packageName}\n$deviceFacts\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}\nAndroid: ${Build.VERSION.SDK_INT}; ABI: ${Build.SUPPORTED_ABIS.joinToString()}\nCurrent RAM total: ${s.totalBytes}; available: ${s.availableBytes}\nCurrent thermal: ${s.thermal} ${ThermalPolicy.label(s.thermal)}; sampled elapsedRealtime=${s.thermalAt}\n${thermal.describe()}\nTask: ${s.id} ${s.kind}; stage: ${s.stage}; PID: ${s.pid}; last PID: ${s.lastPid}\nLast native stage: ${s.lastStage}; last sampling: ${s.lastStep}/${s.lastTotal}\nBackend: ${s.backend}\nElapsed: ${s.elapsedMs} ms\nWork pacing: ${s.workHint}\n$chatMetrics\n$speechMetrics\n$liveMetrics\n${learner.snapshot().summary()}\n${OnlineEnhancements.state(context,prefs).summary()}\n${models.diagnostic()}\nError: ${s.error}\nGPU compute check:\n$probeLog\nNative log tail:\n${s.logTail}\n${journal.describe()}\nSamsung output acceptance: candidate; not established by CI\n${if(prior.isBlank())"" else "Previous recorded diagnostics:\n$prior"}"
+        return "ROSALINA UNIFIED CANDIDATE\nVersion: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\nPackage: ${context.packageName}\n$deviceFacts\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}\nAndroid: ${Build.VERSION.SDK_INT}; ABI: ${Build.SUPPORTED_ABIS.joinToString()}\nAvatar: ${AvatarAsset.status}; state=${AvatarStateResolver.resolve(s)}\nUI transition: ${prefs.getString("last-ui-transition","none")}\nCurrent RAM total: ${s.totalBytes}; available: ${s.availableBytes}\nCurrent thermal: ${s.thermal} ${ThermalPolicy.label(s.thermal)}; sampled elapsedRealtime=${s.thermalAt}\n${thermal.describe()}\nTask: ${s.id} ${s.kind}; stage: ${s.stage}; PID: ${s.pid}; last PID: ${s.lastPid}\nLast native stage: ${s.lastStage}; last sampling: ${s.lastStep}/${s.lastTotal}\nBackend: ${s.backend}\nElapsed: ${s.elapsedMs} ms\nWork pacing: ${s.workHint}\n$chatMetrics\n$speechMetrics\n$liveMetrics\n${learner.snapshot().summary()}\n${OnlineEnhancements.state(context,prefs).summary()}\n${models.diagnostic()}\nError: ${s.error}\nGPU compute check:\n$probeLog\nNative log tail:\n${s.logTail}\n${journal.describe()}\n${if(includeExits)CrashJournal.describe(context) else ""}\nSamsung output acceptance: candidate; not established by CI\n${if(prior.isBlank())"" else "Previous recorded diagnostics:\n$prior"}"
     }
 }

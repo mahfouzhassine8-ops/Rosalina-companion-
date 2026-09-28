@@ -17,17 +17,21 @@ internal data class HardwareSample(
     }
 }
 internal class HardwareTelemetry {
+    private var previousPid=0
     private var previousProcessTicks:Long?=null;private var previousTotalTicks:Long?=null
     private fun readLong(path:String)=runCatching{File(path).readText().trim().split(Regex("\\s+")).first().toLong()}.getOrDefault(0L)
     private fun cpuFreq(name:String):Long {
         val values=File("/sys/devices/system/cpu").listFiles().orEmpty().filter{it.name.matches(Regex("cpu\\d+"))}.mapNotNull{val v=readLong(File(it,"cpufreq/$name").path);v.takeIf{x->x>0}}
         return if(values.isEmpty())0 else values.average().toLong()
     }
-    private fun processTicks(pid:Int):Long=runCatching{val p=File("/proc/$pid/stat").readText().substringAfterLast(") ").trim().split(Regex("\\s+"));p.getOrNull(11)!!.toLong()+p.getOrNull(12)!!.toLong()}.getOrDefault(0L)
-    private fun totalTicks():Long=runCatching{File("/proc/stat").bufferedReader().use{it.readLine()}.split(Regex("\\s+")).drop(1).mapNotNull{it.toLongOrNull()}.sum()}.getOrDefault(0L)
+    private fun processTicks(pid:Int):Long?=runCatching{val p=File("/proc/$pid/stat").readText().substringAfterLast(") ").trim().split(Regex("\\s+"));p.getOrNull(11)!!.toLong()+p.getOrNull(12)!!.toLong()}.getOrNull()
+    private fun totalTicks():Long?=runCatching{File("/proc/stat").bufferedReader().use{it.readLine()}.split(Regex("\\s+")).drop(1).mapNotNull{it.toLongOrNull()}.sum()}.getOrNull()
     private fun cpuPercent(pid:Int):Float {
         if(pid<=0)return Float.NaN
-        val p=processTicks(pid);val t=totalTicks();val pp=previousProcessTicks;val pt=previousTotalTicks
+        if(pid!=previousPid){previousPid=pid;previousProcessTicks=null;previousTotalTicks=null}
+        val p=processTicks(pid);val t=totalTicks();
+        if(p==null || t==null){previousProcessTicks=null;previousTotalTicks=null;return Float.NaN}
+        val pp=previousProcessTicks;val pt=previousTotalTicks
         previousProcessTicks=p;previousTotalTicks=t
         if(pp==null||pt==null||t<=pt||p<pp)return Float.NaN
         return ((p-pp).toDouble()/(t-pt).toDouble()*100.0).toFloat().coerceIn(0f,100f)

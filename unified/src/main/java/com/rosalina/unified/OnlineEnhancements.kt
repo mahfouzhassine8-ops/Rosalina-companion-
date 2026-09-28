@@ -14,13 +14,13 @@ internal data class OnlineState(
     fun summary():String {
         val access=if(allowed)"allowed" else "disabled"
         val link=when{!connected->"offline";validated->"validated internet";else->"network without validation"}
-        return "Online enhancements=$access; $link; metered=$metered"
+        return "Online preference=$access; no online/Mac execution provider configured; local engines only; $link; metered=$metered"
     }
 }
 
 internal object OnlineEnhancements {
     fun state(context:Context,prefs:SharedPreferences):OnlineState {
-        val allowed=prefs.getBoolean("online-enhancements",true)
+        val allowed=prefs.getBoolean("online-enhancements",false)
         val cm=context.getSystemService(ConnectivityManager::class.java)
         val network=cm.activeNetwork
         val caps=network?.let{cm.getNetworkCapabilities(it)}
