@@ -22,6 +22,6 @@ lipo -info "$APP/Contents/MacOS/RosalinaAccelerator"
 
 (
   cd "$DIST"
-  ditto -c -k --sequesterRsrc --keepParent "Rosalina Accelerator.app" "Rosalina-Accelerator-v0.1-arm64.zip"
-  shasum -a 256 "Rosalina-Accelerator-v0.1-arm64.zip" > SHA256SUMS.txt
+  ditto -c -k --sequesterRsrc --keepParent "Rosalina Accelerator.app" "Rosalina-Accelerator-v0.1.1-arm64.zip"
+  shasum -a 256 "Rosalina-Accelerator-v0.1.1-arm64.zip" > SHA256SUMS.txt
 )
