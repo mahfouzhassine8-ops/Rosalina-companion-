@@ -275,7 +275,7 @@ class MainActivity:AppCompatActivity() {
         body.addView(text("Rosalina remains private and on-device unless you explicitly enable an implemented online provider. Existing local models and app data are preserved.",11f,muted).apply{setPadding(0,dp(14),0,0)})
         content.addView(ScrollView(this).apply{isFillViewport=true;addView(body)},FrameLayout.LayoutParams(-1,-1))
     }
-    private fun profileDescription():String {    private fun profileDescription():String {
+    private fun profileDescription():String {
         val profile=if(mode=="Animate")"${session.prefs.getInt("seconds",6)} seconds · ${session.prefs.getString("aspect","256×256")} · 12 steps" else if(session.prefs.getBoolean("standard",false))"Standard · 512×512 · 12 steps" else "Phone Safe · 384×384 · 8 steps"
         return "$profile\nProcessing: ${backendChoice()}"
     }
@@ -297,7 +297,7 @@ class MainActivity:AppCompatActivity() {
         val r=TaskRequest(kind=kind,prompt=p,photo=photo,profile=if(session.prefs.getBoolean("standard",false))RenderProfile.Standard else RenderProfile.Draft,seconds=session.prefs.getInt("seconds",6),width=aspect.getOrNull(0)?.toIntOrNull() ?:256,height=aspect.getOrNull(1)?.toIntOrNull() ?:256,strength=session.prefs.getFloat("strength",.65f),seed=session.prefs.getLong("seed",42),backend=backendChoice())
         if(session.begin(r) && section==ShellSection.COMPANION)prompt.text.clear()
     }
-    private fun continueVoiceAfterBluetooth() {    private fun continueVoiceAfterBluetooth() {
+    private fun continueVoiceAfterBluetooth() {
         if(ContextCompat.checkSelfPermission(this,Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED)microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
         else session.interruptAndListen()
     }
