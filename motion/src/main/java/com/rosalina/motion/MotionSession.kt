@@ -19,7 +19,8 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.max
 
 internal data class MotionState(val busy:Boolean=false,val work:String="",val status:String="Choose a photo. Describe its motion.",val progress:Int?=null,
-    val videoModel:String="",val textModel:String="",val photo:String="",val result:String="",val details:String="",val started:Long=0)
+    val videoModel:String="",val textModel:String="",val photo:String="",val result:String="",val details:String="",val started:Long=0,
+    val expectedFinish:Long=0)
 internal object MotionSession {
     private lateinit var app:Context
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
@@ -31,6 +32,16 @@ internal object MotionSession {
     private var stopMessage="Stopped by you"
     private const val DECODER_SHA="b84609b2a133d48434bd9636bfcb44bf05168dc436e2d3cecf26256faa1f5325"
     private val prefs get()=app.getSharedPreferences("motion",Context.MODE_PRIVATE)
+    private fun profile(spec:MotionSpec)="${spec.width}x${spec.height}_${spec.seconds}s_${spec.steps}steps"
+    private fun totalBaselineMs(spec:MotionSpec)=prefs.getLong("eta_total_${profile(spec)}",0L)
+    private fun postBaselineMs(spec:MotionSpec)=prefs.getLong("eta_post_${profile(spec)}",0L)
+    private fun recordBaseline(spec:MotionSpec,totalMs:Long,postMs:Long){
+        val key=profile(spec)
+        val total=MotionProgressMath.smoothMs(prefs.getLong("eta_total_$key",0L),totalMs)
+        val editor=prefs.edit().putLong("eta_total_$key",total)
+        if(postMs>0)editor.putLong("eta_post_$key",MotionProgressMath.smoothMs(prefs.getLong("eta_post_$key",0L),postMs))
+        editor.apply()
+    }
     fun init(c:Context) {
         if(::app.isInitialized) return
         app=c.applicationContext
@@ -42,12 +53,12 @@ internal object MotionSession {
         val mem=ActivityManager.MemoryInfo().also{app.getSystemService(ActivityManager::class.java).getMemoryInfo(it)}
         val d="Stage: $stage\n${t.javaClass.simpleName}: ${MotionMath.error(t)}\nBuild: ${BuildConfig.VERSION_NAME}\n"+
             "Device: ${Build.MANUFACTURER} ${Build.MODEL}\nABI: ${Build.SUPPORTED_ABIS.joinToString()}\nRAM total=${mem.totalMem}, available=${mem.availMem}\n"+tail.takeLast(12000)
-        mutable.update{it.copy(status="$stage: ${MotionMath.error(t)}",details=d)}
+        mutable.update{it.copy(status="$stage: ${MotionMath.error(t)}",details=d,expectedFinish=0)}
         scope.launch(Dispatchers.IO){runCatching{File(app.filesDir,"last-diagnostic.txt").writeText(d)}}
     }
     fun cancel(reason:String="Stopped by you") {
         stopMessage=reason;pending=null;process.get()?.destroyForcibly();job?.cancel()
-        if(job==null) mutable.update{it.copy(busy=false,work="",progress=null,status=reason)}
+        if(job==null) mutable.update{it.copy(busy=false,work="",progress=null,status=reason,expectedFinish=0)}
         else notice("Stopping and releasing video memory…")
     }
     fun importModel(uri:Uri,part:ModelPart) {
@@ -121,7 +132,12 @@ internal object MotionSession {
             require(state.value.photo.isNotBlank()){ "Choose a gallery photo first" }
             require(state.value.videoModel.isNotBlank()&&state.value.textModel.isNotBlank()){ "Import both video model files under Models" }
             pending=prompt.trim() to spec;stopMessage="Stopped by you"
-            mutable.update{it.copy(busy=true,work="render",progress=null,status="Starting local video renderer…",details="",started=SystemClock.elapsedRealtime())}
+            val now=SystemClock.elapsedRealtime()
+            val baseline=totalBaselineMs(spec)
+            val startStatus=if(baseline>0)
+                "Starting local video renderer · previous-run estimate ~${MotionProgressMath.formatDuration(baseline/1000)}"
+            else "Starting local video renderer · calculating ETA from this phone"
+            mutable.update{it.copy(busy=true,work="render",progress=0,status=startStatus,details="",started=now,expectedFinish=if(baseline>0)now+baseline else 0)}
             ContextCompat.startForegroundService(app,Intent(app,MotionService::class.java))
         }catch(e:Exception){pending=null;mutable.update{it.copy(busy=false,work="")};fail("START",e)}
     }
@@ -131,6 +147,16 @@ internal object MotionSession {
             val (prompt,spec)=request
             val dir=File(app.filesDir,"jobs/"+UUID.randomUUID()).apply{mkdirs()}
             val log=File(dir,"native.log");var committed=false;var stage="PREPARE";var tmpMp4:File?=null
+            var samplingStartedAt=0L
+            var samplingFinishedAt=0L
+            val historicalPost=postBaselineMs(spec)
+            fun renderUpdate(message:String,pct:Int?=null,remainingMs:Long?=null){
+                val now=SystemClock.elapsedRealtime()
+                mutable.update { current ->
+                    val nextPct=pct?.coerceIn(0,100)?.let{maxOf(current.progress?:0,it)}?:current.progress
+                    current.copy(status=message,progress=nextPct,expectedFinish=remainingMs?.let{now+it}?:current.expectedFinish)
+                }
+            }
             // Separate watchdog kills a native process even if it stops emitting output.
             val watchdog=scope.launch {
                 delay(120*60*1000L)
@@ -155,7 +181,7 @@ internal object MotionSession {
                     File(dir,"prompt.txt").writeText(prompt)
                     File(dir,"negative.txt").writeText("blurry, distortion, text, watermark, flicker, still frame")
                     stage="VIDEO GENERATION"
-                    notice("Loading video models · ${spec.seconds}s clip · CPU draft")
+                    renderUpdate("Loading video models · ${spec.seconds}s clip · CPU draft",2)
                     val raw=File(dir,"frames.rvf")
                     val args=mutableListOf(exe.path,state.value.videoModel,state.value.textModel,tae.path,File(dir,"prompt.txt").path,File(dir,"negative.txt").path,
                         ref.path,raw.path,spec.width.toString(),spec.height.toString(),spec.modelFrames.toString(),spec.steps.toString(),spec.seed.toString(),"4")
@@ -163,7 +189,7 @@ internal object MotionSession {
                     val thermalStatus=pm.currentThermalStatus
                     val workerThreads=if(thermalStatus>=PowerManager.THERMAL_STATUS_MODERATE)3 else 4
                     args[args.lastIndex]=workerThreads.toString()
-                    notice("Loading video models · ${spec.seconds}s clip · ${workerThreads} CPU threads")
+                    renderUpdate("Loading video models · ${spec.seconds}s clip · ${workerThreads} CPU threads",2)
                     val p=ProcessBuilder(args)
                         .directory(dir)
                         .redirectErrorStream(true)
@@ -178,19 +204,46 @@ internal object MotionSession {
                     var sampling=false
                     fun consume(line:String){
                         if(line.startsWith("@@STAGE ")){
-                            mutable.update{it.copy(status=line.removePrefix("@@STAGE "),progress=null)}
+                            val message=line.removePrefix("@@STAGE ")
+                            val pct=when {
+                                message.startsWith("Loading Wan") -> 2
+                                message.startsWith("Encoding your photo") -> 6
+                                message.startsWith("Generating new video") -> 10
+                                message.startsWith("Writing generated frames") -> 94
+                                message.startsWith("Video frames ready") -> 96
+                                else -> null
+                            }
+                            renderUpdate(message,pct)
+                        }else if((line.contains(" - IMG2VID")||line.contains("sampling using"))&&!sampling){
+                            sampling=true
+                            if(samplingStartedAt==0L)samplingStartedAt=SystemClock.elapsedRealtime()
+                            renderUpdate("Generating motion frames · calibrating ETA…",MotionProgressMath.SAMPLE_START)
                         }else if(line.contains(" - generate_video ")&&line.contains("x${spec.modelFrames}")){
-                            sampling=true;notice("Generating motion frames…")
+                            sampling=true
+                            if(samplingStartedAt==0L)samplingStartedAt=SystemClock.elapsedRealtime()
+                            renderUpdate("Generating motion frames · calibrating ETA…",MotionProgressMath.SAMPLE_START)
                         }else if(line.contains(" - generating latent video completed")){
-                            sampling=false;mutable.update{it.copy(status="Decoding generated video frames…",progress=null)}
+                            sampling=false
+                            samplingFinishedAt=SystemClock.elapsedRealtime()
+                            renderUpdate("Decoding generated video frames…",MotionProgressMath.SAMPLE_END,
+                                historicalPost.takeIf{it>0})
                         }else if(line.contains(" - encode_first_stage completed")){
-                            notice("Reading your motion description…")
+                            renderUpdate("Reading your motion description…",8)
                         }else if(line.startsWith("@@STEP ")&&sampling){
                             val a=line.split(' ')
                             val n=a.getOrNull(1)?.toIntOrNull()
                             val total=a.getOrNull(2)?.toIntOrNull()
-                            if(n!=null&&total!=null&&total>0&&n<=total){
-                                mutable.update{it.copy(status="Generating motion · step $n of $total",progress=(n*100/total).coerceIn(0,100))}
+                            // Wan also reports internal tensor/TAE counters such as 64/64 and
+                            // 242/242. The diffusion pass is the small counter bounded by the
+                            // user-requested sampling steps.
+                            if(n!=null&&total!=null&&total in 2..spec.steps&&n in 0..total){
+                                val now=SystemClock.elapsedRealtime()
+                                if(samplingStartedAt==0L)samplingStartedAt=now
+                                val eta=MotionProgressMath.remainingFromSampling(n,total,samplingStartedAt,now,historicalPost)
+                                val label=if(eta==null&&n<2)
+                                    "Generating motion · step $n of $total · calibrating ETA…"
+                                else "Generating motion · step $n of $total"
+                                renderUpdate(label,MotionProgressMath.samplingOverall(n,total),eta)
                             }
                         }
                     }
@@ -208,16 +261,30 @@ internal object MotionSession {
                         p.waitFor(10,TimeUnit.SECONDS)
                         process.compareAndSet(p,null)
                     }
-                    stage="MP4 ENCODING";notice("Encoding ${spec.seconds}-second MP4…")
+                    stage="MP4 ENCODING";renderUpdate("Encoding ${spec.seconds}-second MP4…",96)
                     val videos=File(app.filesDir,"videos").apply{mkdirs()};val name="Rosalina-${System.currentTimeMillis()}"
                     val part=File(videos,"$name.mp4.part");tmpMp4=part
-                    Mp4Encoder.encode(raw,part,spec){pct->mutable.update{it.copy(progress=pct)}}
+                    val mp4StartedAt=SystemClock.elapsedRealtime()
+                    Mp4Encoder.encode(raw,part,spec){pct->
+                        val now=SystemClock.elapsedRealtime()
+                        val remaining=if(pct>=5){
+                            val spent=now-mp4StartedAt
+                            spent*(100-pct)/pct
+                        }else null
+                        renderUpdate("Encoding MP4 · $pct%",MotionProgressMath.mp4Overall(pct),remaining)
+                    }
                     ensureActive()
                     val result=File(videos,"$name.mp4");check(part.renameTo(result)){"Could not save completed MP4"};committed=true
+                    val finishedAt=SystemClock.elapsedRealtime()
+                    val renderStarted=state.value.started
+                    val totalMs=maxOf(0L,finishedAt-renderStarted)
+                    val postMs=if(samplingFinishedAt>0L)maxOf(0L,finishedAt-samplingFinishedAt) else 0L
+                    recordBaseline(spec,totalMs,postMs)
                     File(videos,"$name.json").writeText(JSONObject().put("prompt",prompt).put("seconds",spec.seconds).put("fps",8).put("width",spec.width).put("height",spec.height)
-                        .put("steps",spec.steps).put("seed",spec.seed).put("generatedFrames",spec.modelFrames).put("exportFrames",spec.exportFrames).put("backend","cpu").toString(2))
+                        .put("steps",spec.steps).put("seed",spec.seed).put("generatedFrames",spec.modelFrames).put("exportFrames",spec.exportFrames).put("backend","cpu")
+                        .put("renderMs",totalMs).put("postSamplingMs",postMs).toString(2))
                     prefs.edit().putString("result",result.path).apply()
-                    mutable.update{it.copy(result=result.path,status="Your ${spec.seconds}-second clip is ready · 8 fps draft",progress=100)}
+                    mutable.update{it.copy(result=result.path,status="Your ${spec.seconds}-second clip is ready · ${MotionProgressMath.formatDuration(totalMs/1000)} total",progress=100,expectedFinish=0)}
                 }}
             }catch(e:TimeoutCancellationException){fail("TIME LIMIT",IllegalStateException("Stopped after two hours to avoid an unbounded phone render"),tail(log))}
             catch(e:CancellationException){notice(stopMessage);throw e}
@@ -229,7 +296,7 @@ internal object MotionSession {
                     if(log.isFile)runCatching{log.copyTo(File(app.filesDir,"last-native.log"),overwrite=true)}
                     if(!committed)tmpMp4?.delete();dir.deleteRecursively()
                 }
-                mutable.update{it.copy(busy=false,work="",progress=null)};job=null
+                mutable.update{it.copy(busy=false,work="",progress=null,expectedFinish=0)};job=null
                 app.stopService(Intent(app,MotionService::class.java))
             }
         }
