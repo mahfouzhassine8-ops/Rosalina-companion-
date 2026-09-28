@@ -10,3 +10,8 @@ Base: locked Companion Shell C1 10009 commit a988169f4bc7e9537ab72dce81636f55e99
 - The unified Vulkan build already enables SD_VULKAN/GGML_VULKAN. A probe is capability evidence only, not Wan performance proof.
 
 Chat, Hybrid Live, Bluetooth, navigation, models and protected older apps remain preservation scope.
+
+Avatar repair:
+- The prior drawable JPEG was observed blank in emulator/device UI despite successful packaging.
+- C1 stores a verified compact baseline JPEG as two text-safe base64 assets and decodes those exact bytes at runtime.
+- Android instrumentation now asserts the bundled avatar actually decodes before the candidate can pass.

@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.*
 import android.os.SystemClock
 import android.util.AttributeSet
+import android.util.Base64
 import android.view.View
 import kotlin.math.abs
 import kotlin.math.exp
@@ -26,7 +27,14 @@ internal object AvatarStateResolver {
 
 internal class LiveAvatarView @JvmOverloads constructor(context:Context,attrs:AttributeSet?=null):View(context,attrs) {
     private val density=resources.displayMetrics.density
-    private val bitmap:Bitmap?=runCatching{resources.openRawResource(R.drawable.rosalina_live_avatar).use{BitmapFactory.decodeStream(it)}}.getOrNull()
+    private val bitmap:Bitmap?=runCatching{
+        val encoded=(0..1).joinToString(""){index->
+            context.assets.open("avatar/$index.b64").bufferedReader().use{it.readText()}
+        }
+        val bytes=Base64.decode(encoded,Base64.DEFAULT)
+        BitmapFactory.decodeByteArray(bytes,0,bytes.size) ?:error("Avatar JPEG decode returned null")
+    }.getOrNull()
+    internal val imageLoaded:Boolean get()=bitmap!=null
     private val imagePaint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val bgPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=Color.rgb(15,11,23)}
     private val borderPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply{style=Paint.Style.STROKE;strokeWidth=1.25f*density}
