@@ -104,7 +104,7 @@ internal object MotionSession {
             workerPid.set(0)
             process.set(null)
             stopRequested.set(false)
-            mutable.update{it.copy(busy=false,work="",progress=null,status=reason,expectedFinish=0,stopping=false)}
+            mutable.update{it.copy(busy=false,work="",progress=null,status=reason,expectedFinish=0,stopping=false,thermal="")}
             app.stopService(Intent(app,MotionService::class.java))
         }
     }
@@ -358,7 +358,7 @@ internal object MotionSession {
                 val finalStatus=if(stopped)stopMessage else state.value.status
                 if(stopJob?.isActive!=true){
                     stopRequested.set(false)
-                    mutable.update{it.copy(busy=false,work="",progress=null,expectedFinish=0,stopping=false,status=finalStatus)}
+                    mutable.update{it.copy(busy=false,work="",progress=null,expectedFinish=0,stopping=false,status=finalStatus,thermal="")}
                     app.stopService(Intent(app,MotionService::class.java))
                 }
                 job=null
