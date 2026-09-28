@@ -1,6 +1,11 @@
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 // Emulator-only tests contain no inference worker; shipped APK always uses ARM64.
 val codecTest = providers.gradleProperty("motionCodecTest").orNull == "true"
+val motionSigningStore = providers.gradleProperty("motionSigningStore").orNull
+val motionSigningStorePassword = providers.gradleProperty("motionSigningStorePassword").orNull
+val motionSigningKeyAlias = providers.gradleProperty("motionSigningKeyAlias").orNull
+val motionSigningKeyPassword = providers.gradleProperty("motionSigningKeyPassword").orNull
+
 android {
     namespace = "com.rosalina.motion"
     compileSdk = 35
@@ -12,6 +17,17 @@ android {
         versionName = "3.0.1-motion-lab-rc2"
         ndk { abiFilters += if(codecTest) "x86_64" else "arm64-v8a" }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    if (motionSigningStore != null) {
+        signingConfigs {
+            create("motionPersistent") {
+                storeFile = file(motionSigningStore)
+                storePassword = motionSigningStorePassword
+                keyAlias = motionSigningKeyAlias
+                keyPassword = motionSigningKeyPassword
+            }
+        }
+        buildTypes.getByName("debug").signingConfig = signingConfigs.getByName("motionPersistent")
     }
     buildFeatures { buildConfig = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
