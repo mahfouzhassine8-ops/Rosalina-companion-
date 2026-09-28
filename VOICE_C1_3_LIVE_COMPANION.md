@@ -22,6 +22,7 @@ The remaining user-visible issue is perceived latency: visible text can arrive w
 
 - Version 10008 / `1.0-unified-adaptive-hybrid-c1.3`.
 - Keeps the proven C1.2 PCM16 playback path and process-exit diagnostics.
+- Lets Kokoro use a bounded 2–4 CPU threads based on the device's reported core count, improving short-burst synthesis without an unbounded thermal jump.
 - Adds an eager first natural phrase target around 44 characters so Rosalina can begin preparing speech before the entire answer is complete.
 - Uses a larger follow-on phrase target so replies do not fragment into tiny, unnatural pieces.
 - Splits the final remainder at word boundaries rather than sending one oversized catch-all speech chunk.
