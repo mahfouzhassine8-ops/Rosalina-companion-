@@ -39,7 +39,6 @@ public final class AcceleratorWorkspace {
         let cutoff = Date().addingTimeInterval(-seconds)
         for item in items {
             if let date = try? item.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
-               let date,
                date < cutoff {
                 try? fileManager.removeItem(at: item)
             }
