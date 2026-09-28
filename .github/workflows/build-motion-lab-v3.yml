@@ -45,7 +45,7 @@ jobs:
           set -euo pipefail
           mkdir -p signing
           STOREPASS="$(openssl rand -hex 24)"
-          KEYPASS="$(openssl rand -hex 24)"
+          KEYPASS="$STOREPASS"
           echo "::add-mask::$STOREPASS"
           echo "::add-mask::$KEYPASS"
           keytool -genkeypair -v             -keystore "$PWD/signing/rosalina-motion.jks"             -storepass "$STOREPASS"             -alias rosalina-motion             -keypass "$KEYPASS"             -keyalg RSA -keysize 4096 -validity 10000             -dname "CN=Rosalina Motion Lab, OU=Rosalina, O=Rosalina, L=Local, ST=Local, C=US"
