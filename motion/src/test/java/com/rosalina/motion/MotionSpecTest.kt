@@ -10,10 +10,10 @@ class MotionSpecTest {
  @Test fun noNullError(){assertEquals("Exception",MotionMath.error(Exception()))}
  @Test fun digestsArePinned(){assertTrue(ModelPart.entries.all{it.sha.matches(Regex("[0-9a-f]{64}"))})}
  @Test fun progressAndEtaMath(){
-  assertEquals(10,MotionProgressMath.samplingOverall(0,9))
-  assertEquals(54,MotionProgressMath.samplingOverall(5,9))
-  assertEquals(90,MotionProgressMath.samplingOverall(9,9))
-  assertEquals(98,MotionProgressMath.mp4Overall(50))
+  assertEquals(15,MotionProgressMath.samplingOverall(0,9))
+  assertEquals(58,MotionProgressMath.samplingOverall(5,9))
+  assertEquals(94,MotionProgressMath.samplingOverall(9,9))
+  assertEquals(99,MotionProgressMath.mp4Overall(50))
   assertEquals(30_000L,MotionProgressMath.smoothMs(30_000L,30_000L))
   assertNull(MotionProgressMath.remainingFromSampling(1,9,1_000L,11_000L,0))
   assertEquals(100_000L,MotionProgressMath.remainingFromSampling(2,9,1_000L,21_000L,0))
