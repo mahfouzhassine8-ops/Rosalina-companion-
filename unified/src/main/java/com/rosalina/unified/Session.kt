@@ -76,7 +76,7 @@ internal class Session private constructor(private val context:Context) {
         val res=thermal.read()
         require(!res.low && !ThermalPolicy.blocks(res.thermal)){"Chat preparation deferred: Android reports memory or thermal pressure"}
         chatNeedsReset=true
-        val result=chat.call(Bundle().apply{putString("operation","prepare");putString("model",models.requirePath(ModelKey.CHAT).path);putString("system",prefs.getString("system",DEFAULT_SYSTEM));putString("history",SpeechText.history(snapshot))}){event->
+        val result=chat.call(Bundle().apply{putString("operation","prepare");putString("model",models.requirePath(ModelKey.CHAT).path);putString("system",prefs.getString("system",DEFAULT_SYSTEM))}){event->
             if(event.getString("type")=="stage")update(r.id){it.copy(stage=event.getString("text").orEmpty(),pid=event.getInt("pid"),backend="Qwen · preparing preserved CPU engine")}
         }
         check(result.getBoolean("prepared")){"Chat model did not confirm preparation"}
@@ -209,7 +209,7 @@ internal class Session private constructor(private val context:Context) {
     private suspend fun performChat(r:TaskRequest,prompt:String,readAloud:Boolean)=coroutineScope {
         require(prompt.isNotBlank() && prompt.length<=8000){"Use a prompt between 1 and 8,000 characters"}
         setTaskMode(r,readAloud)
-        val model=models.requirePath(ModelKey.CHAT);val history=SpeechText.history(snapshot)
+        val model=models.requirePath(ModelKey.CHAT)
         update(r.id){it.copy(answer="",voiceStage="",stage="Preparing response")};addTurn("You",prompt)
         val queue=Channel<String>(64);var shortened=false
         fun enqueue(text:String){if(text.isNotBlank() && !shortened && !queue.trySend(text).isSuccess){shortened=true;update(r.id){it.copy(voiceStage="Spoken reply shortened · full reply remains in Chat")}}}
@@ -237,7 +237,7 @@ internal class Session private constructor(private val context:Context) {
         val answer=StringBuilder();var spoken=0;var lastSpeechScan=0L
         chatNeedsReset=true
         try {
-            val result=chat.call(Bundle().apply{putString("model",model.path);putString("prompt",prompt);putString("system",prefs.getString("system",DEFAULT_SYSTEM));putString("history",history);putInt("maxTokens",prefs.getInt("max-tokens",1024))}){event->
+            val result=chat.call(Bundle().apply{putString("model",model.path);putString("prompt",prompt);putString("system",prefs.getString("system",DEFAULT_SYSTEM));putInt("maxTokens",prefs.getInt("max-tokens",1024))}){event->
                 when(event.getString("type")) {
                     "stage"->update(r.id){it.copy(stage=event.getString("text").orEmpty(),pid=event.getInt("pid"),backend="Qwen · preserved CPU engine")}
                     "token"->{
@@ -251,7 +251,7 @@ internal class Session private constructor(private val context:Context) {
                 }
             }
             chatNeedsReset=false;warmSystem=prefs.getString("system",DEFAULT_SYSTEM)
-            chatMetrics="Chat warm model=${result.getBoolean("warmModel")}; setup=${result.getLong("modelSetupMs")} ms; first text=${result.getLong("firstTextMs")} ms; response=${result.getLong("responseMs")} ms; characters=${result.getInt("characters")}; emitted text pieces=${result.getInt("textPieces")} (not native token count); chat PSS=${result.getLong("chatPssKb")} KiB"
+            chatMetrics="Chat warm model=${result.getBoolean("warmModel")}; clean recovery=${result.getBoolean("recovered")}; setup=${result.getLong("modelSetupMs")} ms; first text=${result.getLong("firstTextMs")} ms; response=${result.getLong("responseMs")} ms; characters=${result.getInt("characters")}; emitted text pieces=${result.getInt("textPieces")} (not native token count); chat PSS=${result.getLong("chatPssKb")} KiB"
             if(readAloud){val visible=SpeechText.spoken(answer.toString());while(spoken<visible.length){val end=minOf(visible.length,spoken+500);enqueue(visible.substring(spoken,end).trim());spoken=end}}
         } finally {queue.close();if(answer.isNotBlank())addTurn("Rosalina",answer.toString())}
         speechJob?.join();update(r.id){it.copy(answer="",voiceStage="")}

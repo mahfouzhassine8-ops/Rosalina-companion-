@@ -10,8 +10,8 @@ android {
         applicationId = "com.rosalina.unified"
         minSdk = 30
         targetSdk = 35
-        versionCode = providers.gradleProperty("unifiedVersionCode").orNull?.toInt() ?: 10003
-        versionName = "1.0-unified-candidate-2-voice-v2"
+        versionCode = providers.gradleProperty("unifiedVersionCode").orNull?.toInt() ?: 10004
+        versionName = "1.0-unified-candidate-2-voice-v2.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += if (emulatorQa) "x86_64" else "arm64-v8a" }
     }

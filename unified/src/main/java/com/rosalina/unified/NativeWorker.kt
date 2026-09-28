@@ -44,6 +44,13 @@ internal class OwnedChild(private val process:Process,private val executable:Str
             if(cmd==executable && parent==android.os.Process.myPid()) {born=startTime(id);if(born.isNotBlank())pid=id}
         }
     }
+    fun signal(signal:Int):Boolean {
+        if(!owns())return false
+        return runCatching{Os.kill(pid,signal);true}.getOrDefault(false)
+    }
+    fun kernelState():String = if(pid<=0)"unknown" else runCatching {
+        File("/proc/$pid/stat").readText().substringAfterLast(") ").firstOrNull()?.toString() ?: "unknown"
+    }.getOrDefault("gone")
     private fun owns()=pid>0 && process.isAlive && runCatching{startTime(pid)==born}.getOrDefault(false)
     fun pause(value:Boolean) {
         if(value==paused)return
@@ -93,12 +100,14 @@ internal class NativeWorker(private val thermal:ThermalManager) {
             check(!ThermalPolicy.blocks(initial.thermal)){"Android reports ${ThermalPolicy.label(initial.thermal)} heat. Cool the phone before rendering."}
             val p=ProcessBuilder(command).directory(directory).redirectErrorStream(true).redirectOutput(log).start()
             process=p
-            val owned=OwnedChild(p,command[0]);child=owned;val began=SystemClock.elapsedRealtime()
+            val owned=OwnedChild(p,command[0]);child=owned
+            runCatching{owned.claim(p.pid().toInt())}
+            val began=SystemClock.elapsedRealtime()
             var nextState=0L;var resources=initial;var resourceAt=0L;var rss=0L
             while(true) {
                 job.ensureActive();drain();val now=SystemClock.elapsedRealtime()
                 if(now-resourceAt>=1000){resources=thermal.read();rss=owned.rss();resourceAt=now}
-                val percent=if(paced)WorkBudget.percent(resources.thermal,gpu,resources.headroom)else 100
+                val percent=if(paced)WorkBudget.percent(resources.thermal,gpu,resources.headroom,parser.stage)else 100
                 if(now>=nextState || !p.isAlive) {
                     val control=if(paced)"${if(gpu)"GPU" else "CPU"} work budget $percent% · ${if(owned.paused)"cooling interval" else "running"}" else "Backend compute check"
                     onState(parser.stage,parser.percent,parser.step,parser.total,owned.pid.takeIf{it>0} ?:reportedPid,tail.toString(),resources.copy(control=control,rssBytes=rss))
@@ -116,10 +125,25 @@ internal class NativeWorker(private val thermal:ThermalManager) {
         } finally {
             withContext(NonCancellable) {
                 process?.let{p->
-                    runCatching{child?.pause(false)}
-                    if(p.isAlive){p.destroy();p.waitFor(350,TimeUnit.MILLISECONDS)}
-                    if(p.isAlive){p.destroyForcibly();p.waitFor(1800,TimeUnit.MILLISECONDS)}
-                    if(p.isAlive)throw WorkerQuarantined("Native worker $reportedPid could not be reaped. Force-stop Rosalina before another task.")
+                    val owned=child
+                    runCatching{owned?.pause(false)}
+                    if(p.isAlive){
+                        owned?.signal(OsConstants.SIGCONT)
+                        owned?.signal(OsConstants.SIGTERM)
+                        p.destroy()
+                        p.waitFor(1200,TimeUnit.MILLISECONDS)
+                    }
+                    if(p.isAlive){
+                        owned?.signal(OsConstants.SIGCONT)
+                        owned?.signal(OsConstants.SIGKILL)
+                        p.destroyForcibly()
+                        p.waitFor(8000,TimeUnit.MILLISECONDS)
+                    }
+                    if(p.isAlive){
+                        val id=owned?.pid ?: reportedPid
+                        val state=owned?.kernelState() ?: "unknown"
+                        throw WorkerQuarantined("Native worker "+id+" could not be reaped; kernel state="+state+". Force-stop Rosalina before another task.")
+                    }
                     runCatching{p.inputStream.close()};runCatching{p.errorStream.close()};runCatching{p.outputStream.close()}
                 }
             }

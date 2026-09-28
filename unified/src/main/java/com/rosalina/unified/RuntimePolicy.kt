@@ -19,11 +19,35 @@ internal class StreamBatch(private val intervalMs:Long=50) {
 
 /** Sustained work budget, not a resolution/quality change. Severe still stops, never throttles through. */
 internal object WorkBudget {
-    fun percent(thermal:Int,gpu:Boolean,headroom:Float=Float.NaN):Int {
+    /**
+     * Thermal headroom approaches 1.0 near Android's severe-throttling forecast.
+     * Use gradual budgets instead of collapsing all >=0.85 readings to 30% CPU.
+     */
+    fun percent(thermal:Int,gpu:Boolean,headroom:Float=Float.NaN,stage:String=""):Int {
         if(ThermalPolicy.blocks(thermal))return 0
-        val effective=if(headroom.isFinite() && headroom>=0.85f)max(thermal,2)else thermal
-        return if(gpu)when(effective){2->65;1->85;else->100}
-            else when(effective){2->30;1->55;else->75}
+        val h=if(headroom.isFinite())headroom else -1f
+        val base=if(gpu) {
+            when {
+                h>=.98f->45
+                h>=.92f->58
+                h>=.85f->70
+                thermal==2->72
+                thermal==1->88
+                else->100
+            }
+        } else {
+            when {
+                h>=.98f->30
+                h>=.92f->40
+                h>=.85f->50
+                thermal==2->48
+                thermal==1->68
+                else->82
+            }
+        }
+        // Decoding is especially long on CPU in the observed phone trace.
+        // Let it make forward progress while still honoring the thermal forecast.
+        return if(!gpu && stage.contains("Decoding",ignoreCase=true) && h<.92f)max(base,55) else base
     }
     fun shouldPause(elapsedMs:Long,percent:Int):Boolean = elapsedMs%1000 >= percent.coerceIn(0,100)*10L
 }
