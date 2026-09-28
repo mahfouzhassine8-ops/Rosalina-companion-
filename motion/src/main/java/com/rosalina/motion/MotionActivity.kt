@@ -27,7 +27,7 @@ import java.io.File
 class MotionActivity:AppCompatActivity() {
     private val bg=Color.rgb(11,9,17);private val panel=Color.rgb(27,21,39)
     private val accent=Color.rgb(194,163,255);private val ink=Color.rgb(244,239,255);private val muted=Color.rgb(180,169,200)
-    private lateinit var status:TextView;private lateinit var elapsed:TextView;private lateinit var summary:TextView
+    private lateinit var status:TextView;private lateinit var elapsed:TextView;private lateinit var thermal:TextView;private lateinit var summary:TextView
     private lateinit var progress:ProgressBar;private lateinit var photo:ImageView;private lateinit var prompt:EditText
     private lateinit var video:VideoView;private lateinit var generate:MaterialButton;private lateinit var details:MaterialButton
     private lateinit var attach:MaterialButton;private lateinit var models:MaterialButton;private lateinit var controls:MaterialButton;private lateinit var systemTools:MaterialButton
@@ -53,15 +53,18 @@ class MotionActivity:AppCompatActivity() {
             launch{MotionSession.state.collect{update(it)}}
             launch{while(isActive){val s=MotionSession.state.value
                 elapsed.text=if(s.busy&&s.started>0){
-                    val now=SystemClock.elapsedRealtime()
-                    val spent=maxOf(0L,(now-s.started)/1000)
-                    val left=if(s.expectedFinish>now)(s.expectedFinish-now)/1000 else null
-                    buildString{
-                        s.progress?.let{append("$it% · ")}
-                        append(MotionProgressMath.formatDuration(spent)).append(" elapsed")
-                        if(s.work=="render"){
-                            if(left!=null)append(" · ~").append(MotionProgressMath.formatDuration(left)).append(" remaining")
-                            else append(" · ETA calibrating…")
+                    if(s.stopping)"Stopping renderer…"
+                    else {
+                        val now=SystemClock.elapsedRealtime()
+                        val spent=maxOf(0L,(now-s.started)/1000)
+                        val left=if(s.expectedFinish>now)(s.expectedFinish-now)/1000 else null
+                        buildString{
+                            s.progress?.let{append("$it% · ")}
+                            append(MotionProgressMath.formatDuration(spent)).append(" elapsed")
+                            if(s.work=="render"){
+                                if(left!=null)append(" · ~").append(MotionProgressMath.formatDuration(left)).append(" remaining")
+                                else append(" · ETA calibrating…")
+                            }
                         }
                     }
                 }else "On-device CPU · experimental draft"
@@ -94,14 +97,15 @@ class MotionActivity:AppCompatActivity() {
         root.addView(LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL
             addView(title,LinearLayout.LayoutParams(0,-2,1f));addView(models,LinearLayout.LayoutParams(dp(100),dp(54)))})
         root.addView(gap(10))
-        status=label("Preparing…",14f).apply{maxLines=3}
+        status=label("Preparing…",14f).apply{maxLines=4}
         elapsed=label("",12f,muted)
+        thermal=label("",12f,muted).apply{visibility=View.GONE}
         progress=ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal).apply{max=100;progressTintList=ColorStateList.valueOf(accent);visibility=View.GONE}
         details=button("Copy / view details"){detailsDialog()}.apply{visibility=View.GONE}
         root.addView(column().apply{
             background=background();setPadding(dp(14),dp(10),dp(14),dp(8))
             addView(progress,LinearLayout.LayoutParams(-1,dp(6)))
-            addView(gap(6));addView(elapsed);addView(gap(4));addView(status);addView(details)
+            addView(gap(6));addView(elapsed);addView(gap(4));addView(status);addView(gap(3));addView(thermal);addView(details)
         })
         root.addView(gap(8))
         val body=column();val scroll=ScrollView(this).apply{isFillViewport=true;addView(body)}
@@ -146,9 +150,11 @@ class MotionActivity:AppCompatActivity() {
     private fun update(s:MotionState){
         status.text=s.status;progress.visibility=if(s.busy)View.VISIBLE else View.GONE
         progress.isIndeterminate=s.progress==null;s.progress?.let{progress.progress=it}
+        thermal.text=s.thermal;thermal.visibility=if(s.thermal.isBlank())View.GONE else View.VISIBLE
         details.visibility=if(s.details.isNotEmpty())View.VISIBLE else View.GONE
         listOf(attach,models,controls,systemTools,prompt).forEach{it.isEnabled=!s.busy};durations.forEach{it.isEnabled=!s.busy}
-        generate.text=if(s.busy)"Stop" else "Generate $seconds-second video"
+        generate.text=when{ s.stopping->"Stopping…";s.busy->"Stop";else->"Generate $seconds-second video" }
+        generate.isEnabled=!s.stopping
         save.isEnabled=s.result.isNotEmpty()&&!s.busy&&exportJob?.isActive!=true;share.isEnabled=s.result.isNotEmpty()&&!s.busy;play.isEnabled=s.result.isNotEmpty()&&!s.busy
         if(s.photo!=lastPhoto){lastPhoto=s.photo;photo.setImageURI(if(s.photo.isEmpty())null else Uri.fromFile(File(s.photo)));photo.visibility=if(s.photo.isEmpty())View.GONE else View.VISIBLE;attach.text="Choose / change gallery photo"}
         if(s.result!=lastResult){lastResult=s.result;video.stopPlayback();video.visibility=if(s.result.isEmpty())View.GONE else View.VISIBLE
