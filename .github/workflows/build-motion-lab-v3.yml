@@ -1,12 +1,12 @@
 name: Rosalina Motion Lab V3
 on:
   push:
-    branches: [motion-lab-v3-rc2-background-thermal]
+    branches: [motion-lab-v3-permanent-signing]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: motion-lab-v3-rc2
+  group: motion-lab-v3-permanent-signing
   cancel-in-progress: true
 jobs:
   android:
@@ -39,10 +39,20 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: rosalina-motion-lab-debug-signing-v1
+      - name: Create permanent Motion Lab signing identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p signing
+          STOREPASS="$(openssl rand -hex 24)"
+          KEYPASS="$(openssl rand -hex 24)"
+          echo "::add-mask::$STOREPASS"
+          echo "::add-mask::$KEYPASS"
+          keytool -genkeypair -v             -keystore "$PWD/signing/rosalina-motion.jks"             -storepass "$STOREPASS"             -alias rosalina-motion             -keypass "$KEYPASS"             -keyalg RSA -keysize 4096 -validity 10000             -dname "CN=Rosalina Motion Lab, OU=Rosalina, O=Rosalina, L=Local, ST=Local, C=US"
+          printf '%s' "$STOREPASS" > signing/storepass.txt
+          printf '%s' "$KEYPASS" > signing/keypass.txt
+          echo "MOTION_STOREPASS=$STOREPASS" >> "$GITHUB_ENV"
+          echo "MOTION_KEYPASS=$KEYPASS" >> "$GITHUB_ENV"
       - name: Build isolated ARM64 video worker
         run: |
           cmake -S motion-engine -B native-motion -G Ninja -DCMAKE_BUILD_TYPE=Release -DSD_SOURCE="$PWD/third_party/stable-diffusion.cpp" -DCMAKE_TOOLCHAIN_FILE="$ANDROID_HOME/ndk/29.0.13113456/build/cmake/android.toolchain.cmake" -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-30 -DANDROID_STL=c++_static
@@ -66,7 +76,8 @@ jobs:
                   shutil.copyfile(p,pathlib.Path('motion/src/main/assets/licenses')/str(p.relative_to(root)).replace('/','_'))
           PY
       - name: Build APK and run unit tests
-        run: gradle :motion:testDebugUnitTest :motion:assembleDebug --max-workers=2 --stacktrace
+        run: |
+          gradle :motion:testDebugUnitTest :motion:assembleDebug --max-workers=2 --stacktrace             -PmotionSigningStore="$PWD/signing/rosalina-motion.jks"             -PmotionSigningStorePassword="$MOTION_STOREPASS"             -PmotionSigningKeyAlias=rosalina-motion             -PmotionSigningKeyPassword="$MOTION_KEYPASS"
       - name: Validate package and preserve source
         run: |
           mkdir -p delivery
@@ -81,6 +92,17 @@ jobs:
           git rev-parse HEAD > delivery/commit.txt
           git archive --format=zip HEAD -o delivery/Rosalina-Motion-Lab-V3-source.zip
           sha256sum delivery/*.apk > delivery/SHA256SUMS.txt
+          cat > delivery/MIGRATION.txt <<'EOF'
+          One-time migration from RC1:
+          1) Before uninstalling RC1, use LADB:
+             mkdir -p /sdcard/Download/RosalinaMotionBackup
+             run-as com.rosalina.motionlab sh -c 'cd /data/user/0/com.rosalina.motionlab && tar -cf - files shared_prefs' > /sdcard/Download/RosalinaMotionBackup/rc1-data.tar
+             ls -lh /sdcard/Download/RosalinaMotionBackup/rc1-data.tar
+          2) Only after the backup exists, uninstall RC1 and install this APK.
+          3) Restore through LADB:
+             cat /sdcard/Download/RosalinaMotionBackup/rc1-data.tar | run-as com.rosalina.motionlab sh -c 'cd /data/user/0/com.rosalina.motionlab && tar -xf -'
+          4) Force-stop and reopen Motion Lab.
+          EOF
           python3 - <<'PY'
           import zipfile,struct,pathlib
           with zipfile.ZipFile('delivery/Rosalina-Motion-Lab-V3-rc2-arm64.apk') as z:
@@ -88,9 +110,53 @@ jobs:
               assert libs==['lib/arm64-v8a/librosalina-motion.so'],libs
               b=z.read(libs[0]); assert b[:4]==b'\x7fELF' and struct.unpack('<H',b[18:20])[0]==183
           PY
+      - name: Seal permanent signing identity for private recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp signing/rosalina-motion.jks signing/private-keystore.jks
+          {
+            printf 'storepass='
+            cat signing/storepass.txt
+            printf '\nkeypass='
+            cat signing/keypass.txt
+            printf '\nalias=rosalina-motion\n'
+          } > signing/credentials.txt
+          tar -czf signing/signing-bundle.tar.gz -C signing private-keystore.jks credentials.txt
+          openssl rand -hex 32 > signing/envelope.pass
+          openssl enc -aes-256-cbc -salt -pbkdf2             -in signing/signing-bundle.tar.gz             -out delivery/Rosalina-Motion-signing-bundle.enc             -pass file:signing/envelope.pass
+          cat > signing/wrap-public.pem <<'PEM'
+-----BEGIN PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAxVVomnaz2kCqRkQrrQZ1
+jFJfxEQ2YDvosu+xevHt1tfT+aF0AAEbW5+zAwI4y4KB5H5HadIuxkGPQ23BHICc
+FSryeD0+K434PdBOodXUImxxblr/cOnsMJWcIscimwgl8JmMuuM1JmAtyu6hYXh5
+wMbt5/mEbguY2GaHrm/qbC3VUOghvTZVVAP58aL09AZSpq8Ax8tkrn5RH+kxEnIJ
+21w8Odu+isclzSUvAgqhvkXY7Er67n4nuOoxRh7iy7K4oyP28jEsrSe/fGvOeBz6
+4z2Q+5e/z0dkHKnaJHDMOWWRc8QVvtgK2h+E/7SJwuS9UdKxi7/orgmTPj49Yhsw
+SXKnv4+cMeutyJ1z3XZXyU+0eFJcb5fHr2yJcAY2oSyrxDXQ2IxpkZ4Tadj0JiuL
+XYQ3Lxoluy/Wx1bWOi6LDdYi/jE8q2fHIqjhFM21zHdYQ4R9nkpy7T0YcekP7Ms2
+aufFKGJdAC3dTb04Hx+/DQnQJM532uPdz/9cXESyhioXfYrQ8m4SQnMZ6bEJPI34
+6+JV7wYexLai3S+QhuZReoXX5frDqwPL5fvQ7JPTHrTyIg7dEd64g+U3/cKnxlQk
+kXbmabh7IIfzYc1r/6KdqYOiW/Xdwjpcyv1ZfCvu11BpvRgaKbzdPpSWgt3x7owr
+1/4WBUo3u26qlCwlxJZ3WOUCAwEAAQ==
+-----END PUBLIC KEY-----
+          PEM
+          openssl pkeyutl -encrypt -pubin -inkey signing/wrap-public.pem             -in signing/envelope.pass             -out delivery/Rosalina-Motion-signing-envelope.rsa             -pkeyopt rsa_padding_mode:oaep             -pkeyopt rsa_oaep_md:sha256
+          printf 'The signing bundle is encrypted. The unencrypted signing key is not stored in this public repository.\n' > delivery/SIGNING-RECOVERY.txt
+          rm -f signing/private-keystore.jks signing/credentials.txt signing/signing-bundle.tar.gz signing/envelope.pass signing/storepass.txt signing/keypass.txt signing/rosalina-motion.jks
+
+      - name: Bundle local APK signing utility
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p delivery/signing-tools
+          curl -fL --retry 4             https://github.com/agusibrahim/apksig-go/releases/download/v1.1.0/apksig-go_v1.1.0_linux_amd64.tar.gz             -o /tmp/apksig-go.tar.gz
+          echo 'dda1ef085229514900a2ded2420d4f3e8e03a621cab21e922900269a53a205f7  /tmp/apksig-go.tar.gz' | sha256sum -c -
+          tar -xzf /tmp/apksig-go.tar.gz -C delivery/signing-tools
+
       - uses: actions/upload-artifact@v4
         with:
-          name: Rosalina-Motion-Lab-V3-RC2-arm64
+          name: Rosalina-Motion-Lab-V3-RC2-permanent-signing
           path: delivery/
       - uses: actions/upload-artifact@v4
         if: always()
