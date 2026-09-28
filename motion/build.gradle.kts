@@ -5,7 +5,7 @@ android {
     namespace = "com.rosalina.motion"
     compileSdk = 35
     defaultConfig {
-        applicationId = "com.rosalina.motionlab"
+        applicationId = "com.rosalina.motionlab.rc2"
         minSdk = 30
         targetSdk = 35
         versionCode = 30002
