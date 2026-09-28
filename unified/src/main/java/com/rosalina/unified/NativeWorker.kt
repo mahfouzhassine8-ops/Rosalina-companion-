@@ -7,6 +7,7 @@ import android.os.SystemClock
 import kotlinx.coroutines.*
 import java.io.*
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.Executors
 
 internal data class Resources(val available:Long,val total:Long,val low:Boolean,val thermal:Int,val measuredAt:Long)
 internal class ThermalManager(context:Context) {
@@ -20,10 +21,18 @@ internal class ThermalManager(context:Context) {
 internal class WorkerQuarantined(message:String):IOException(message)
 /** One coroutine owns process creation, file-tail reads, termination, and reap. No pipe readers. */
 internal class NativeWorker(private val thermal:ThermalManager) {
-    suspend fun run(command:List<String>,directory:File,expectedSteps:Int,onState:(String,Int?,Int,Int,Int,String,Resources)->Unit):String = withContext(Dispatchers.IO) {
+    suspend fun run(command:List<String>,directory:File,expectedSteps:Int,onState:(String,Int?,Int,Int,Int,String,Resources)->Unit):String {
+        // PR_SET_PDEATHSIG follows the spawning thread on Linux. Keep that thread alive
+        // until the child has been reaped instead of spawning on an expiring IO-pool thread.
+        val owner = Executors.newSingleThreadExecutor { Thread(it,"Rosalina-native-owner") }.asCoroutineDispatcher()
+        return try { withContext(owner) { runOwned(command,directory,expectedSteps,onState) } }
+        finally { owner.close() }
+    }
+    private suspend fun runOwned(command:List<String>,directory:File,expectedSteps:Int,onState:(String,Int?,Int,Int,Int,String,Resources)->Unit):String {
         require(command.isNotEmpty() && File(command[0]).canExecute()) {"The packaged native engine is missing or not executable"}
         val log=File(directory,"native.log")
         val parser=ProgressParser(expectedSteps);val tail=StringBuilder();var pid=0
+        val jobContext=currentCoroutineContext()
         var process:Process?=null;var position=0L
         val pending=ByteArrayOutputStream()
         fun consume(line:String) {
@@ -35,8 +44,8 @@ internal class NativeWorker(private val thermal:ThermalManager) {
         fun drain() {
             if(!log.exists())return
             RandomAccessFile(log,"r").use{input->
-                input.seek(position);val bytes=ByteArray(8192)
-                while(true){val n=input.read(bytes);if(n<0)break;position+=n
+                input.seek(position);val bytes=ByteArray(8192);val end=input.length()
+                while(input.filePointer<end){jobContext.ensureActive();val n=input.read(bytes,0,minOf(bytes.size.toLong(),end-input.filePointer).toInt());if(n<0)break;position+=n
                     for(i in 0 until n){val b=bytes[i].toInt() and 255
                         if(b==10){consume(pending.toString("UTF-8"));pending.reset()}else if(pending.size()<65536)pending.write(b)
                     }
@@ -60,9 +69,9 @@ internal class NativeWorker(private val thermal:ThermalManager) {
             onState(parser.stage,parser.percent,parser.step,parser.total,pid,tail.toString(),thermal.read())
             val code=p.waitFor()
             check(code==0){"Native engine exited with code $code. See Copy diagnostics for its log."}
-            tail.toString()
+            return tail.toString()
         } finally {
-            withContext(NonCancellable+Dispatchers.IO) {
+            withContext(NonCancellable) {
                 process?.let{p->
                     if(p.isAlive){p.destroy();p.waitFor(350,TimeUnit.MILLISECONDS)}
                     if(p.isAlive){p.destroyForcibly();p.waitFor(1800,TimeUnit.MILLISECONDS)}

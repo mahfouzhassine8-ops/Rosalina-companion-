@@ -16,6 +16,7 @@ if [[ "$MODE" == vulkan ]]; then
   SPIRV_CONFIG="$(find "$PWD/vulkan-deps" -name SPIRV-HeadersConfig.cmake -print -quit)"
   test -n "$SPIRV_CONFIG"
   ARGS+=("-DSPIRV-Headers_DIR=$(dirname "$SPIRV_CONFIG")")
+  ARGS+=("-DCMAKE_CXX_FLAGS=-I$PWD/vulkan-deps/include")
   ARGS+=("-DVulkan_INCLUDE_DIR=$PWD/third_party/Vulkan-Headers/include")
   ARGS+=("-DVulkan_LIBRARY=$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/30/libvulkan.so")
   ARGS+=("-DVulkan_GLSLC_EXECUTABLE=/usr/bin/glslc")
@@ -32,7 +33,8 @@ for ENGINE in image motion; do
   cp "native-$MODE/rosalina-$ENGINE" "$OUT"
   "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" "$OUT"
   "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -d "$OUT" | tee -a qa/worker-dependencies.txt
-  "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" --dyn-syms "$OUT" | grep -q prctl
+  "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" --dyn-syms "$OUT" > "qa/$ENGINE$SUFFIX-symbols.txt"
+  grep prctl "qa/$ENGINE$SUFFIX-symbols.txt"
   chmod 755 "$OUT"
 done
 if grep -E 'NEEDED.*(ggml|stable-diffusion|c\+\+_shared|omp)' qa/worker-dependencies.txt; then

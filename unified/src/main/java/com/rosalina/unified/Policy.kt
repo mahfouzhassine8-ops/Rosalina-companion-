@@ -19,7 +19,8 @@ internal data class TaskState(
     val stage:String="Ready",val percent:Int?=null,val step:Int=0,val total:Int=0,val elapsedMs:Long=0,
     val eta:String="",val thermal:Int=-1,val thermalAt:Long=0,val availableBytes:Long=0,val totalBytes:Long=0,
     val pid:Int=0,val backend:String="Not selected",val logTail:String="",val error:String="",
-    val result:String="",val answer:String="",val voiceStage:String="",val quarantined:Boolean=false
+    val result:String="",val answer:String="",val voiceStage:String="",val quarantined:Boolean=false,
+    val lastPid:Int=0,val lastStage:String="",val lastStep:Int=0,val lastTotal:Int=0,val lastPercent:Int?=null
 )
 internal object ThermalPolicy {
     fun blocks(status:Int)=status>=3
