@@ -1,0 +1,25 @@
+name: Rosalina Audit Source Checkpoint
+on:
+  push:
+    branches: [rosalina-10010-end-to-end-audit-c1]
+    paths: [.github/workflows/audit-source-export.yml]
+permissions:
+  contents: read
+jobs:
+  source-checkpoint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0, persist-credentials: false}
+      - name: Export exact audit source without secrets
+        run: |
+          mkdir -p checkpoint
+          git archive --format=zip HEAD -o checkpoint/Rosalina-audit-source-checkpoint.zip
+          git rev-parse HEAD > checkpoint/commit.txt
+          git diff --stat c3c4d58550edc3eee40487c68d08c29612a33584 HEAD > checkpoint/changed-files.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Rosalina-audit-source-checkpoint
+          path: checkpoint/
+          if-no-files-found: error
