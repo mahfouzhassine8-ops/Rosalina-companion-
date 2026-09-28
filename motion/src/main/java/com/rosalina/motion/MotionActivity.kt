@@ -23,7 +23,6 @@ import androidx.lifecycle.*
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.*
 import java.io.File
-import java.util.Locale
 
 class MotionActivity:AppCompatActivity() {
     private val bg=Color.rgb(11,9,17);private val panel=Color.rgb(27,21,39)
@@ -53,7 +52,19 @@ class MotionActivity:AppCompatActivity() {
         lifecycleScope.launch{repeatOnLifecycle(Lifecycle.State.STARTED){
             launch{MotionSession.state.collect{update(it)}}
             launch{while(isActive){val s=MotionSession.state.value
-                elapsed.text=if(s.busy&&s.started>0){val n=(SystemClock.elapsedRealtime()-s.started)/1000;"Time spent ${n/60}:${String.format(Locale.US,"%02d",n%60)} · clip length ${seconds}s"}else "On-device CPU · experimental draft"
+                elapsed.text=if(s.busy&&s.started>0){
+                    val now=SystemClock.elapsedRealtime()
+                    val spent=maxOf(0L,(now-s.started)/1000)
+                    val left=if(s.expectedFinish>now)(s.expectedFinish-now)/1000 else null
+                    buildString{
+                        s.progress?.let{append("$it% · ")}
+                        append(MotionProgressMath.formatDuration(spent)).append(" elapsed")
+                        if(s.work=="render"){
+                            if(left!=null)append(" · ~").append(MotionProgressMath.formatDuration(left)).append(" remaining")
+                            else append(" · ETA calibrating…")
+                        }
+                    }
+                }else "On-device CPU · experimental draft"
                 delay(1000)
             }}
         }}
@@ -87,7 +98,11 @@ class MotionActivity:AppCompatActivity() {
         elapsed=label("",12f,muted)
         progress=ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal).apply{max=100;progressTintList=ColorStateList.valueOf(accent);visibility=View.GONE}
         details=button("Copy / view details"){detailsDialog()}.apply{visibility=View.GONE}
-        root.addView(column().apply{background=background();setPadding(dp(14),dp(10),dp(14),dp(8));addView(status);addView(gap(4));addView(elapsed);addView(progress,LinearLayout.LayoutParams(-1,dp(6)));addView(details)})
+        root.addView(column().apply{
+            background=background();setPadding(dp(14),dp(10),dp(14),dp(8))
+            addView(progress,LinearLayout.LayoutParams(-1,dp(6)))
+            addView(gap(6));addView(elapsed);addView(gap(4));addView(status);addView(details)
+        })
         root.addView(gap(8))
         val body=column();val scroll=ScrollView(this).apply{isFillViewport=true;addView(body)}
         root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
