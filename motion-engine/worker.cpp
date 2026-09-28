@@ -2,6 +2,7 @@
 // Isolated executable: no GGML symbol sharing with the locked chat/image engines.
 #include "stable-diffusion.h"
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
@@ -15,11 +16,37 @@
 #endif
 
 static void stage(const std::string& s) { std::cout << "@@STAGE " << s << std::endl; }
+static std::atomic<int> progress_phase{0}; // 0=not sampling, 1=actual diffusion sampling
 static void log_cb(sd_log_level_t l, const char* s, void*) {
-    if(l >= SD_LOG_INFO && s) std::cerr << s << std::flush;
+    if(!s) return;
+    const std::string line(s);
+    if(line.find("get_learned_condition completed") != std::string::npos) {
+        stage("Motion description encoded · starting diffusion");
+    } else if(line.find("generate_video completed") != std::string::npos) {
+        progress_phase.store(0);
+        stage("Video frames generated");
+    } else if(line.find("generate_video ") != std::string::npos) {
+        progress_phase.store(1);
+        stage("Generating motion frames");
+    } else if(line.find("sampling completed") != std::string::npos ||
+              line.find("sampling(high noise) completed") != std::string::npos) {
+        progress_phase.store(0);
+        stage("Decoding generated frames");
+    } else if(line.find("generating latent video completed") != std::string::npos) {
+        progress_phase.store(0);
+        stage("Decoding generated frames");
+    } else if(line.find("decode_first_stage completed") != std::string::npos) {
+        stage("Finalizing generated frames");
+    } else if(line.find("encode_first_stage completed") != std::string::npos) {
+        stage("Encoding motion description");
+    } else if(line.find("IMG2VID") != std::string::npos) {
+        stage("Encoding reference photo");
+    }
+    if(l >= SD_LOG_INFO) std::cerr << s << std::flush;
 }
 static void progress_cb(int n,int total,float seconds,void*) {
-    std::cout << "@@STEP " << n << ' ' << total << ' ' << seconds << std::endl;
+    if(progress_phase.load()==1)
+        std::cout << "@@SAMPLE " << n << ' ' << total << ' ' << seconds << std::endl;
 }
 static std::string text_file(const char* path) {
     std::ifstream f(path,std::ios::binary);
@@ -81,7 +108,7 @@ int main(int argc,char** argv) {
         gp.vae_tiling_params.enabled=true;
         gp.vae_tiling_params.tile_size_w=128; gp.vae_tiling_params.tile_size_h=128;
         Frames output; sd_audio_t* audio=nullptr; int native_fps=8;
-        stage("Generating new video frames locally");
+        stage("Preparing Wan video pipeline");
         const bool ok=generate_video(ctx.get(),&gp,&output.data,&output.count,&audio,&native_fps);
         if(audio) { free_sd_audio(audio); std::free(audio); }
         if(!ok || !output.data || output.count<frames)
