@@ -3,7 +3,7 @@ package com.rosalina.unified
 internal data class LiveVoiceTuning(
     val endpointMs:Int=820,
     val clauseChars:Int=120,
-    val minClauseChars:Int=32
+    val minClauseChars:Int=16
 ) {
     fun safe()=copy(
         endpointMs=endpointMs.coerceIn(550,1400),
