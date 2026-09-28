@@ -15,22 +15,25 @@ import java.lang.Process
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.max
 
 internal data class MotionState(val busy:Boolean=false,val work:String="",val status:String="Choose a photo. Describe its motion.",val progress:Int?=null,
     val videoModel:String="",val textModel:String="",val photo:String="",val result:String="",val details:String="",val started:Long=0,
-    val expectedFinish:Long=0)
+    val expectedFinish:Long=0,val stopping:Boolean=false,val thermal:String="")
 internal object MotionSession {
     private lateinit var app:Context
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
     private val mutable=MutableStateFlow(MotionState())
     val state:StateFlow<MotionState> = mutable.asStateFlow()
     private val process=AtomicReference<Process?>(null)
+    private val stopRequested=AtomicBoolean(false)
     private var job:Job?=null
     private var pending:Pair<String,MotionSpec>?=null
     private var stopMessage="Stopped by you"
     private const val DECODER_SHA="b84609b2a133d48434bd9636bfcb44bf05168dc436e2d3cecf26256faa1f5325"
+    private const val MAX_RENDER_MS=120*60*1000L
     private val prefs get()=app.getSharedPreferences("motion",Context.MODE_PRIVATE)
     private fun profile(spec:MotionSpec)="${spec.width}x${spec.height}_${spec.seconds}s_${spec.steps}steps"
     private fun totalBaselineMs(spec:MotionSpec)=prefs.getLong("eta_total_${profile(spec)}",0L)
@@ -48,18 +51,46 @@ internal object MotionSession {
         fun path(key:String)=prefs.getString(key,"").orEmpty().takeIf{it.isNotEmpty()&&File(it).isFile}.orEmpty()
         mutable.value=MotionState(videoModel=path("video"),textModel=path("text"),photo=path("photo"),result=path("result"))
     }
-    fun notice(s:String){mutable.update{it.copy(status=s)}}
+    fun notice(s:String){mutable.update{current->if(current.stopping)current else current.copy(status=s)}}
+    fun updateThermal(level:Int){
+        val text=when {
+            level>=PowerManager.THERMAL_STATUS_SEVERE -> "Thermal: Severe · stopping render to protect the phone"
+            level>=PowerManager.THERMAL_STATUS_MODERATE -> "Thermal: Warm · Android/Samsung throttling active"
+            level>=PowerManager.THERMAL_STATUS_LIGHT -> "Thermal: Warm"
+            else -> "Thermal: Normal"
+        }
+        mutable.update{it.copy(thermal=text)}
+    }
     fun fail(stage:String,t:Throwable,tail:String="") {
         val mem=ActivityManager.MemoryInfo().also{app.getSystemService(ActivityManager::class.java).getMemoryInfo(it)}
         val d="Stage: $stage\n${t.javaClass.simpleName}: ${MotionMath.error(t)}\nBuild: ${BuildConfig.VERSION_NAME}\n"+
             "Device: ${Build.MANUFACTURER} ${Build.MODEL}\nABI: ${Build.SUPPORTED_ABIS.joinToString()}\nRAM total=${mem.totalMem}, available=${mem.availMem}\n"+tail.takeLast(12000)
-        mutable.update{it.copy(status="$stage: ${MotionMath.error(t)}",details=d,expectedFinish=0)}
+        mutable.update{it.copy(status="$stage: ${MotionMath.error(t)}",details=d,expectedFinish=0,stopping=false)}
         scope.launch(Dispatchers.IO){runCatching{File(app.filesDir,"last-diagnostic.txt").writeText(d)}}
     }
+    private fun terminateWorker(target:Process){
+        runCatching{target.destroy()}
+        if(runCatching{target.waitFor(350,TimeUnit.MILLISECONDS)}.getOrDefault(false)){
+            process.compareAndSet(target,null);return
+        }
+        val pid=runCatching{target.pid()}.getOrNull()
+        if(pid!=null&&pid in 1..Int.MAX_VALUE.toLong())runCatching{android.os.Process.killProcess(pid.toInt())}
+        if(!runCatching{target.waitFor(750,TimeUnit.MILLISECONDS)}.getOrDefault(false)){
+            runCatching{target.destroyForcibly()}
+            runCatching{target.waitFor(1250,TimeUnit.MILLISECONDS)}
+        }
+        process.compareAndSet(target,null)
+    }
     fun cancel(reason:String="Stopped by you") {
-        stopMessage=reason;pending=null;process.get()?.destroyForcibly();job?.cancel()
-        if(job==null) mutable.update{it.copy(busy=false,work="",progress=null,status=reason,expectedFinish=0)}
-        else notice("Stopping and releasing video memory…")
+        stopMessage=reason
+        pending=null
+        stopRequested.set(true)
+        mutable.update{current->
+            if(current.busy)current.copy(status="Stopping…",expectedFinish=0,stopping=true)
+            else current.copy(status=reason,progress=null,expectedFinish=0,stopping=false)
+        }
+        job?.cancel(CancellationException(reason))
+        process.get()?.let{target->scope.launch(Dispatchers.IO){terminateWorker(target)}}
     }
     fun importModel(uri:Uri,part:ModelPart) {
         if(state.value.busy)return
@@ -131,7 +162,7 @@ internal object MotionSession {
             require(prompt.toByteArray().size<=16000){"Motion description is too long"}
             require(state.value.photo.isNotBlank()){ "Choose a gallery photo first" }
             require(state.value.videoModel.isNotBlank()&&state.value.textModel.isNotBlank()){ "Import both video model files under Models" }
-            pending=prompt.trim() to spec;stopMessage="Stopped by you"
+            pending=prompt.trim() to spec;stopMessage="Stopped by you";stopRequested.set(false)
             val now=SystemClock.elapsedRealtime()
             val baseline=totalBaselineMs(spec)
             val startStatus=if(baseline>0)
@@ -153,17 +184,16 @@ internal object MotionSession {
             fun renderUpdate(message:String,pct:Int?=null,remainingMs:Long?=null){
                 val now=SystemClock.elapsedRealtime()
                 mutable.update { current ->
-                    val nextPct=pct?.coerceIn(0,100)?.let{maxOf(current.progress?:0,it)}?:current.progress
-                    current.copy(status=message,progress=nextPct,expectedFinish=remainingMs?.let{now+it}?:current.expectedFinish)
+                    if(current.stopping||stopRequested.get())current
+                    else {
+                        val nextPct=pct?.coerceIn(0,100)?.let{maxOf(current.progress?:0,it)}?:current.progress
+                        current.copy(status=message,progress=nextPct,expectedFinish=remainingMs?.let{now+it}?:current.expectedFinish)
+                    }
                 }
             }
-            // Separate watchdog kills a native process even if it stops emitting output.
-            val watchdog=scope.launch {
-                delay(120*60*1000L)
-                MotionSession.cancel("Stopped after two hours to avoid an unbounded phone render")
-            }
+            val deadline=(state.value.started.takeIf{it>0}?:SystemClock.elapsedRealtime())+MAX_RENDER_MS
             try{
-                withTimeout(120*60*1000L){withContext(Dispatchers.IO){
+                withTimeout(MAX_RENDER_MS+30_000L){withContext(Dispatchers.IO){
                     val mem=ActivityManager.MemoryInfo().also{app.getSystemService(ActivityManager::class.java).getMemoryInfo(it)}
                     require(!mem.lowMemory && mem.availMem>3L*1024*1024*1024){"Available RAM is low. Close Qwen/Image Lab, then retry. Motion Lab can continue in the background once generation starts."}
                     val pm=app.getSystemService(PowerManager::class.java)
@@ -196,6 +226,7 @@ internal object MotionSession {
                         .redirectOutput(ProcessBuilder.Redirect.appendTo(log))
                         .start()
                     process.set(p)
+                    if(stopRequested.get())throw CancellationException(stopMessage)
 
                     // Do not read Process.inputStream directly. Android can close that pipe from a
                     // different process-management thread, which caused RC1's
@@ -250,6 +281,13 @@ internal object MotionSession {
                     try{
                         while(p.isAlive){
                             ensureActive()
+                            if(stopRequested.get())throw CancellationException(stopMessage)
+                            if(SystemClock.elapsedRealtime()>=deadline){
+                                stopMessage="Stopped after two hours to avoid an unbounded phone render"
+                                stopRequested.set(true)
+                                mutable.update{it.copy(status=stopMessage,expectedFinish=0,stopping=true)}
+                                throw CancellationException(stopMessage)
+                            }
                             logOffset=consumeLog(log,logOffset,::consume)
                             p.waitFor(500,TimeUnit.MILLISECONDS)
                         }
@@ -257,9 +295,7 @@ internal object MotionSession {
                         ensureActive()
                         check(p.exitValue()==0){"Video worker exited with code ${p.exitValue()}"}
                     }finally{
-                        if(p.isAlive)p.destroyForcibly()
-                        p.waitFor(10,TimeUnit.SECONDS)
-                        process.compareAndSet(p,null)
+                        if(p.isAlive)terminateWorker(p) else process.compareAndSet(p,null)
                     }
                     stage="MP4 ENCODING";renderUpdate("Encoding ${spec.seconds}-second MP4…",96)
                     val videos=File(app.filesDir,"videos").apply{mkdirs()};val name="Rosalina-${System.currentTimeMillis()}"
@@ -286,17 +322,23 @@ internal object MotionSession {
                     prefs.edit().putString("result",result.path).apply()
                     mutable.update{it.copy(result=result.path,status="Your ${spec.seconds}-second clip is ready · ${MotionProgressMath.formatDuration(totalMs/1000)} total",progress=100,expectedFinish=0)}
                 }}
-            }catch(e:TimeoutCancellationException){fail("TIME LIMIT",IllegalStateException("Stopped after two hours to avoid an unbounded phone render"),tail(log))}
-            catch(e:CancellationException){notice(stopMessage);throw e}
-            catch(e:Exception){fail(stage,e,tail(log))}
+            }catch(e:TimeoutCancellationException){
+                stopMessage="Stopped after two hours to avoid an unbounded phone render"
+                stopRequested.set(true)
+                mutable.update{it.copy(status=stopMessage,expectedFinish=0,stopping=true)}
+            }
+            catch(e:CancellationException){mutable.update{it.copy(status=stopMessage,expectedFinish=0,stopping=true)}}
+            catch(e:Exception){if(stopRequested.get())mutable.update{it.copy(status=stopMessage,expectedFinish=0,stopping=true)} else fail(stage,e,tail(log))}
             finally{
-                watchdog.cancel()
                 withContext(NonCancellable+Dispatchers.IO){
-                    process.getAndSet(null)?.let{it.destroyForcibly();it.waitFor(10,TimeUnit.SECONDS)}
+                    process.getAndSet(null)?.let{terminateWorker(it)}
                     if(log.isFile)runCatching{log.copyTo(File(app.filesDir,"last-native.log"),overwrite=true)}
                     if(!committed)tmpMp4?.delete();dir.deleteRecursively()
                 }
-                mutable.update{it.copy(busy=false,work="",progress=null,expectedFinish=0)};job=null
+                val finalStatus=if(stopRequested.get())stopMessage else state.value.status
+                stopRequested.set(false)
+                mutable.update{it.copy(busy=false,work="",progress=null,expectedFinish=0,stopping=false,status=finalStatus)}
+                job=null
                 app.stopService(Intent(app,MotionService::class.java))
             }
         }
