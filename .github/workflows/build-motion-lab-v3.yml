@@ -83,7 +83,7 @@ jobs:
           sha256sum delivery/*.apk > delivery/SHA256SUMS.txt
           python3 - <<'PY'
           import zipfile,struct,pathlib
-          with zipfile.ZipFile('delivery/Rosalina-Motion-Lab-V3-rc1-arm64.apk') as z:
+          with zipfile.ZipFile('delivery/Rosalina-Motion-Lab-V3-rc2-arm64.apk') as z:
               libs=[n for n in z.namelist() if n.endswith('.so')]
               assert libs==['lib/arm64-v8a/librosalina-motion.so'],libs
               b=z.read(libs[0]); assert b[:4]==b'\x7fELF' and struct.unpack('<H',b[18:20])[0]==183
