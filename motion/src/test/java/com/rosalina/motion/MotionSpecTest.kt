@@ -9,4 +9,14 @@ class MotionSpecTest {
  @Test fun expectedOutputSize(){assertEquals(20L+256L*256L*49L*3L,MotionMath.expectedBytes(256,256,49))}
  @Test fun noNullError(){assertEquals("Exception",MotionMath.error(Exception()))}
  @Test fun digestsArePinned(){assertTrue(ModelPart.entries.all{it.sha.matches(Regex("[0-9a-f]{64}"))})}
+ @Test fun progressAndEtaMath(){
+  assertEquals(10,MotionProgressMath.samplingOverall(0,9))
+  assertEquals(54,MotionProgressMath.samplingOverall(5,9))
+  assertEquals(90,MotionProgressMath.samplingOverall(9,9))
+  assertEquals(98,MotionProgressMath.mp4Overall(50))
+  assertEquals(30_000L,MotionProgressMath.smoothMs(30_000L,30_000L))
+  assertNull(MotionProgressMath.remainingFromSampling(1,9,1_000L,11_000L,0))
+  assertEquals(70_000L,MotionProgressMath.remainingFromSampling(2,9,1_000L,21_000L,0))
+  assertEquals("1m 5s",MotionProgressMath.formatDuration(65))
+ }
 }
