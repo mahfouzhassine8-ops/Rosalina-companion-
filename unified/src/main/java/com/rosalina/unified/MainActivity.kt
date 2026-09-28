@@ -225,7 +225,7 @@ class MainActivity:AppCompatActivity() {
         body.addView(row(create,edit))
         mode=if(photoMode==PhotoMode.CREATE)"Create" else "Edit"
         val draftKey="draft-$mode"
-        prompt=field(if(photoMode==PhotoMode.CREATE)"Describe what you want to create…" else "Describe how to transform your photo…").apply{setText(session.prefs.getString(draftKey,""));addTextChangedListener(object:TextWatcher{override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){};override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){session.prefs.edit().putString(draftKey,s.toString()).apply()};override fun afterTextChanged(s:Editable?){} })}
+        prompt=field(if(photoMode==PhotoMode.CREATE)"Describe what you want to create…" else "Describe how to transform your photo…").apply{id=1001;setText(session.prefs.getString(draftKey,""));addTextChangedListener(object:TextWatcher{override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){};override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){session.prefs.edit().putString(draftKey,s.toString()).apply()};override fun afterTextChanged(s:Editable?){} })}
         body.addView(prompt)
         if(photoMode==PhotoMode.EDIT) {
             reference=ImageView(this).apply{adjustViewBounds=true;scaleType=ImageView.ScaleType.FIT_CENTER;background=shape(panel)}
@@ -247,7 +247,7 @@ class MainActivity:AppCompatActivity() {
         reference=ImageView(this).apply{adjustViewBounds=true;scaleType=ImageView.ScaleType.FIT_CENTER;background=shape(panel)}
         body.addView(reference,LinearLayout.LayoutParams(-1,dp(220)).apply{topMargin=dp(8)})
         body.addView(row(button("Choose image"){pickPhoto.launch(arrayOf("image/*"))},button("Use last generated image"){val f=File(session.state.value.result);if(f.extension=="png"&&f.exists()){session.prefs.edit().putString("photo",f.path).apply();lastPhoto="";update(session.state.value)}else session.notice("Generate an image first")}))
-        prompt=field("Describe the motion…").apply{setText(session.prefs.getString("draft-Animate",""));addTextChangedListener(object:TextWatcher{override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){};override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){session.prefs.edit().putString("draft-Animate",s.toString()).apply()};override fun afterTextChanged(s:Editable?){} })}
+        prompt=field("Describe the motion…").apply{id=1001;setText(session.prefs.getString("draft-Animate",""));addTextChangedListener(object:TextWatcher{override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){};override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){session.prefs.edit().putString("draft-Animate",s.toString()).apply()};override fun afterTextChanged(s:Editable?){} })}
         body.addView(prompt);body.addView(button(profileDescription()){renderSettings()})
         generate=button("Render",true){submit()};controls+=generate;body.addView(generate)
         preview=ImageView(this).apply{adjustViewBounds=true;scaleType=ImageView.ScaleType.FIT_CENTER;background=shape(panel)}
