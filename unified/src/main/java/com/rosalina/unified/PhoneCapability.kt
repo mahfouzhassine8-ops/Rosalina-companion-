@@ -13,6 +13,8 @@ internal data class PhoneCapabilityProfile(
 }
 
 internal object PhoneCapabilityPolicy {
+    const val LIVE_EMERGENCY_FLOOR_BYTES=2_000_000_000L
+    fun canStartLive(resources:Resources)=!resources.low && resources.available>=LIVE_EMERGENCY_FLOOR_BYTES
     fun choose(resources:Resources, mode:String="adaptive"):PhoneCapabilityProfile {
         val normalized=mode.lowercase()
         if(normalized=="cool") return PhoneCapabilityProfile("Phone Cool",512,160,1000,160,false,false)
