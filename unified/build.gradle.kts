@@ -10,8 +10,8 @@ android {
         applicationId = "com.rosalina.unified"
         minSdk = 30
         targetSdk = 35
-        versionCode = providers.gradleProperty("unifiedVersionCode").orNull?.toInt() ?: 10015
-        versionName = "1.0-chat-live-focus-c3"
+        versionCode = providers.gradleProperty("unifiedVersionCode").orNull?.toInt() ?: 10016
+        versionName = "1.0-chat-live-focus-c4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += if (emulatorQa) "x86_64" else "arm64-v8a" }
     }
