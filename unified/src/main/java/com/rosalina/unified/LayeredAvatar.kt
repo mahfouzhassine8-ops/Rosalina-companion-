@@ -48,7 +48,7 @@ internal object RigMotion {
         val envelope=if(talking && secondary && elapsed<3.6f)sin((elapsed/3.6f)*PI).toFloat() else 0f
         val amount=performance.intensity.coerceIn(0f,1f)*envelope
         val arms=when(performance.gesture){Gesture.OPEN_HAND->3.8f;Gesture.PLAYFUL->2.8f;Gesture.REASSURING->1.3f;else->.7f}
-        val mouth=if(talking)s.mouth.bounded() else MouthPose()
+        val mouth=if(talking && animate)s.mouth.bounded() else MouthPose()
         return RigPose(face,blink,breath,sway,face.head+if(moving)(sin(t*.73)*.45).toFloat() else 0f,
             -amount*arms,amount*2.8f,amount*1.4f,if(secondary)(sin(t*.91+.9)*.9).toFloat() else 0f,
             mouth,if(secondary && talking)performance.gesture else Gesture.NONE,elapsed)
