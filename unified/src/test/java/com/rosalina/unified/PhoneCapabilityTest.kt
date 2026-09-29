@@ -18,6 +18,15 @@ class PhoneCapabilityTest {
         val p=PhoneCapabilityPolicy.choose(res(4_000_000_000L,3),"adaptive")
         assertEquals("Adaptive · Cool",p.label);assertFalse(p.allowPrewarm);assertEquals(144,p.liveTokenCap)
     }
+    @Test fun adaptiveCoolStillAllowsLiveAtObservedThreePointFourGb(){
+        val r=res(3_400_000_000L,1)
+        assertEquals("Adaptive · Cool",PhoneCapabilityPolicy.choose(r,"adaptive").label)
+        assertTrue(PhoneCapabilityPolicy.canStartLive(r))
+    }
+    @Test fun onlyEmergencyMemoryPressureBlocksLive(){
+        assertFalse(PhoneCapabilityPolicy.canStartLive(res(1_900_000_000L,1)))
+        assertFalse(PhoneCapabilityPolicy.canStartLive(res(5_000_000_000L,1,true)))
+    }
     @Test fun manualModesRemainDeterministic(){
         assertEquals("Phone Cool",PhoneCapabilityPolicy.choose(res(10_000_000_000L,0),"cool").label)
         assertEquals("Phone Maximum",PhoneCapabilityPolicy.choose(res(4_000_000_000L,3),"maximum").label)
