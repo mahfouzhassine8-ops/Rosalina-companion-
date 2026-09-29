@@ -38,6 +38,8 @@ internal class Session private constructor(private val context:Context) {
     private val chat=EngineRpc(context,ChatService::class.java)
     private val listen=EngineRpc(context,ListenService::class.java)
     private val speech=EngineRpc(context,SpeechService::class.java)
+    private val platformSpeech=PlatformSpeech(context)
+    @Volatile private var nativeSpeechCrashed=false
     private val learner=LiveLearner(prefs)
     private val transcriptFile=File(context.filesDir,"conversation.json")
     private val turns=mutableListOf<Pair<String,String>>()
@@ -121,6 +123,8 @@ internal class Session private constructor(private val context:Context) {
     fun phoneCapabilitySummary():String=runCatching{capability().summary()}.getOrDefault("Phone capability · unavailable")
     fun liveLearningSummary()=learner.snapshot().summary()
     fun resetLiveLearning(){learner.reset();notice("Adaptive Live learning reset")}
+    private fun usePlatformSpeech()=SpeechCompatibility.preferPlatform(Build.MANUFACTURER,Build.VERSION.SDK_INT,nativeSpeechCrashed || prefs.getBoolean("native-tts-crashed",false))
+    private fun markNativeSpeechCrash(){nativeSpeechCrashed=true;prefs.edit().putBoolean("native-tts-crashed",true).apply()}
     fun testTone(){if(!state.value.busy)begin(TaskRequest(kind=TaskKind.CHAT,modelKey="tone-test",prompt="speaker tone"))}
     fun testVoice(){if(!state.value.busy)begin(TaskRequest(kind=TaskKind.CHAT,modelKey="voice-test",prompt="Rosalina speaker test. If you can hear this, local text to speech is working."))}
     fun refreshResources(){val r=thermal.read();mutable.update{it.copy(thermal=r.thermal,thermalAt=r.measuredAt,availableBytes=r.available,totalBytes=r.total)}}
@@ -140,7 +144,7 @@ internal class Session private constructor(private val context:Context) {
         voiceStartJob?.cancel();voiceStartJob=null
         if(!state.value.busy)return
         stopReason=reason;mutable.update{it.copy(stopping=true,stage="Stopping…",percent=null,eta="")}
-        speech.interruptNow();activeJob?.cancel(CancellationException(reason))
+        speech.interruptNow();platformSpeech.stop();activeJob?.cancel(CancellationException(reason))
     }
     fun interruptAndListen() {
         if(voiceActive){voiceInterrupt=true;return}
@@ -150,7 +154,7 @@ internal class Session private constructor(private val context:Context) {
                 if(state.value.busy) {
                     // Cancel only the current task, not this queued transition.
                     stopReason="Switching to Live";mutable.update{it.copy(stopping=true,stage="Stopping…",percent=null,eta="")}
-                    speech.interruptNow();activeJob?.cancel(CancellationException(stopReason))
+                    speech.interruptNow();platformSpeech.stop();activeJob?.cancel(CancellationException(stopReason))
                     withTimeoutOrNull(8000){state.first{!it.busy}}
                 }
                 ensureActive()
@@ -247,6 +251,19 @@ internal class Session private constructor(private val context:Context) {
         putFloat("pace",expression.pace)
         putFloat("voiceIntensity",expression.intensity)
     }
+    private suspend fun speakPlatform(r:TaskRequest,text:String,expression:VoiceExpression):PlatformSpeechResult {
+        capture?.outputActive=true
+        update(r.id){it.copy(voiceStage="Speaking · compatibility voice",avatarEnergy=.22f)}
+        return try {
+            platformSpeech.speak(text,expression.pace,
+                onStart={capture?.outputActive=true;update(r.id){it.copy(voiceStage="Speaking · compatibility voice",avatarEnergy=.28f)}},
+                onDone={capture?.outputActive=false;update(r.id){it.copy(voiceStage="",avatarEnergy=0f)}}
+            ).also{result->
+                playbackMetrics="Android compatibility TTS; engine=${result.engine}; voice=${result.voice}; elapsed=${result.elapsedMs} ms; media volume=${result.mediaVolume}/${result.mediaMax}; muted=${result.mediaMuted}"
+            }
+        } finally {capture?.outputActive=false;update(r.id){it.copy(voiceStage="",avatarEnergy=0f)}}
+    }
+
     private suspend fun performToneTest(r:TaskRequest) {
         setTaskMode(r,playback=true)
         update(r.id){it.copy(stage="Testing Android media speaker",voiceStage="440 Hz tone")}
@@ -255,25 +272,21 @@ internal class Session private constructor(private val context:Context) {
         update(r.id){it.copy(stage="Speaker tone completed",voiceStage="")}
     }
     private suspend fun performVoiceTest(r:TaskRequest) {
-        models.requirePath(ModelKey.TTS)
         setTaskMode(r,playback=true)
-        val text=r.prompt.ifBlank{"Rosalina speaker test. If you can hear this, local text to speech is working."}
+        val text=r.prompt.ifBlank{"Rosalina speaker test. If you can hear this, speech output is working."}
         val expression=voiceExpression("",text)
         update(r.id){it.copy(stage="Testing Rosalina speaker",voiceStage="Preparing speech")}
-        val result=speech.call(Bundle().apply{
-            putString("operation","speak");putString("text",text);putInt("speaker",prefs.getInt("speaker",3));putBoolean("conversation",false);putExpression(expression)
-        }){event->
-            when(event.getString("type")){
-                "stage"->update(r.id){it.copy(voiceStage=event.getString("text").orEmpty())}
-                "playback"->{
-                    val playing=event.getString("text")=="start";val route=event.getInt("route",-1)
-                    if(playing)playbackMetrics="Speaker test route=${event.getString("routeLabel") ?: AudioRoutePolicy.label(route)}($route); preferred=${event.getString("preferredRouteLabel")}; preferred applied=${event.getBoolean("preferredApplied")}"
-                    update(r.id){it.copy(voiceStage=if(playing)"Speaking test" else "",avatarEnergy=if(playing)it.avatarEnergy else 0f)}
-                }
-                "avatar"->update(r.id){it.copy(avatarEnergy=event.getFloat("energy",0f).coerceIn(0f,1f))}
+        if(usePlatformSpeech()){
+            speakPlatform(r,text,expression)
+        }else{
+            try{
+                models.requirePath(ModelKey.TTS)
+                val result=speech.call(Bundle().apply{putString("operation","speak");putString("text",text);putInt("speaker",prefs.getInt("speaker",3));putBoolean("conversation",false);putExpression(expression)}){}
+                playbackMetrics="Kokoro speaker test; first audio=${result.getLong("firstAudioMs")} ms; audio=${result.getLong("audioMs")} ms; route=${result.getString("routeLabel")}"
+            }catch(t:Throwable){
+                if(t.message?.contains("SpeechService process exited")==true){markNativeSpeechCrash();runCatching{speech.shutdown()};speakPlatform(r,text,expression)}else throw t
             }
         }
-        playbackMetrics="Speaker test; first audio=${result.getLong("firstAudioMs")} ms; generated=${result.getLong("audioMs")} ms; route=${result.getString("routeLabel")}(${result.getInt("route",-1)}); encoding=${result.getString("encoding")}; usage=${result.getString("usage")}; audio mode=${result.getInt("audioMode",-1)}"
         update(r.id){it.copy(stage="Speaker test completed",voiceStage="",avatarEnergy=0f)}
     }
     private suspend fun performChat(r:TaskRequest,prompt:String,readAloud:Boolean)=coroutineScope {
@@ -288,52 +301,41 @@ internal class Session private constructor(private val context:Context) {
         fun cutSpoken(value:String)=if(liveSpeech)LiveSpeechChunker.cut(value,liveTuning)else SpeechText.cut(value)
         fun enqueue(text:String){if(text.isNotBlank() && !shortened && !queue.trySend(text).isSuccess){shortened=true;update(r.id){it.copy(voiceStage="Spoken reply shortened · full reply remains in Chat")}}}
         val speechJob=if(readAloud)launch {
-            var unavailable=false
             for(text in queue) {
-                if(unavailable)continue
-                var attempt=0
-                var completed=false
-                while(!completed && attempt<2 && currentCoroutineContext().isActive) {
-                    try {
-                        attempt++
-                        val expression=voiceExpression(prompt,text)
-                        val result=speech.call(Bundle().apply{
-                            putString("operation","speak");putString("text",text);putInt("speaker",prefs.getInt("speaker",3));putBoolean("conversation",voiceActive)
-                            putExpression(expression)
-                        }){event->
-                            when(event.getString("type")) {
-                                "stage"->update(r.id){it.copy(voiceStage=event.getString("text").orEmpty())}
-                                "playback"->{
-                                    val playing=event.getString("text")=="start"
-                                    val route=event.getInt("route",-1)
-                                    capture?.outputRoute=route;capture?.outputActive=playing
-                                    if(playing)playbackMetrics="Rosalina output route=${event.getString("routeLabel") ?: AudioRoutePolicy.label(route)}($route); preferred=${event.getString("preferredRouteLabel") ?: AudioRoutePolicy.label(event.getInt("preferredRoute",-1))}(${event.getInt("preferredRoute",-1)}); preferred applied=${event.getBoolean("preferredApplied")}"
-                                    update(r.id){it.copy(voiceStage=if(playing)"Speaking · ${expression.name}" else "",avatarEnergy=if(playing)it.avatarEnergy else 0f)}
-                                }
-                                "avatar"->update(r.id){it.copy(avatarEnergy=event.getFloat("energy",0f).coerceIn(0f,1f))}
-                            }
-                        }
-                        val wasInterrupted=result.getBoolean("interrupted")
-                        playbackMetrics="Kokoro Voice V2; ${result.getString("voiceProfile")}; pitch path=${if(result.getBoolean("pitchApplied"))"Android pitch-preserving playback" else "neutral fallback"}; first audio ${result.getLong("firstAudioMs")} ms; audio ${result.getLong("audioMs")} ms; elapsed ${result.getLong("elapsedMs")} ms; interrupted=$wasInterrupted; restart attempts=${attempt-1}; route=${result.getString("routeLabel")}(${result.getInt("route",-1)}); preferred=${result.getString("preferredRouteLabel")}(${result.getInt("preferredRoute",-1)}); preferred applied=${result.getBoolean("preferredApplied")}; encoding=${result.getString("encoding")}; usage=${result.getString("usage")}; audio mode=${result.getInt("audioMode",-1)}"
-                        if(wasInterrupted){unavailable=true;update(r.id){it.copy(voiceStage="",avatarEnergy=0f)}}
-                        completed=true
-                    }catch(e:CancellationException){throw e}
-                    catch(t:Throwable){
-                        if(t is WorkerQuarantined)throw t
-                        if(!currentCoroutineContext().isActive || state.value.stopping)throw CancellationException("Speech stopped").apply{initCause(t)}
-                        val processExit=t.message?.contains("SpeechService process exited")==true
-                        if(liveSpeech && processExit && attempt<2) {
-                            playbackMetrics="Speech process exited · restarting once"
-                            update(r.id){it.copy(voiceStage="Restarting Rosalina voice")}
-                            speech.shutdown()
-                            delay(80)
-                        } else {
-                            unavailable=true;completed=true
-                            update(r.id){it.copy(voiceStage="Voice unavailable · ${t.message}",avatarEnergy=0f,error="Speech: ${t.stackTraceToString()}")}
-                            speech.shutdown()
-                        }
-                    } finally {capture?.outputActive=false}
+                currentCoroutineContext().ensureActive()
+                val expression=voiceExpression(prompt,text)
+                if(usePlatformSpeech()){
+                    speakPlatform(r,text,expression)
+                    continue
                 }
+                try {
+                    val result=speech.call(Bundle().apply{
+                        putString("operation","speak");putString("text",text);putInt("speaker",prefs.getInt("speaker",3));putBoolean("conversation",voiceActive);putExpression(expression)
+                    }){event->
+                        when(event.getString("type")) {
+                            "stage"->update(r.id){it.copy(voiceStage=event.getString("text").orEmpty())}
+                            "playback"->{
+                                val playing=event.getString("text")=="start";val route=event.getInt("route",-1)
+                                capture?.outputRoute=route;capture?.outputActive=playing
+                                update(r.id){it.copy(voiceStage=if(playing)"Speaking · ${expression.name}" else "",avatarEnergy=if(playing)it.avatarEnergy else 0f)}
+                            }
+                            "avatar"->update(r.id){it.copy(avatarEnergy=event.getFloat("energy",0f).coerceIn(0f,1f))}
+                        }
+                    }
+                    playbackMetrics="Kokoro Voice V2; ${result.getString("voiceProfile")}; first audio ${result.getLong("firstAudioMs")} ms; audio ${result.getLong("audioMs")} ms; route=${result.getString("routeLabel")}(${result.getInt("route",-1)})"
+                } catch(e:CancellationException){throw e}
+                catch(t:Throwable){
+                    if(t is WorkerQuarantined)throw t
+                    if(!currentCoroutineContext().isActive || state.value.stopping)throw CancellationException("Speech stopped").apply{initCause(t)}
+                    if(t.message?.contains("SpeechService process exited")==true){
+                        markNativeSpeechCrash();playbackMetrics="Kokoro native process crashed · switched to Android compatibility TTS"
+                        runCatching{speech.shutdown()}
+                        speakPlatform(r,text,expression)
+                    }else{
+                        update(r.id){it.copy(voiceStage="Voice unavailable · ${t.message}",avatarEnergy=0f,error="Speech: ${t.stackTraceToString()}")}
+                        throw t
+                    }
+                } finally {capture?.outputActive=false}
             }
         }else null
         val answer=StringBuilder();var spoken=0;var lastSpeechScan=0L
@@ -364,8 +366,9 @@ internal class Session private constructor(private val context:Context) {
     }
     private suspend fun performClassicVoice(r:TaskRequest) {
         require(ContextCompat.checkSelfPermission(context,Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED){"Microphone permission is required"}
-        models.requirePath(ModelKey.STT);models.requirePath(ModelKey.TTS);models.requirePath(ModelKey.CHAT)
-        speech.shutdown();voiceActive=true
+        models.requirePath(ModelKey.STT);models.requirePath(ModelKey.CHAT)
+        if(!usePlatformSpeech())models.requirePath(ModelKey.TTS)
+        voiceActive=true
         val input=VoiceCapture(context,prefs.getBoolean("hands-free",true));capture=input
         var pending:VoiceRecording?=null;var previousOutput=""
         fun manual():Boolean {val value=voiceInterrupt;voiceInterrupt=false;return value}
@@ -380,10 +383,10 @@ internal class Session private constructor(private val context:Context) {
                 val recording=pending!!;pending=null
                 update(r.id){it.copy(stage="Transcribing on device",backend="Whisper tiny.en · CPU",voiceStage="")}
                 val transcript=try {
-                    val result=speech.call(Bundle().apply{putString("operation","transcribe");putString("pcm",recording.file.path)}){}
+                    val result=listen.call(Bundle().apply{putString("operation","transcribe");putString("pcm",recording.file.path)}){}
                     speechMetrics="${input.describe()}\nWhisper ${result.getLong("inferenceMs")} ms for ${result.getLong("audioMs")} ms audio"
                     result.getString("transcript").orEmpty()
-                }finally{recording.file.delete();speech.shutdown()}
+                }finally{recording.file.delete()}
                 if(recording.duringSpeakerOutput && EchoText.resemblesOutput(transcript,previousOutput)) {
                     update(r.id){it.copy(stage="Speaker echo ignored · listening again")};continue
                 }
@@ -398,7 +401,7 @@ internal class Session private constructor(private val context:Context) {
                             update(r.id){it.copy(stage="Listening · interrupted",voiceStage="")}
                         }?.also{recorded.set(it)}
                     } else null
-                    val interruptWatch=if(next==null)launch {while(isActive && !responseDone.get()){if(voiceInterrupt){voiceInterrupt=false;interrupted.set(true);speech.interruptNow();response.cancel(CancellationException("User requested interruption"))};delay(60)}}else null
+                    val interruptWatch=if(next==null)launch {while(isActive && !responseDone.get()){if(voiceInterrupt){voiceInterrupt=false;interrupted.set(true);speech.interruptNow();platformSpeech.stop();response.cancel(CancellationException("User requested interruption"))};delay(60)}}else null
                     try {
                         try{response.await()}catch(e:CancellationException){currentCoroutineContext().ensureActive();if(!interrupted.get())throw e}
                         finally {
@@ -437,17 +440,21 @@ internal class Session private constructor(private val context:Context) {
         val stt=listen.call(Bundle().apply{putString("operation","prepare")}){event->if(event.getString("type")=="stage")update(r.id){it.copy(voiceStage=event.getString("text").orEmpty())}}
         currentCoroutineContext().ensureActive();delay(80)
         update(r.id){it.copy(stage="Listening · LIVE · warming voice",voiceStage="Rosalina voice")}
-        val tts=speech.call(Bundle().apply{putString("operation","prepare")}){event->if(event.getString("type")=="stage")update(r.id){it.copy(voiceStage=event.getString("text").orEmpty())}}
-        check(stt.getBoolean("prepared") && tts.getBoolean("prepared") && qwen.getBoolean("prepared")){"Live engines did not confirm preparation"}
+        val voiceSetup=if(usePlatformSpeech())platformSpeech.prepare() else {
+            val tts=speech.call(Bundle().apply{putString("operation","prepare")}){event->if(event.getString("type")=="stage")update(r.id){it.copy(voiceStage=event.getString("text").orEmpty())}}
+            check(tts.getBoolean("prepared")){"Voice engine did not confirm preparation"}
+            "Kokoro setup="+tts.getLong("elapsedMs")+" ms"
+        }
+        check(stt.getBoolean("prepared") && qwen.getBoolean("prepared")){"Live engines did not confirm preparation"}
         chatNeedsReset=false;warmSystem=system
-        liveWarmMetrics="${phone.summary()}; staged warmup "+(SystemClock.elapsedRealtime()-started)+" ms; Qwen setup="+qwen.getLong("modelSetupMs")+" ms; Whisper setup="+stt.getLong("setupMs")+" ms / PSS="+stt.getLong("pssKb")+" KiB; voice setup="+tts.getLong("elapsedMs")+" ms"
+        liveWarmMetrics="${phone.summary()}; staged warmup "+(SystemClock.elapsedRealtime()-started)+" ms; Qwen setup="+qwen.getLong("modelSetupMs")+" ms; Whisper setup="+stt.getLong("setupMs")+" ms / PSS="+stt.getLong("pssKb")+" KiB; voice="+voiceSetup
         liveMetrics=liveWarmMetrics
         update(r.id){it.copy(stage="Listening · LIVE · speak naturally",voiceStage="",backend="${phone.label} · Live ready")}
     }
 
     private suspend fun performLiveVoice(r:TaskRequest) = coroutineScope {
         require(ContextCompat.checkSelfPermission(context,Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED){"Microphone permission is required"}
-        models.requirePath(ModelKey.STT);models.requirePath(ModelKey.TTS);models.requirePath(ModelKey.CHAT)
+        models.requirePath(ModelKey.STT);models.requirePath(ModelKey.CHAT);if(!usePlatformSpeech())models.requirePath(ModelKey.TTS)
         voiceActive=true
         val startProfile=capability();val endpoint=maxOf(prefs.getInt("live-endpoint-ms",820),startProfile.endpointFloorMs).coerceIn(550,1400)
         val input=VoiceCapture(context,prefs.getBoolean("hands-free",true),endpoint);capture=input
