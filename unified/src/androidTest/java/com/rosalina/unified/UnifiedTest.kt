@@ -1,5 +1,6 @@
 package com.rosalina.unified
 import android.content.Context
+import android.content.ComponentName
 import android.net.Uri
 import android.media.MediaExtractor
 import androidx.test.core.app.ActivityScenario
@@ -15,7 +16,9 @@ import java.nio.ByteOrder
 @RunWith(AndroidJUnit4::class)
 class UnifiedTest {
  private val context:Context get()=InstrumentationRegistry.getInstrumentation().targetContext
- @Test fun activityRecreationPreservesDraft(){context.getSharedPreferences("rosalina-unified",Context.MODE_PRIVATE).edit().putString("section","PHOTO").putString("photo-mode","EDIT").putString("tab","Edit").putString("draft-Edit","Keep this exact draft").commit();ActivityScenario.launch(MainActivity::class.java).use{s->s.recreate();s.onActivity{a->assertEquals("Keep this exact draft",a.findViewById<android.widget.EditText>(1001).text.toString())}}}
+ @Test fun legacyMediaStateMigratesToChatAndPreservesDraft(){context.getSharedPreferences("rosalina-unified",Context.MODE_PRIVATE).edit().putString("section","PHOTO").putString("tab","Edit").putString("draft-Chat","Keep this exact chat draft").commit();ActivityScenario.launch(MainActivity::class.java).use{s->s.recreate();s.onActivity{a->assertEquals("Keep this exact chat draft",a.findViewById<android.widget.EditText>(1001).text.toString())}}}
+ @Test fun focusBuildRejectsMediaTasks(){assertFalse(Session.get(context).begin(TaskRequest(kind=TaskKind.CREATE,prompt="inactive")))}
+ @Test fun speechServiceSharesMainProcessForOneAudioRouteOwner(){val info=context.packageManager.getServiceInfo(ComponentName(context,SpeechService::class.java),0);assertEquals(context.packageName,info.processName)}
  @Test fun avatarAssetDecodes(){ActivityScenario.launch(MainActivity::class.java).use{s->s.onActivity{a->val avatar=LiveAvatarView(a);assertTrue("Bundled Rosalina avatar must decode on Android",avatar.imageLoaded);assertEquals("Clean fallback width",180,avatar.sourceWidth);assertEquals("Clean fallback height",261,avatar.sourceHeight)}}}
  @Test fun stopReapsOwnedWorker():Unit=runBlocking {val dir=File(context.cacheDir,"stop-qa").apply{mkdirs()};val started=System.currentTimeMillis();val job=launch(Dispatchers.IO){NativeWorker(ThermalManager(context)).run(listOf("/system/bin/sleep","30"),dir,8){_,_,_,_,_,_,_->}};delay(400);job.cancelAndJoin();assertTrue(System.currentTimeMillis()-started<5000);dir.deleteRecursively()}
  @Test fun wrongModelChecksumDoesNotInstallOrLeavePartial():Unit=runBlocking {val f=File(context.cacheDir,"wrong.gguf").apply{writeText("not a model")};val store=ModelStore(context);try{store.import(ModelKey.IMAGE,Uri.fromFile(f)){_,_->};fail("Checksum mismatch was accepted")}catch(e:IllegalArgumentException){assertTrue(e.message.orEmpty().contains("SHA-256 mismatch"))};assertNull(store.path(ModelKey.IMAGE));assertFalse(File(context.filesDir,"models").listFiles().orEmpty().any{it.name.endsWith(".part")});f.delete()}
