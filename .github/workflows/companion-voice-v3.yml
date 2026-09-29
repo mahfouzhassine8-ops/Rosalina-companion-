@@ -104,6 +104,12 @@ jobs:
         run: |
           set -o pipefail
           gradle :unified:testDebugUnitTest :unified:assembleDebug :unified:assembleDebugAndroidTest -PunifiedEmulatorQa=true --max-workers=2 --stacktrace 2>&1 | tee qa/debug-build.log
+      - uses: actions/download-artifact@v4
+        with:
+          name: VoiceV3-Pocket-candidate-pack
+          path: ${{ runner.temp }}/voice-v3
+          run-id: 36529361426
+          github-token: ${{ github.token }}
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules

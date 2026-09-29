@@ -5,6 +5,8 @@ trap 'adb logcat -d > qa/emulator-logcat.txt 2>/dev/null || true' EXIT
 adb shell settings put global animator_duration_scale 1
 adb shell settings put global transition_animation_scale 1
 adb shell settings put global window_animation_scale 1
+adb push "$RUNNER_TEMP/voice-v3/Rosalina-VoiceV3-Pocket-INT8-Candidate.zip" /data/local/tmp/rosalina-voice-v3.zip
+adb shell chmod 644 /data/local/tmp/rosalina-voice-v3.zip
 gradle :unified:connectedDebugAndroidTest -PunifiedEmulatorQa=true -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true --max-workers=2 --stacktrace
 adb shell run-as com.rosalina.unified tar -cf - files/audit-qa > qa/avatar-and-playback-evidence.tar
 adb shell am start -W -n com.rosalina.unified/.MainActivity
