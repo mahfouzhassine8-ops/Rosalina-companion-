@@ -1,7 +1,7 @@
 name: Rosalina Unified Candidate
 on:
   push:
-    branches: [rosalina-unified-v1-candidate, rosalina-voice-v2-expressive-candidate, rosalina-live-voice-candidate, rosalina-hybrid-live-candidate, rosalina-live-avatar-candidate, rosalina-companion-shell-candidate, rosalina-acceleration-avatar-candidate, rosalina-10010-end-to-end-audit-c1, rosalina-10011-pristine-audit-c1, rosalina-10012-chat-live-focus-c1, rosalina-10013-tts-live-repair-c2, rosalina-10015-live-ram-gate-c4, rosalina-10015-live-ram-gate-c4]
+    branches: [rosalina-unified-v1-candidate, rosalina-voice-v2-expressive-candidate, rosalina-live-voice-candidate, rosalina-hybrid-live-candidate, rosalina-live-avatar-candidate, rosalina-companion-shell-candidate, rosalina-acceleration-avatar-candidate, rosalina-10010-end-to-end-audit-c1, rosalina-10011-pristine-audit-c1, rosalina-10012-chat-live-focus-c1, rosalina-10013-tts-live-repair-c2, rosalina-10014-speech-fallback-c3, rosalina-10015-live-ram-gate-c4]
   workflow_dispatch:
 permissions:
   contents: read
