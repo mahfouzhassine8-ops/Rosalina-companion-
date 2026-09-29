@@ -1,0 +1,71 @@
+name: Rosalina Expressive Engine Evaluation
+on:
+  push:
+    branches: [rosalina-10015-companion-completion-c2-10018]
+    paths: [.github/workflows/companion-engine-evaluation.yml, tools/chatterbox_probe.py]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  expressive-model:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: pip install onnxruntime==1.23.2 transformers==4.55.4 soundfile==0.13.1 numpy==2.2.6 requests==2.32.5
+      - uses: actions/download-artifact@v4
+        with:
+          name: VoiceV3-Pocket-candidate-pack
+          path: reference-source
+          run-id: 36529361426
+          github-token: ${{ github.token }}
+      - name: Verify source, evaluate actual ONNX graphs, package isolated candidate
+        run: python tools/chatterbox_probe.py
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with: {name: Rosalina-Chatterbox-Turbo-local-candidate, path: model-delivery/, compression-level: 0}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: Rosalina-Chatterbox-evaluation-receipt, path: engine-evaluation/}
+  compiler-kit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.9'}
+      - run: |
+          mkdir -p unified/libs
+          curl --fail --location --retry 3 https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-1.13.8.aar -o unified/libs/sherpa-onnx-1.13.8.aar
+          echo '633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96  unified/libs/sherpa-onnx-1.13.8.aar' | sha256sum -c -
+          gradle :unified:compileDebugKotlin :unified:compileDebugUnitTestKotlin -PunifiedEmulatorQa=true --max-workers=2
+      - name: Export public compilation dependencies only, no credentials or repository configuration
+        run: |
+          mkdir -p compiler-kit/jars compiler-kit/platform compiler-kit/tools
+          python3 - <<'PY'
+          import pathlib,shutil,hashlib
+          home=pathlib.Path.home()/'.gradle/caches/modules-2/files-2.1'
+          for p in home.rglob('*'):
+              if p.suffix not in ('.jar','.aar') or not p.is_file():continue
+              name=hashlib.sha256(str(p.relative_to(home)).encode()).hexdigest()[:12]+'-'+p.name
+              shutil.copyfile(p,pathlib.Path('compiler-kit/jars')/name)
+          PY
+          cp unified/libs/sherpa-onnx-1.13.8.aar compiler-kit/jars/
+          cp "$ANDROID_HOME/platforms/android-35/android.jar" compiler-kit/platform/
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" compiler-kit/tools/
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/d8.jar" compiler-kit/tools/
+          cp "$ANDROID_HOME/build-tools/35.0.0/zipalign" compiler-kit/tools/
+          cp -r unified/build/generated compiler-kit/
+          find compiler-kit -type f -print0 | sort -z | xargs -0 sha256sum > compiler-kit/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with: {name: Rosalina-compilation-kit, path: compiler-kit/, compression-level: 0}
