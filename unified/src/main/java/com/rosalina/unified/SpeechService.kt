@@ -83,6 +83,10 @@ class SpeechService:NativeRpcService() {
         var out:AudioTrack?=null
         try {
             require(am.requestAudioFocus(request)==AudioManager.AUDIOFOCUS_REQUEST_GRANTED){"Audio focus was not granted"}
+            val mediaVolume=am.getStreamVolume(AudioManager.STREAM_MUSIC)
+            val mediaMax=am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            val mediaMuted=runCatching{am.isStreamMute(AudioManager.STREAM_MUSIC)}.getOrDefault(false)
+            require(mediaVolume>0 && !mediaMuted){"Android media volume is muted. Raise Media volume and try again."}
             val minimum=AudioTrack.getMinBufferSize(rate,AudioFormat.CHANNEL_OUT_MONO,AudioFormat.ENCODING_PCM_16BIT)
             require(minimum>0){"Speaker PCM format unsupported"}
             val trackLocal=AudioTrack(
@@ -92,13 +96,21 @@ class SpeechService:NativeRpcService() {
             require(trackLocal.state==AudioTrack.STATE_INITIALIZED){"Android media AudioTrack did not initialize"}
             out=trackLocal;track=trackLocal;trackLocal.setVolume(1f);trackLocal.play()
             require(trackLocal.playState==AudioTrack.PLAYSTATE_PLAYING){"Android media AudioTrack did not enter PLAYING state"}
-            val started=SystemClock.elapsedRealtime();var offset=0;var first=0L
+            val started=SystemClock.elapsedRealtime();var offset=0;var first=0L;var announced=false
             while(offset<pcm.size && !cancelled.get()){
                 currentCoroutineContext().ensureActive()
                 val n=trackLocal.write(pcm,offset,minOf(2048,pcm.size-offset),AudioTrack.WRITE_BLOCKING)
                 check(n>0){"Android media AudioTrack rejected PCM: $n"}
                 if(first==0L)first=SystemClock.elapsedRealtime()-started
                 offset+=n
+                if(!announced){
+                    announced=true
+                    val routeNow=trackLocal.routedDevice?.type ?: -1
+                    emit("playback","start",Bundle().apply{
+                        putInt("route",routeNow);putString("routeLabel",AudioRoutePolicy.label(routeNow));putString("profile",label);putBoolean("pitchApplied",false)
+                        putInt("streamVolume",mediaVolume);putInt("streamMax",mediaMax);putBoolean("streamMuted",mediaMuted)
+                    })
+                }
             }
             val deadline=SystemClock.elapsedRealtime()+maxOf(5000L,offset*1000L/rate+2500L)
             while(!cancelled.get() && (trackLocal.playbackHeadPosition.toLong() and 0xffffffffL)<offset){
@@ -107,13 +119,12 @@ class SpeechService:NativeRpcService() {
                 kotlinx.coroutines.delay(20)
             }
             val actual=trackLocal.routedDevice?.type ?: -1
-            emit("playback","start",Bundle().apply{putInt("route",actual);putString("routeLabel",AudioRoutePolicy.label(actual));putString("profile",label);putBoolean("pitchApplied",false)})
             return Bundle().apply{
                 putLong("firstAudioMs",first);putLong("audioMs",offset*1000L/rate);putLong("elapsedMs",SystemClock.elapsedRealtime()-started)
                 putBoolean("interrupted",cancelled.get());putInt("route",actual);putString("routeLabel",AudioRoutePolicy.label(actual))
                 putInt("preferredRoute",-1);putString("preferredRouteLabel","Android default media route");putBoolean("preferredApplied",false)
                 putInt("audioMode",am.mode);putString("encoding","PCM_16BIT");putString("usage","MEDIA")
-                putInt("streamVolume",am.getStreamVolume(AudioManager.STREAM_MUSIC));putInt("streamMax",am.getStreamMaxVolume(AudioManager.STREAM_MUSIC));putBoolean("streamMuted",runCatching{am.isStreamMute(AudioManager.STREAM_MUSIC)}.getOrDefault(false))
+                putInt("streamVolume",mediaVolume);putInt("streamMax",mediaMax);putBoolean("streamMuted",mediaMuted)
             }
         } finally {
             emit("playback","stop",null)
