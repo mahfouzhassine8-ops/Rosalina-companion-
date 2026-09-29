@@ -123,7 +123,7 @@ internal class LiveAvatarView @JvmOverloads constructor(context: Context, attrs:
         override fun doFrame(frameTimeNanos: Long) {
             if (!running) return
             if (!canAnimate()) { running = false; return }
-            val interval = if (thermal >= 3) 100_000_000L else if (thermal == 2) 50_000_000L else 33_000_000L
+            val interval = if (thermal >= 3) 100_000_000L else if (thermal == 2) 66_000_000L else 50_000_000L
             if (frameTimeNanos - lastFrame >= interval) { lastFrame = frameTimeNanos; invalidate() }
             Choreographer.getInstance().postFrameCallback(this)
         }
