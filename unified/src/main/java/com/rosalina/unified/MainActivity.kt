@@ -424,8 +424,8 @@ class MainActivity:AppCompatActivity() {
 
         val expression=SeekBar(this).apply{max=100;progress=session.prefs.getInt("voice-expression",75).coerceIn(0,100)}
         body.addView(text("Expression strength · subtle → full",13f));body.addView(expression)
-        val pitch=SeekBar(this).apply{max=160;progress=(80+session.prefs.getInt("voice-pitch",0)).coerceIn(0,160)}
-        body.addView(text("Pitch · low ← natural → high · ±8 semitones manual range",13f));body.addView(pitch)
+        val pitch=SeekBar(this).apply{max=160;progress=(80+session.prefs.getInt("voice-pitch",0)).coerceIn(0,160);isEnabled=false}
+        body.addView(text("Pitch · natural compatibility path in this candidate",13f));body.addView(pitch)
         val breath=SeekBar(this).apply{max=60;progress=session.prefs.getInt("voice-breath",0).coerceIn(0,60)}
         body.addView(text("Breathiness · clean → airy/breathy",13f));body.addView(breath)
         val tone=SeekBar(this).apply{max=160;progress=(80+session.prefs.getInt("voice-tone",0)).coerceIn(0,160)}
@@ -440,7 +440,7 @@ class MainActivity:AppCompatActivity() {
 
         val voices=arrayOf("Alloy","Aoede","Bella","Heart · Rosalina default","Jessica","Kore","Nicole","Nova","River","Sarah","Sky")
         val spinner=Spinner(this).apply{adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,voices);setSelection(session.prefs.getInt("speaker",3).coerceIn(0,10))};body.addView(text("Base Rosalina voice identity",13f));body.addView(spinner)
-        body.addView(text("Pitch is changed independently from pace when Android's pitch-preserving playback is available. Breath/tone/rasp are streamed locally with smoothing and clipping protection. Local voice remains available even when online enhancements are disabled or unavailable.",12f,muted))
+        body.addView(text("For Samsung compatibility this candidate keeps Rosalina at her natural pitch while preserving pace, breath, tone, rasp and energy shaping. Local voice remains available even when online enhancements are disabled or unavailable.",12f,muted))
         body.addView(text("Live Voice starts only after you tap Mic. Speaker interruption requires enabled echo cancellation; otherwise use a supported headphone route or tap Mic. Stop ends listening. Classic mode remains available above.",12f,muted))
         body.addView(row(button("Test phone speaker tone"){if(!session.state.value.busy){ensureNotifications();session.testTone()}},button("Test Rosalina voice"){if(!session.state.value.busy){ensureNotifications();session.testVoice()}}))
         body.addView(button("Reset Live learning"){if(!session.state.value.busy)session.resetLiveLearning()})
