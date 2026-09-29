@@ -1,0 +1,35 @@
+name: Rosalina 10018 Voice Java Bridge
+on:
+  push:
+    branches: [rosalina-10015-companion-completion-c2-10018]
+    paths: [.github/workflows/voice3-native-bridge.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bridge:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download official Java bridge only
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 https://repo.maven.apache.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/1.23.2/onnxruntime-android-1.23.2.aar -o runtime.aar
+          mkdir -p bridge
+          sha256sum runtime.aar > bridge/upstream-aar.sha256
+          python3 - <<'PY'
+          import pathlib,zipfile,hashlib,json
+          out=pathlib.Path('bridge'); receipt={}
+          with zipfile.ZipFile('runtime.aar') as z:
+              for name in ['classes.jar','jni/arm64-v8a/libonnxruntime4j_jni.so','jni/x86_64/libonnxruntime4j_jni.so']:
+                  data=z.read(name); target=out/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(data)
+                  receipt[name]=hashlib.sha256(data).hexdigest()
+          (out/'bridge-receipt.json').write_text(json.dumps({'upstreamVersion':'1.23.2','files':receipt,'protectedRuntimeReplaced':False,'androidModelTestPending':True},indent=2))
+          PY
+          for lib in bridge/jni/*/*.so; do readelf -d "$lib"; done > bridge/native-dependencies.txt
+          curl --fail --location --retry 3 https://raw.githubusercontent.com/microsoft/onnxruntime/v1.23.2/LICENSE -o bridge/ONNX-Runtime-LICENSE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Rosalina-10018-Ort-Java-Bridge
+          path: bridge/
+          if-no-files-found: error
