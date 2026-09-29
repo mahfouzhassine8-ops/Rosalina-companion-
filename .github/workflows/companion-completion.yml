@@ -9,7 +9,7 @@ permissions:
   actions: read
 concurrency:
   group: rosalina-10018-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   source:
     if: github.ref == 'refs/heads/rosalina-10018-smooth-motion-voice'

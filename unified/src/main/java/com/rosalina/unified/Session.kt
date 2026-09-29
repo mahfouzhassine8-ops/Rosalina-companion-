@@ -143,6 +143,8 @@ internal class Session private constructor(private val context:Context) {
         expressiveFailed=false
         notice(if(accepted)"Candidate enabled by your device acceptance; compatibility fallback retained" else "Using the protected Android compatibility voice")
     }
+    suspend fun installedSystemVoices()=platformSpeech.installedVoiceNames()
+    fun selectSystemVoice(name:String){if(!state.value.busy)prefs.edit().putString("voice-system-name",name).apply()}
     fun auditionVoiceV3(text:String,delivery:String="",style:String?=null) { if(!state.value.busy)begin(TaskRequest(kind=TaskKind.CHAT,modelKey="voice-v3-test",prompt=text.take(400),uri=delivery,voiceStyle=style)) }
     fun auditionOnlineVoice(text:String,delivery:String="",style:String?=null) {if(!state.value.busy && onlineVoiceSettings.enabled())begin(TaskRequest(kind=TaskKind.CHAT,modelKey="online-voice-test",prompt=text.take(400),uri=delivery,voiceStyle=style))}
     fun toggleMicrophoneMute() {
@@ -166,7 +168,7 @@ internal class Session private constructor(private val context:Context) {
     private fun usePlatformSpeech()=SpeechCompatibility.preferPlatform(Build.MANUFACTURER,Build.VERSION.SDK_INT,nativeSpeechCrashed || prefs.getBoolean("native-tts-crashed",false))
     private fun markNativeSpeechCrash(){nativeSpeechCrashed=true;prefs.edit().putBoolean("native-tts-crashed",true).apply()}
     fun testTone(){if(!state.value.busy)begin(TaskRequest(kind=TaskKind.CHAT,modelKey="tone-test",prompt="speaker tone"))}
-    fun testVoiceText(text:String,delivery:String="",style:String?=null){if(!state.value.busy)begin(TaskRequest(kind=TaskKind.CHAT,modelKey="voice-test",prompt=text.take(400),uri=delivery,voiceStyle=style))}
+    fun testVoiceText(text:String,delivery:String="",style:String?=null,systemVoice:String?=null){if(!state.value.busy)begin(TaskRequest(kind=TaskKind.CHAT,modelKey="voice-test",prompt=text.take(400),uri=delivery,voiceStyle=style,systemVoice=systemVoice))}
     fun testVoice(){if(!state.value.busy)begin(TaskRequest(kind=TaskKind.CHAT,modelKey="voice-test",prompt="Rosalina speaker test. If you can hear this, local text to speech is working."))}
     fun refreshResources(){val r=thermal.read();mutable.update{it.copy(thermal=r.thermal,thermalAt=r.measuredAt,availableBytes=r.available,totalBytes=r.total)}}
     @Synchronized fun begin(r:TaskRequest):Boolean {
@@ -299,7 +301,7 @@ internal class Session private constructor(private val context:Context) {
         val utterance=UUID.randomUUID().toString()
         presentation.preparingSpeech(r.id,utterance,face,"Android compatibility TTS",now(),performance)
         return try {
-            platformSpeech.speak(text,expression.pace,requestUtterance=utterance,volume=performance.volume,observe={event->
+            platformSpeech.speak(text,expression.pace,requestUtterance=utterance,volume=performance.volume,voiceName=r.systemVoice,observe={event->
                 val owns=state.value.id==r.id && presentation.snapshot.taskId==r.id && presentation.snapshot.utteranceId==event.utteranceId
                 if(owns)when(event.event){
                     "preparing"->Unit
