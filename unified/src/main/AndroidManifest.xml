@@ -12,7 +12,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <queries><package android:name="com.samsung.android.thermalguardian" /><package android:name="com.android.samsung.utilityapp" /></queries>
+    <queries><intent><action android:name="android.intent.action.TTS_SERVICE" /></intent><package android:name="com.samsung.android.thermalguardian" /><package android:name="com.android.samsung.utilityapp" /></queries>
     <application android:name=".RosalinaApp" android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/data_extraction_rules" android:extractNativeLibs="true" android:label="Rosalina" android:icon="@drawable/ic_rosalina" android:theme="@style/Theme.Rosalina" android:supportsRtl="true" android:usesCleartextTraffic="false">
         <activity android:name=".MainActivity" android:exported="true" android:resizeableActivity="true" android:windowSoftInputMode="adjustResize" android:launchMode="singleTop">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
@@ -22,6 +22,7 @@
         </service>
         <service android:name=".ChatService" android:exported="false" android:process=":chat" />
         <service android:name=".SpeechService" android:exported="false" android:process=":speech" />
+        <service android:name=".ExpressiveSpeechService" android:exported="false" android:process=":expressive" />
         <service android:name=".ListenService" android:exported="false" android:process=":listen" />
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.files" android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/share_paths" /></provider>
     </application>

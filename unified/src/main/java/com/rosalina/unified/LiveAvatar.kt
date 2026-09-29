@@ -34,6 +34,9 @@ internal object AvatarStateResolver {
 internal object AvatarAsset {
     @Volatile private var image: Bitmap? = null
     @Volatile var status = "Not decoded"; private set
+    @Volatile var isTemplate=false;private set
+    const val TEMPLATE_SHA256="3fd9526712304ab6c9411a4be90dbb7ed7e548d485215944b811694b2c272f40"
+    fun templateAvailable(context:Context)=runCatching{context.assets.open("avatar-v3/approved-reference").close();true}.getOrDefault(false)
     private fun original(context:Context)=File(context.filesDir,"avatar/original-image")
     private fun decodeOriginal(file:File):Bitmap {
         return ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)){decoder,info,_->
@@ -47,18 +50,28 @@ internal object AvatarAsset {
     }
     @Synchronized fun load(context: Context): Bitmap? {
         image?.let { return it }
-        return runCatching {
-            val private=original(context)
-            val decoded=if(private.isFile)decodeOriginal(private) else {
-                val encoded=(0..1).joinToString(""){index->context.assets.open("avatar/$index.b64").bufferedReader().use{it.readText()}}
-                val bytes=Base64.decode(encoded,Base64.DEFAULT)
-                BitmapFactory.decodeByteArray(bytes,0,bytes.size) ?:error("Bundled clean Rosalina portrait decode returned null")
-            }
-            decoded.also {
-                image=it
-                status=(if(private.isFile)"Private original portrait" else "Bundled clean fallback portrait")+" decoded: ${it.width}x${it.height}; local 2-D mesh rig"
-            }
-        }.getOrElse { status = "Avatar decode failed: ${it.javaClass.simpleName}: ${it.message}"; null }
+        val errors=mutableListOf<String>()
+        isTemplate=false
+        val private=original(context)
+        var decoded:Bitmap?=null;var label=""
+        if(private.isFile)runCatching{decodeOriginal(private)}.onSuccess{decoded=it;label="Private original portrait (generic rig)"}
+            .onFailure{errors+="Private portrait: ${it.message}"}
+        if(decoded==null && templateAvailable(context))runCatching {
+            val bytes=context.assets.open("avatar-v3/approved-reference").use{it.readBytes()}
+            require(hex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes))==TEMPLATE_SHA256){"Reference artwork checksum mismatch"}
+            val sheet=BitmapFactory.decodeByteArray(bytes,0,bytes.size) ?:error("Approved reference cannot decode")
+            try {require(sheet.width>=1024 && sheet.height>=1244){"Reference crop dimensions changed"};Bitmap.createBitmap(sheet,0,0,594,1244)}finally{sheet.recycle()}
+        }.onSuccess{decoded=it;isTemplate=true;label="Approved template hero crop"}.onFailure{errors+="Template: ${it.message}"}
+        if(decoded==null)runCatching {
+            val encoded=(0..1).joinToString(""){index->context.assets.open("avatar/$index.b64").bufferedReader().use{it.readText()}}
+            val bytes=Base64.decode(encoded,Base64.DEFAULT)
+            BitmapFactory.decodeByteArray(bytes,0,bytes.size) ?:error("Bundled clean portrait decode returned null")
+        }.onSuccess{decoded=it;label="Bundled clean fallback portrait"}.onFailure{errors+="Fallback: ${it.message}"}
+        image=decoded
+        status=decoded?.let{"$label decoded: ${it.width}x${it.height}; local 2-D mesh; walking/turning assets not supplied"}
+            ?:"Avatar unavailable"
+        if(errors.isNotEmpty())status+="; "+errors.joinToString("; ")
+        return decoded
     }
     /** Copies exact selected encoded bytes into private storage; only the in-memory display decode is sampled. */
     @Synchronized fun importOriginal(context:Context,uri:android.net.Uri):String {
@@ -80,8 +93,8 @@ internal object AvatarAsset {
                 val longest=maxOf(sourceWidth,sourceHeight);val scale=minOf(1f,256f/longest)
                 decoder.setTargetSize((sourceWidth*scale).toInt().coerceAtLeast(1),(sourceHeight*scale).toInt().coerceAtLeast(1))
             };probe.recycle()
-            if(target.exists())target.delete()
-            check(part.renameTo(target)){"Could not finalize the private avatar image"}
+            android.system.Os.rename(part.path,target.path)
+            check(target.isFile){"Could not finalize the private avatar image"}
             image=null;status="Original portrait saved: ${sourceWidth}x${sourceHeight}; reload pending"
             return "Original Rosalina portrait saved privately · ${sourceWidth}×${sourceHeight}"
         } finally { part.delete() }
@@ -96,10 +109,17 @@ internal object AvatarAsset {
 internal class LiveAvatarView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : View(context, attrs) {
     private val density = resources.displayMetrics.density
     private val bitmap = AvatarAsset.load(context)
+    private val template=AvatarAsset.isTemplate
     internal val imageLoaded: Boolean get() = bitmap != null
     internal val sourceWidth: Int get() = bitmap?.width ?: 0
     internal val sourceHeight: Int get() = bitmap?.height ?: 0
     private val rig = AvatarRig()
+    private val templateRig=TemplateRig()
+    private val motionBudget=MotionBudget()
+    private var tier=MotionTier.NORMAL
+    private var presentation:CompanionSnapshot?=null
+    private val privacyCover=Paint().apply{color=Color.rgb(11,12,25)}
+    internal fun qualitySummary()="source=${sourceWidth}x${sourceHeight}; tier=$tier; target fps=${tier.fps}; rendered frames=$renderedFrames; exact walking/turning clips unavailable"
     private val imagePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val bgPaint = Paint().apply { color = Color.rgb(15, 11, 23) }
     private val fadePaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -123,14 +143,14 @@ internal class LiveAvatarView @JvmOverloads constructor(context: Context, attrs:
         override fun doFrame(frameTimeNanos: Long) {
             if (!running) return
             if (!canAnimate()) { running = false; return }
-            val interval = if (thermal >= 3) 100_000_000L else if (thermal == 2) 66_000_000L else 50_000_000L
+            val interval = 1_000_000_000L / tier.fps.coerceAtLeast(1)
             if (frameTimeNanos - lastFrame >= interval) { lastFrame = frameTimeNanos; invalidate() }
-            Choreographer.getInstance().postFrameCallback(this)
+            Choreographer.getInstance().postFrameCallbackDelayed(this,(1000L/tier.fps.coerceAtLeast(1)-2).coerceAtLeast(16))
         }
     }
 
     private fun canAnimate() = active && isAttachedToWindow && isShown && windowVisibility == VISIBLE &&
-        ValueAnimator.areAnimatorsEnabled() && bitmap != null
+        ValueAnimator.areAnimatorsEnabled() && bitmap != null && tier.fps>0
     private fun updateClock() {
         val next = canAnimate()
         if (next == running) return
@@ -145,12 +165,21 @@ internal class LiveAvatarView @JvmOverloads constructor(context: Context, attrs:
     override fun onWindowVisibilityChanged(visibility: Int) { super.onWindowVisibilityChanged(visibility); if (isAttachedToWindow) updateClock() }
     override fun onVisibilityAggregated(isVisible: Boolean) { super.onVisibilityAggregated(isVisible); if (isAttachedToWindow) updateClock() }
 
-    fun bind(task: TaskState) {
-        val next = AvatarStateResolver.resolve(task)
-        val changed = state != next || targetEnergy != task.avatarEnergy
+    fun bind(task: TaskState, events:CompanionSnapshot?=null) {
+        val previousExpression=presentation?.expression
+        presentation=events
+        tier=motionBudget.sample(task.thermal,true,SystemClock.elapsedRealtime())
+        val next = if(events==null)AvatarStateResolver.resolve(task) else when(events.phase){
+            CompanionPhase.IDLE->if(task.error.isNotBlank())AvatarState.ERROR else AvatarState.IDLE
+            CompanionPhase.LISTENING->AvatarState.LISTENING;CompanionPhase.THINKING->AvatarState.THINKING
+            CompanionPhase.SPEAKING->AvatarState.SPEAKING;CompanionPhase.INTERRUPTED->AvatarState.INTERRUPTED}
+
+        val changed = state != next || previousExpression!=events?.expression || (tier!=MotionTier.STATIC && targetEnergy != (events?.energy ?:task.avatarEnergy))
         if (state != next) { state = next; contentDescription = "Rosalina live avatar · ${state.name.lowercase()}" }
-        targetEnergy = task.avatarEnergy.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
+        targetEnergy = (events?.energy ?:task.avatarEnergy).takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
+        if(events!=null && !events.playbackActive){targetEnergy=0f;energy=0f}
         thermal = task.thermal
+        updateClock()
         if (changed && !running) invalidate()
     }
 
@@ -180,11 +209,20 @@ internal class LiveAvatarView @JvmOverloads constructor(context: Context, attrs:
         energy += (targetEnergy - energy) * .28f
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
         bitmap?.let { bmp ->
-            rig.update(seconds, energy, state == AvatarState.LISTENING, state == AvatarState.THINKING,
-                destination.left, destination.top, destination.width(), destination.height(), motion)
             canvas.save(); canvas.clipPath(clipPath)
-            // Preallocated regular mesh: head, hair, shoulders and eyelids move independently.
-            canvas.drawBitmapMesh(bmp, rig.columns, rig.rows, rig.vertices, 0, null, 0, imagePaint)
+            if(template){
+                val expression=when(state){AvatarState.LISTENING->RosalinaExpression.LISTENING;AvatarState.THINKING->RosalinaExpression.THINKING;else->presentation?.expression ?:RosalinaExpression.NEUTRAL}
+                templateRig.update(seconds,energy,expression,destination.left,destination.top,destination.width(),destination.height(),motion,tier.secondary)
+                canvas.drawBitmapMesh(bmp,templateRig.columns,templateRig.rows,templateRig.vertices,0,null,0,imagePaint)
+                // The reference sheet has obsolete navigation and buttons baked into its pixels.
+                // Cover only those UI rectangles; never present the old media tools as app options.
+                fun cover(l:Float,t:Float,r:Float,b:Float){canvas.drawRoundRect(destination.left+l/594f*destination.width(),destination.top+t/1244f*destination.height(),destination.left+r/594f*destination.width(),destination.top+b/1244f*destination.height(),12f*density,12f*density,privacyCover)}
+                cover(13f,237f,173f,524f);cover(85f,1096f,492f,1223f)
+            } else {
+                rig.update(seconds, energy, state == AvatarState.LISTENING, state == AvatarState.THINKING,
+                    destination.left, destination.top, destination.width(), destination.height(), motion)
+                canvas.drawBitmapMesh(bmp, rig.columns, rig.rows, rig.vertices, 0, null, 0, imagePaint)
+            }
             canvas.drawRect(0f, height * .56f, width.toFloat(), height.toFloat(), fadePaint)
             canvas.restore()
         }
@@ -198,8 +236,9 @@ internal class LiveAvatarView @JvmOverloads constructor(context: Context, attrs:
             bitmap == null -> "Avatar unavailable · open Diagnostics"
             state == AvatarState.ERROR -> "Check the status message"
             !ValueAnimator.areAnimatorsEnabled() -> "System animations are off"
-            state == AvatarState.SPEAKING -> "Motion follows voice energy"
-            else -> "Local animated portrait"
+            state == AvatarState.SPEAKING -> if(presentation?.energySource=="unavailable")"Playback active · energy unavailable" else "Playback-linked mouth motion"
+            tier.ordinal>=MotionTier.REDUCED.ordinal -> "Reduced motion"
+            else -> "Local 2-D portrait"
         }
         // Keep state text above the bottom Companion glass instead of drawing it behind controls.
         canvas.drawText(title, clip.left + 14f * density, clip.top + 27f * density, labelPaint)

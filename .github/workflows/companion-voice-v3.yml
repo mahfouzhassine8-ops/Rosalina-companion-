@@ -1,0 +1,126 @@
+name: Rosalina Companion Voice V3 Candidate
+on:
+  push:
+    branches: [rosalina-10015-companion-voice-v3-c1]
+    paths-ignore: [tools/voice_v3_pack.py, .github/workflows/voice-v3-candidate-pack.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: companion-v3-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  preservation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0, persist-credentials: false}
+      - run: python3 tools/verify_companion_preservation.py
+      - run: |
+          mkdir -p source-backup
+          git archive --format=zip HEAD -o source-backup/Rosalina-10017-source.zip
+          git rev-parse HEAD > source-backup/commit.txt
+          cp COMPANION_V3_ACCEPTANCE.md source-backup/
+      - uses: actions/upload-artifact@v4
+        with: {name: CompanionV3-source, path: source-backup/}
+  android:
+    needs: preservation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0, persist-credentials: false}
+      - uses: actions/checkout@v4
+        with: {repository: ggml-org/llama.cpp, ref: a97cce86a8addeb9f40cba7a261c94b1f0c576cb, path: third_party/llama.cpp, persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;29.0.13113456" "cmake;3.31.6"
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.9', cache-read-only: false}
+      - uses: actions/download-artifact@v4
+        with:
+          name: Rosalina-native-cpu
+          path: unified/src/main/jniLibs/arm64-v8a
+          run-id: 36486880864
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: Rosalina-native-vulkan
+          path: unified/src/main/jniLibs/arm64-v8a
+          run-id: 36486880864
+          github-token: ${{ github.token }}
+      - run: bash tools/prepare_companion_ci.sh release
+      - name: Release tests and ARM64 build
+        run: |
+          set -o pipefail
+          gradle :unified:testReleaseUnitTest :unified:assembleRelease --max-workers=2 --stacktrace 2>&1 | tee qa/gradle-build.log
+      - name: Verify unsigned candidate
+        run: |
+          set -euo pipefail
+          mkdir -p deliverables/signing-tools
+          cp unified/build/outputs/apk/release/unified-release-unsigned.apk deliverables/Rosalina-10017-ARM64-UNSIGNED.apk
+          python3 tools/verify_unified_apk.py deliverables/Rosalina-10017-ARM64-UNSIGNED.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging deliverables/*.apk > qa/package.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump xmltree deliverables/*.apk AndroidManifest.xml > qa/manifest.txt
+          ! grep -q ttsfixture qa/manifest.txt
+          grep -q expressive qa/manifest.txt
+          grep -q "versionCode='10017'" qa/package.txt
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" deliverables/signing-tools/
+          cp "$ANDROID_HOME/build-tools/35.0.0/zipalign" deliverables/signing-tools/
+          cp -r qa deliverables/
+          cp COMPANION_V3_ACCEPTANCE.md SIGNING.md deliverables/
+          git rev-parse HEAD > deliverables/commit.txt
+          sha256sum deliverables/*.apk > deliverables/SHA256SUMS-UNSIGNED.txt
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with: {name: CompanionV3-10017-ARM64-unsigned, path: deliverables/, if-no-files-found: error}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: CompanionV3-release-QA
+          path: |
+            unified/build/test-results/
+            qa/
+  emulator:
+    needs: preservation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0, persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.9', cache-read-only: false}
+      - run: bash tools/prepare_companion_ci.sh
+      - name: Compile debug and instrumentation
+        run: |
+          set -o pipefail
+          gradle :unified:testDebugUnitTest :unified:assembleDebug :unified:assembleDebugAndroidTest -PunifiedEmulatorQa=true --max-workers=2 --stacktrace 2>&1 | tee qa/debug-build.log
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_5
+          disable-animations: false
+          script: bash tools/companion_emulator_qa.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: CompanionV3-emulator-QA
+          path: |
+            unified/build/outputs/androidTest-results/
+            unified/build/test-results/
+            qa/

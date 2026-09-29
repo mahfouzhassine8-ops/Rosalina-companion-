@@ -82,7 +82,7 @@ internal class EngineRpc(private val context:Context,private val type:Class<out 
                 val graceful=died!=null && withTimeoutOrNull(750){died.await();true}==true
                 if(!graceful && m.binder.isBinderAlive) {
                     withContext(Dispatchers.IO) {
-                        val suffix=when(type){ChatService::class.java->":chat";ListenService::class.java->":listen";else->":speech"}
+                        val suffix=when(type){ChatService::class.java->":chat";ListenService::class.java->":listen";ExpressiveSpeechService::class.java->":expressive";else->":speech"}
                         val expected=context.packageName+suffix
                         val cmd=runCatching{File("/proc/$oldPid/cmdline").readText().substringBefore('\u0000')}.getOrDefault("")
                         if(oldPid>0 && cmd==expected)android.os.Process.killProcess(oldPid)

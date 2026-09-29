@@ -30,7 +30,7 @@ class CompanionAuditTest {
 
     private fun click(activity: MainActivity, text: String) {
         val button = descendants(activity.window.decorView).filterIsInstance<Button>()
-            .firstOrNull { it.text.toString() == text }
+            .firstOrNull { it.text.toString() == text || it.contentDescription?.toString() == text }
         assertNotNull("Missing control: $text", button)
         assertTrue("Disabled control: $text", button!!.isEnabled)
         assertTrue(button.performClick())
@@ -39,16 +39,16 @@ class CompanionAuditTest {
     @Test fun chatLiveSwitchRepeatedlyThenRecreate() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             repeat(5) {
-                scenario.onActivity { click(it, "Live") }
+                scenario.onActivity { click(it, "Live Voice") }
                 InstrumentationRegistry.getInstrumentation().waitForIdleSync()
                 Thread.sleep(120)
                 scenario.onActivity { a ->
                     assertTrue(descendants(a.window.decorView).filterIsInstance<Button>()
-                        .any { it.text.toString().contains("Start / Speak") })
+                        .any { it.text.toString().equals("Start") })
                     click(a, "Chat")
                 }
             }
-            scenario.onActivity { click(it, "Live") }
+            scenario.onActivity { click(it, "Live Voice") }
             scenario.recreate()
             scenario.onActivity { click(it, "Chat") }
         }
@@ -59,7 +59,7 @@ class CompanionAuditTest {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { a ->
                 assertTrue(descendants(a.window.decorView).filterIsInstance<Button>()
-                    .any { it.text.toString().contains("Start / Speak") })
+                    .any { it.text.toString().equals("Start") })
             }
             scenario.recreate()
             scenario.onActivity { click(it, "Chat") }
@@ -68,7 +68,7 @@ class CompanionAuditTest {
 
     @Test fun liveEndBeforeStartingDoesNotCrash() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            scenario.onActivity { a -> click(a, "Live"); click(a, "■  End") }
+            scenario.onActivity { a -> click(a, "Live Voice"); click(a, "End") }
             scenario.onActivity { click(it, "Chat") }
         }
     }

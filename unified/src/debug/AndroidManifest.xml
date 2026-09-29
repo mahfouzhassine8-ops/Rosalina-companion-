@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Debug-only synthetic PCM fixture. This service is NEVER packaged in the release APK. -->
+        <service android:name="com.rosalina.unified.testspeech.OfflineFixtureTts" android:exported="true" android:process=":ttsfixture">
+            <intent-filter><action android:name="android.intent.action.TTS_SERVICE" /></intent-filter>
+        </service>
+    </application>
+</manifest>
