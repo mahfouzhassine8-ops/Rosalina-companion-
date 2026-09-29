@@ -20,10 +20,10 @@ class GenerationService:Service() {
         val flags=PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val open=PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java),flags)
         val stop=PendingIntent.getService(this,1,Intent(this,GenerationService::class.java).setAction("STOP").putExtra("task",s.id),flags)
-        val detail="${s.elapsedMs/1000}s elapsed · ${if(s.eta.isBlank())"" else s.eta+" · "}Thermal: ${ThermalPolicy.label(s.thermal)}"
+        val detail=when(s.kind){TaskKind.VOICE->"Live voice · on device";TaskKind.CHAT->"Text chat · on device";TaskKind.IMPORT->"Local model import";else->"${s.elapsedMs/1000}s elapsed"}
         return NotificationCompat.Builder(this,"rosalina-tasks").setSmallIcon(R.drawable.ic_rosalina)
             .setContentTitle("Rosalina · ${s.kind?.name?.lowercase()?.replaceFirstChar{it.uppercase()} ?:"Local task"}")
-            .setContentText(s.stage).setSubText(detail).setStyle(NotificationCompat.BigTextStyle().bigText(s.stage+"\n"+detail+if(s.workHint.isBlank())"" else "\n${s.workHint}"))
+            .setContentText(s.stage).setSubText(detail).setStyle(NotificationCompat.BigTextStyle().bigText(s.stage+"\n"+detail))
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setProgress(100,s.percent ?:0,s.percent==null).addAction(0,"Stop",stop).build()
     }
@@ -50,7 +50,7 @@ class GenerationService:Service() {
                 var previous=""
                 while(isActive) {
                     val s=session.state.value
-                    val key="${s.kind}|${s.stage}|${s.percent}|${s.elapsedMs/1000}|${s.thermal}|${s.stopping}"
+                    val key="${s.kind}|${s.stage}|${s.percent}|${s.elapsedMs/5_000}|${s.stopping}"
                     if(s.busy && s.id==ownerId && !finishing && key!=previous){runCatching{getSystemService(NotificationManager::class.java).notify(100,notification(s))};previous=key}
                     delay(1000)
                 }
