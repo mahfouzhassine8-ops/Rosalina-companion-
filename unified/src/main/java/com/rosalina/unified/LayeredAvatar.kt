@@ -167,7 +167,9 @@ internal class PortraitAvatarRenderer(val bitmap:Bitmap) {
     private val rightArm=polygon(620f,338f,657f,334f,695f,445f,739f,556f,784f,664f,811f,728f,848f,787f,860f,841f,826f,855f,798f,817f,779f,763f,742f,704f,700f,616f,668f,531f,637f,449f)
     private val hairLeft=polygon(311f,298f,360f,284f,349f,380f,310f,454f,292f,553f,257f,601f,222f,564f,213f,493f,254f,397f)
     private val hairRight=polygon(653f,285f,683f,295f,704f,363f,747f,462f,782f,540f,782f,604f,747f,611f,714f,567f,711f,493f,679f,420f)
-    private val cuts=Path().apply{addPath(head);addPath(leftArm);addPath(rightArm);addPath(hairLeft);addPath(hairRight)}
+    private fun inset(p:Path,x:Float,y:Float)=Path(p).apply{transform(Matrix().apply{setScale(.98f,.98f,x,y)})}
+    // Overlap source pixels at each joint to avoid antialiased clip cracks at rest.
+    private val cuts=Path().apply{addPath(inset(head,520f,150f));addPath(inset(leftArm,285f,585f));addPath(inset(rightArm,743f,589f));addPath(inset(hairLeft,292f,445f));addPath(inset(hairRight,716f,445f))}
     private fun part(c:Canvas,clip:Path,rotation:Float,x:Float,y:Float){c.save();c.rotate(rotation,x,y);c.clipPath(clip);c.drawBitmap(bitmap,0f,0f,paint);c.restore()}
     fun draw(c:Canvas,width:Int,height:Int,p:RigPose){
         skin.shader=LinearGradient(0f,0f,width.toFloat(),height.toFloat(),Color.rgb(13,15,29),Color.rgb(33,21,45),Shader.TileMode.CLAMP)
@@ -203,7 +205,7 @@ internal class PortraitAvatarRenderer(val bitmap:Bitmap) {
     private fun eye(c:Canvas,x:Float,y:Float,openness:Float){
         val closed=1f-openness
         if(closed<.12f)return
-        skin.shader=LinearGradient(x,y-15f,x,y+20f,Color.rgb(234,188,172),Color.rgb(250,220,201),Shader.TileMode.CLAMP)
+        skin.shader=LinearGradient(x,y-15f,x,y+20f,bitmap.getPixel(520,145),bitmap.getPixel(x.toInt(),180),Shader.TileMode.CLAMP)
         if(openness<.16f){
             c.drawOval(x-25f,y-16f,x+25f,y+19f,skin);skin.shader=null
             ink.color=Color.rgb(69,36,37);ink.strokeWidth=2.8f
