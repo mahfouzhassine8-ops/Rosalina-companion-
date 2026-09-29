@@ -480,14 +480,24 @@ internal class Session private constructor(private val context:Context) {
                     val interrupted=AtomicBoolean(false)
                     val responseDone=AtomicBoolean(false)
                     val recorded=AtomicReference<VoiceRecording?>(null)
+                    val turnProfile=capability()
                     val response=async{performChat(r,transcript,true)}
-                    val next=async {
+                    val next=if(turnProfile.overlapListening)async {
                         input.capture(::manual,::finished,{responseDone.get()}) {
                             interrupted.set(true)
                             speech.interruptNow()
-                            update(r.id){it.copy(stage="Listening · LIVE · interrupted · finishing thought silently",voiceStage="",avatarEnergy=0f)}
+                            update(r.id){it.copy(stage="Listening · LIVE · interrupted",voiceStage="",avatarEnergy=0f)}
                         }?.also{recorded.set(it)}
-                    }
+                    } else null
+                    val interruptWatch=if(next==null)launch {
+                        while(isActive && !responseDone.get()) {
+                            if(voiceInterrupt) {
+                                voiceInterrupt=false;interrupted.set(true);speech.interruptNow()
+                                response.cancel(CancellationException("User requested interruption"))
+                            }
+                            delay(60)
+                        }
+                    } else null
                     try {
                         try{response.await()}catch(e:CancellationException){currentCoroutineContext().ensureActive();if(!interrupted.get())throw e}
                         finally {
@@ -499,8 +509,7 @@ internal class Session private constructor(private val context:Context) {
                         learner.recordTurn(interrupted.get(),lastChatFirstTextMs)
                         liveMetrics=liveWarmMetrics+"\n"+learner.snapshot().summary()+"\n"+OnlineEnhancements.state(context,prefs).summary()
                         previousOutput=snapshot.lastOrNull{it.first=="Rosalina"}?.second.orEmpty()
-                        responseDone.set(true)
-                        interruptWatch?.cancelAndJoin()
+                        responseDone.set(true);interruptWatch?.cancelAndJoin()
                         update(r.id){it.copy(stage="Listening · LIVE · your turn",answer="",voiceStage="",backend="${turnProfile.label} · Live ready")}
                         pending=next?.await() ?: input.capture(::manual,::finished,{true}){}
                         recorded.set(null)
