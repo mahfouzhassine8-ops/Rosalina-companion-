@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 mkdir -p qa
-trap 'adb logcat -d > qa/emulator-logcat.txt 2>/dev/null || true; adb shell run-as com.rosalina.unified tar -cf - files/audit-qa > qa/android-evidence.tar 2>/dev/null || true' EXIT
+trap 'adb logcat -d > qa/emulator-logcat.txt 2>/dev/null || true; if [ ! -s qa/android-evidence.tar ]; then adb shell run-as com.rosalina.unified tar -cf - files/audit-qa > qa/android-evidence.tar 2>/dev/null || true; fi' EXIT
 adb shell settings put global animator_duration_scale 1
 adb shell settings put global transition_animation_scale 1
 adb shell settings put global window_animation_scale 1
