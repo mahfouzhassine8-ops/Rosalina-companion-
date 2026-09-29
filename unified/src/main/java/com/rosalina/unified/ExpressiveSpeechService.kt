@@ -45,8 +45,8 @@ class ExpressiveSpeechService:NativeRpcService() {
         emit("stage","Synthesizing local expressive voice candidate",null)
         val config=GenerationConfig(referenceAudio=reference,referenceSampleRate=sampleRate,numSteps=5,
             extra=mapOf("max_reference_audio_len" to "10.0","seed" to "42"))
-        // Keep the JNI callback trivial. No DSP, exceptions, UI or AudioTrack calls may cross this callback.
-        val generated=e.generateWithConfigAndCallback(text,config){if(cancelled.get())0 else 1}
+        // JNI requires a typed FloatArray -> boxed Integer bridge, not an indy lambda.
+        val generated=e.generateWithConfigAndCallback(text,config,NativeSpeechCallback(cancelled))
         currentCoroutineContext().ensureActive();check(!cancelled.get()){"Candidate speech cancelled"}
         val synthesisMs=SystemClock.elapsedRealtime()-started
         val samples=generated.samples;val rate=generated.sampleRate
