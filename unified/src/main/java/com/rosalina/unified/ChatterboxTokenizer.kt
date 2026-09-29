@@ -11,7 +11,9 @@ internal class ChatterboxTokenizer(file:File) {
     private val ranks=HashMap<Pair<String,String>,Int>()
     private val special=HashMap<String,Long>()
     private val bytesToChars=Array(256){""}
-    private val words=Pattern.compile("'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+",Pattern.UNICODE_CHARACTER_CLASS)
+    // Android uses Unicode classes by default and rejects UNICODE_CHARACTER_CLASS.
+    // Explicit whitespace properties also preserve the same behavior in desktop tests.
+    private val words=Pattern.compile("'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\p{IsWhite_Space}\\p{L}\\p{N}]+|\\p{IsWhite_Space}+(?!\\P{IsWhite_Space})|\\p{IsWhite_Space}+")
     private val specialPattern:Pattern
     private val cache=object:LinkedHashMap<String,List<Long>>(256,.75f,true){override fun removeEldestEntry(e:MutableMap.MutableEntry<String,List<Long>>?)=size>512}
     init {
