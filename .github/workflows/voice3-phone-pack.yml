@@ -1,0 +1,49 @@
+name: Rosalina Voice3 Phone Pack
+on:
+  push:
+    branches: [rosalina-10015-companion-completion-c2-10018]
+    paths: [.github/workflows/voice3-phone-pack.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  pack:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Rosalina-Chatterbox-Turbo-local-candidate
+          path: original
+          run-id: 36539019432
+          github-token: ${{ github.token }}
+      - name: Remove unused reference encoder and losslessly compress the phone pack
+        run: |
+          python3 - <<'PY'
+          import pathlib,zipfile,json,hashlib
+          src=next(pathlib.Path('original').glob('*.zip'))
+          out=pathlib.Path('phone');out.mkdir()
+          qa=pathlib.Path('receipt');qa.mkdir()
+          with zipfile.ZipFile(src) as z:
+              manifest=json.loads(z.read('model-manifest.json'))
+              manifest['files']={name:digest for name,digest in manifest['files'].items() if 'speech_encoder_quantized' not in name}
+              manifest['phonePackaging']='Original licensed reference conditioning retained; unused reference-encoder graphs omitted. No model quantization or audio changes.'
+              data=json.dumps(manifest,sort_keys=True,indent=2).encode()
+              (qa/'chatterbox-manifest.json').write_bytes(data)
+              with zipfile.ZipFile(out/'Rosalina-Chatterbox-Turbo-Q4-Phone.zip','w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as dst:
+                  for name,digest in sorted(manifest['files'].items()):
+                      contents=z.read(name)
+                      assert hashlib.sha256(contents).hexdigest()==digest,name
+                      dst.writestr(name,contents)
+                  dst.writestr('model-manifest.json',data)
+          pack=out/'Rosalina-Chatterbox-Turbo-Q4-Phone.zip'
+          receipt={'bytes':pack.stat().st_size,'sha256':hashlib.sha256(pack.read_bytes()).hexdigest(),'manifestSha256':hashlib.sha256(data).hexdigest(),'phoneAccepted':False}
+          (qa/'phone-pack-receipt.json').write_text(json.dumps(receipt,indent=2))
+          assert pack.stat().st_size<530000000,receipt
+          print(receipt)
+          PY
+      - uses: actions/upload-artifact@v4
+        with: {name: Rosalina-Chatterbox-Turbo-Phone-Pack, path: phone/, compression-level: 0}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: Rosalina-Chatterbox-Phone-Pack-Receipt, path: receipt/}
