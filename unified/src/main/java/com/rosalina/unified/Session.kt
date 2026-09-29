@@ -27,7 +27,7 @@ internal class Session private constructor(private val context:Context) {
     companion object {
         @Volatile private var instance:Session?=null
         fun get(context:Context):Session=instance ?:synchronized(this){instance ?:Session(context.applicationContext).also{instance=it}}
-        const val DEFAULT_SYSTEM="You are Rosalina, a private on-device assistant. Be helpful, practical, direct, and clear. Do not claim internet access. The application can route explicit create, edit and animate requests to its local engines."
+        const val DEFAULT_SYSTEM="You are Rosalina, a private on-device assistant optimized for text chat and live voice. Be helpful, practical, direct, conversational, and clear. Do not claim internet access or capabilities that are not available in the current app."
     }
     val prefs=context.getSharedPreferences("rosalina-unified",Context.MODE_PRIVATE)
     val models=ModelStore(context)
@@ -77,12 +77,11 @@ internal class Session private constructor(private val context:Context) {
     fun prepareChat() {
         if(state.value.busy || state.value.quarantined || models.path(ModelKey.CHAT)==null)return
         if(chat.pid>0 && warmSystem==prefs.getString("system",DEFAULT_SYSTEM))return
-        if(ThermalPolicy.blocks(state.value.thermal))return
         begin(TaskRequest(kind=TaskKind.CHAT,modelKey="prepare"))
     }
     private suspend fun warmChat(r:TaskRequest) {
         val res=thermal.read()
-        require(!res.low && !ThermalPolicy.blocks(res.thermal)){"Chat preparation deferred: Android reports memory or thermal pressure"}
+        require(!res.low){"Chat preparation deferred: Android reports low memory"}
         chatNeedsReset=true
         val result=chat.call(Bundle().apply{putString("operation","prepare");putString("model",models.requirePath(ModelKey.CHAT).path);putString("system",prefs.getString("system",DEFAULT_SYSTEM))}){event->
             if(event.getString("type")=="stage")update(r.id){it.copy(stage=event.getString("text").orEmpty(),pid=event.getInt("pid"),backend="Qwen · preparing preserved CPU engine")}
@@ -119,6 +118,7 @@ internal class Session private constructor(private val context:Context) {
     fun resetLiveLearning(){learner.reset();notice("Adaptive Live learning reset")}
     fun refreshResources(){val r=thermal.read();mutable.update{it.copy(thermal=r.thermal,thermalAt=r.measuredAt,availableBytes=r.available,totalBytes=r.total)}}
     @Synchronized fun begin(r:TaskRequest):Boolean {
+        if(r.kind in listOf(TaskKind.CREATE,TaskKind.EDIT,TaskKind.ANIMATE)){notice("Photo and video tools are inactive in Chat + Live Focus");return false}
         if(state.value.quarantined){notice("Force-stop Rosalina before starting another worker");return false}
         if(!lease.acquire(r.id))return false
         request=r;stopReason="";finishListening=false;voiceInterrupt=false;probeLog=""
@@ -168,7 +168,7 @@ internal class Session private constructor(private val context:Context) {
                         stop("Resource monitoring failed; work stopped safely");break
                     }
                     update(r.id){it.copy(elapsedMs=SystemClock.elapsedRealtime()-start,availableBytes=res.available,totalBytes=res.total,thermal=res.thermal,thermalAt=res.measuredAt)}
-                    if(ThermalPolicy.blocks(res.thermal) && r.kind!=TaskKind.IMPORT){stop("Stopped safely: Android reported ${ThermalPolicy.label(res.thermal)} heat");break}
+                    if(r.kind in listOf(TaskKind.CREATE,TaskKind.EDIT,TaskKind.ANIMATE) && ThermalPolicy.blocks(res.thermal)){stop("Stopped safely: Android reported ${ThermalPolicy.label(res.thermal)} heat");break}
                     if(SystemClock.elapsedRealtime()-savedAt>=10000){runCatching{atomicText(File(context.filesDir,"last-diagnostics.txt"),diagnostics())};savedAt=SystemClock.elapsedRealtime()}
                     delay(1000)
                 }
@@ -350,12 +350,6 @@ internal class Session private constructor(private val context:Context) {
                 if(recording.duringSpeakerOutput && EchoText.resemblesOutput(transcript,previousOutput)) {
                     update(r.id){it.copy(stage="Speaker echo ignored · listening again")};continue
                 }
-                val routed=Route.kind(transcript)
-                if(routed!=TaskKind.CHAT) {
-                    addTurn("You",transcript);input.close();capture=null;voiceActive=false
-                    val aspect=prefs.getString("aspect","256×256").orEmpty().split('×')
-                    render(r.copy(kind=routed,prompt=transcript,photo=prefs.getString("photo","").orEmpty(),seconds=Route.seconds(transcript),width=aspect.getOrNull(0)?.toIntOrNull() ?:256,height=aspect.getOrNull(1)?.toIntOrNull() ?:256,backend=prefs.getString("render-backend","auto") ?:"auto",profile=if(prefs.getBoolean("standard",false))RenderProfile.Standard else RenderProfile.Draft));return
-                }
                 supervisorScope {
                     val interrupted=AtomicBoolean(false)
                     val responseDone=AtomicBoolean(false)
@@ -452,12 +446,6 @@ internal class Session private constructor(private val context:Context) {
 
                 if(recording.duringSpeakerOutput && EchoText.resemblesOutput(transcript,previousOutput)) {
                     update(r.id){it.copy(stage="Listening · LIVE · speaker echo ignored")};continue
-                }
-                val routed=Route.kind(transcript)
-                if(routed!=TaskKind.CHAT) {
-                    addTurn("You",transcript);input.close();capture=null;voiceActive=false
-                    val aspect=prefs.getString("aspect","256×256").orEmpty().split('×')
-                    render(r.copy(kind=routed,prompt=transcript,photo=prefs.getString("photo","").orEmpty(),seconds=Route.seconds(transcript),width=aspect.getOrNull(0)?.toIntOrNull() ?:256,height=aspect.getOrNull(1)?.toIntOrNull() ?:256,backend=prefs.getString("render-backend","auto") ?:"auto",profile=if(prefs.getBoolean("standard",false))RenderProfile.Standard else RenderProfile.Draft));return@coroutineScope
                 }
 
                 supervisorScope {
