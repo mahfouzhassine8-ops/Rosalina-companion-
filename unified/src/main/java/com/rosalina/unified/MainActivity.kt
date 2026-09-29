@@ -68,8 +68,15 @@ class MainActivity:AppCompatActivity() {
     private val controls=mutableListOf<View>()
     private val pickModel=registerForActivityResult(ActivityResultContracts.OpenDocument()){uri->if(uri!=null){runCatching{contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION)};session.begin(TaskRequest(kind=TaskKind.IMPORT,modelKey=session.prefs.getString("pending-model",ModelKey.CHAT.name).orEmpty(),uri=uri.toString()))}}
     private val pickPhoto=registerForActivityResult(ActivityResultContracts.OpenDocument()){uri->if(uri!=null)session.importPhoto(uri)}
+    private val pickAvatar=registerForActivityResult(ActivityResultContracts.OpenDocument()){uri->
+        if(uri!=null)lifecycleScope.launch {
+            val message=withContext(Dispatchers.IO){runCatching{AvatarAsset.importOriginal(this@MainActivity,uri)}}
+            message.onSuccess{session.notice(it);if(section==ShellSection.COMPANION)buildPane()}
+                .onFailure{session.notice("Avatar import failed: ${it.message}")}
+        }
+    }
     private val notificationPermission=registerForActivityResult(ActivityResultContracts.RequestPermission()){}
-    private val bluetoothPermission=registerForActivityResult(ActivityResultContracts.RequestPermission()){allowed->session.prefs.edit().putBoolean("bluetooth-permission-asked",true).apply();if(!allowed)session.notice("Nearby devices permission declined · Live Voice will use Android default audio routing");continueVoiceAfterBluetooth()}
+    private val bluetoothPermission=registerForActivityResult(ActivityResultContracts.RequestPermission()){allowed->session.prefs.edit().putBoolean("bluetooth-permission-asked",true).apply();if(!allowed)session.notice("Nearby devices permission declined · Live Voice will use wired/USB audio or the phone speaker");continueVoiceAfterBluetooth()}
     private val microphonePermission=registerForActivityResult(ActivityResultContracts.RequestPermission()){allowed->if(allowed)session.interruptAndListen()else session.notice("Microphone permission declined; text chat remains available")}
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState)
@@ -196,7 +203,8 @@ class MainActivity:AppCompatActivity() {
         drafts.flush();avatar?.setActive(false);previewJobs.values.forEach{it.cancel()};previewJobs.clear();liveMic=null
         content.removeAllViews();controls.clear();preview=null;reference=null;resultLabel=null;chatList=null;chatScroll=null;streaming=null;avatar=null;liveText="";lastResult="";lastPhoto="";rendered=emptyList()
         refreshRail();syncMode()
-        session.prefs.edit().putString("last-ui-transition","${System.currentTimeMillis()} · ${section.name} / ${companionMode.name} / ${photoMode.name}").apply()
+        val transitionDetail=when(section){ShellSection.COMPANION->companionMode.name;ShellSection.PHOTO->photoMode.name;ShellSection.ANIMATE->"MOTION";ShellSection.SETTINGS_MODELS->"SETTINGS"}
+        session.prefs.edit().putString("last-ui-transition","${System.currentTimeMillis()} · ${section.name} / $transitionDetail").apply()
         when(section) {
             ShellSection.COMPANION->buildCompanionPane()
             ShellSection.PHOTO->buildPhotoPane()
@@ -388,7 +396,9 @@ class MainActivity:AppCompatActivity() {
         val handsFree=Switch(this).apply{text="Hands-free interruption in Voice mode";setTextColor(ink);isChecked=session.prefs.getBoolean("hands-free",true)};body.addView(handsFree)
         val liveVoice=Switch(this).apply{text="Live conversation mode · keep local voice engines warm";setTextColor(ink);isChecked=session.prefs.getBoolean("live-voice",true)};body.addView(liveVoice)
         val liveAvatar=Switch(this).apply{text="Live avatar · show Rosalina in Chat and Voice";setTextColor(ink);isChecked=session.prefs.getBoolean("live-avatar",true)};body.addView(liveAvatar)
-        body.addView(text("Your locked portrait uses localized 2-D head, hair, breathing and blink motion. Speech movement follows audio energy, not phonemes. Motion pauses in the background or when Android animations are disabled.",11f,muted))
+        body.addView(text("The old 441×640 repository JPEG is damaged and is deliberately not used. Until the exact original is selected, Rosalina uses the clean 180×261 fallback. Choose your original Rosalina image for full source fidelity; its encoded bytes are copied unchanged into private app storage and only the display decode is memory-sized.",11f,muted))
+        body.addView(row(button(if(AvatarAsset.hasPrivateOriginal(this))"Replace original HD portrait" else "Choose original HD portrait"){pickAvatar.launch(arrayOf("image/*"))},button("Restore bundled portrait"){session.notice(AvatarAsset.restoreBundled(this));if(section==ShellSection.COMPANION)buildPane()}))
+        body.addView(text("Localized 2-D head, hair, breathing and blink motion remains. Speech movement follows actual playback energy, not phonemes. Motion pauses in the background or when Android animations are disabled.",11f,muted))
         val liveEndpoint=SeekBar(this).apply{max=850;progress=(session.prefs.getInt("live-endpoint-ms",820)-550).coerceIn(0,850)}
         body.addView(text("Live turn timing · quicker ← pause before Rosalina answers → more patient",13f));body.addView(liveEndpoint)
         body.addView(text("Live mode keeps Qwen, Whisper and Rosalina's voice in separate local processes during the session. It listens while she speaks and supports barge-in. If free RAM is too low, use Classic Voice V2.",12f,muted))
