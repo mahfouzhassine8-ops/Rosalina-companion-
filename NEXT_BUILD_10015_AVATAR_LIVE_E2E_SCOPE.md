@@ -130,7 +130,89 @@ Examples:
 
 This is behavior mapping, not a new AI model. Keep it deterministic enough to debug.
 
-# 8. LIVE VOICE SCREEN
+# 8. VOICE V3 / HUMANIZATION
+
+The next build must include a dedicated voice-humanization pass so Rosalina does not sound like a generic phone reader.
+
+Primary objective:
+- Make Rosalina sound conversational, emotionally responsive, warm, natural, and alive while preserving the phone-proven 10015 speech reliability.
+
+Architecture:
+- Keep the Samsung-safe Android system TTS path from 10015 as the mandatory compatibility fallback.
+- Add or integrate a more expressive local primary speech path only if it is stable on the target phone.
+- If the expressive local engine fails, crashes, overheats the phone, or cannot meet Live latency, fall back automatically to Android system TTS without breaking Chat or Live.
+- Do not remove the working Android TTS compatibility path.
+- Do not require cloud speech or the Mac.
+
+Humanization behaviors:
+- Natural sentence rhythm
+- Context-aware pacing
+- Natural pauses and hesitation
+- Emphasis on meaningful words
+- Softer and louder delivery where appropriate
+- Breathier delivery where appropriate
+- Whisper-capable delivery where supported
+- Small sighs
+- Small laughs / chuckles
+- Warm affectionate tone
+- Playful tone
+- Teasing tone
+- Reassuring tone
+- Thinking/uncertain delivery
+- Excited delivery
+- Calm delivery
+- Emotionally restrained delivery when the conversation calls for it
+
+The voice must not sound like every sentence uses the same speed, pitch, energy, or cadence.
+
+Expression synchronization:
+- Voice tone, face expression, posture, gesture intensity and lip sync should agree with one another.
+- Happy voice -> Happy expression / lighter gesture.
+- Teasing voice -> Teasing expression / playful restrained movement.
+- Reassuring voice -> softer expression / slower movement.
+- Thinking voice -> Thinking expression / reduced gesture.
+- Sad or subdued voice -> restrained body motion and softer delivery.
+- Interrupted -> speech stops, lip sync stops, gesture stops, Interrupted state appears immediately.
+
+Mature/flirty personality:
+- Allow a clearly adult, mature, affectionate and flirty conversational style.
+- Allow suggestive teasing, romantic language, intimate tone, breathy delivery, playful reactions, affectionate nicknames, and non-explicit sensual vocal reactions.
+- Keep this behavior optional/configurable and context-sensitive.
+- Do not make flirtiness the default for every conversation.
+- Do not implement explicit sexual moaning or graphic sexual dirty-talk behavior.
+
+Voice controls:
+- Preserve useful voice pace control.
+- Expose only controls that the active speech engine can truthfully support.
+- If a control is unavailable on the Samsung compatibility path, disable or hide it instead of pretending it works.
+- Prefer a small set of meaningful controls over a large set of cosmetic sliders.
+
+Voice performance rules:
+- Conversation reliability outranks voice effects.
+- If thermal or memory pressure increases, reduce expensive voice styling before degrading Whisper or Qwen.
+- Do not load multiple heavy speech engines at the same time.
+- Do not keep an unused expressive speech model resident in memory when Android system TTS is active.
+- Stop/cancel must interrupt speech immediately.
+- Background/return must not duplicate or replay an already-completed spoken reply.
+
+Voice diagnostics:
+- Report the actual speech engine in use.
+- Report fallback reason when Android system TTS was selected.
+- Report speech initialization time.
+- Report first-audio latency where available.
+- Report speech playback duration.
+- Report whether lip sync is receiving real playback activity.
+- Report speech process exit/crash separately from Chat/Whisper failures.
+
+Voice acceptance on the actual phone:
+- Chat spoken replies remain audible.
+- Live spoken replies remain audible over repeated turns.
+- Voice sounds materially more natural than plain system-reader cadence when the expressive engine is active.
+- Automatic fallback remains reliable when the expressive engine is unavailable.
+- No speech-engine crash is allowed to kill Chat or Live.
+- Voice humanization must not meaningfully worsen Live responsiveness or thermal stability.
+
+# 9. LIVE VOICE SCREEN
 
 The Live Voice screen should follow the approved template structure:
 
@@ -150,7 +232,7 @@ The Live Voice screen should follow the approved template structure:
 
 Live status should be readable at a glance through Rosalina's state and concise text, without a diagnostic-looking UI.
 
-# 9. CHAT SCREEN
+# 10. CHAT SCREEN
 
 Preserve the 10015 working Chat behavior.
 
@@ -161,7 +243,7 @@ Requirements:
 - Chat must not initialize image/video engines.
 - Avatar presence may be shown in Chat if lightweight, but must never slow text generation or destabilize the working speech path.
 
-# 10. SETTINGS
+# 11. SETTINGS
 
 Settings remains the third and only other destination.
 
@@ -181,7 +263,7 @@ Keep settings focused on Chat, Live and the avatar:
 
 Do not show Image/Video generation controls in the primary Settings experience.
 
-# 11. PHONE CAPABILITY + THERMAL BEHAVIOR
+# 12. PHONE CAPABILITY + THERMAL BEHAVIOR
 
 The real-device finding is that 10015 Chat and Live both work when the phone has cooled down. Treat heat as a performance-management problem, not proof the device is incapable.
 
@@ -217,7 +299,7 @@ Critical Android memory/thermal conditions may still stop or defer work safely.
 
 The animation system must never become the reason Qwen, Whisper or speech output stops working.
 
-# 12. PERFORMANCE BUDGET
+# 13. PERFORMANCE BUDGET
 
 Avatar work must be subordinate to conversation.
 
@@ -234,7 +316,7 @@ If resources tighten, degrade from the bottom of that list upward.
 
 Do not preload unnecessary render/media engines.
 
-# 13. FOLD / LIFECYCLE
+# 14. FOLD / LIFECYCLE
 
 On fold/unfold, orientation change, app background/return:
 - Preserve current Chat conversation
@@ -244,7 +326,7 @@ On fold/unfold, orientation change, app background/return:
 - Do not duplicate TTS playback
 - Do not reset the avatar to fallback portrait unless the asset actually failed
 
-# 14. INTERRUPTION / BARGE-IN
+# 15. INTERRUPTION / BARGE-IN
 
 When the user interrupts:
 - Stop speech output immediately
@@ -254,7 +336,7 @@ When the user interrupts:
 - Do not let Rosalina continue gesturing as if she is still speaking
 - Do not replay the cancelled speech after interruption
 
-# 15. MUTE / END / MORE
+# 16. MUTE / END / MORE
 
 Mute:
 - Mutes or suspends microphone capture as defined by Live session behavior
@@ -270,7 +352,7 @@ More:
 - Live-specific controls only
 - No Image Lab / Motion Lab / render shortcuts
 
-# 16. DIAGNOSTICS
+# 17. DIAGNOSTICS
 
 Keep diagnostics separate from the premium Live UI.
 
@@ -293,7 +375,7 @@ Add/retain truthful metrics:
 
 Do not claim audible output or successful animation solely from CI.
 
-# 17. PRESERVATION RULES
+# 18. PRESERVATION RULES
 
 Do not redesign or rewrite the proven 10015 inference path just to accommodate the avatar.
 
@@ -311,7 +393,7 @@ Protect:
 
 No new parent-death protection.
 
-# 18. ACCEPTANCE GATES
+# 19. ACCEPTANCE GATES
 
 The next build is not considered passed until the actual Samsung phone proves all of the following:
 
@@ -348,7 +430,7 @@ Lifecycle:
 
 Only after those device checks pass should the new build be locked.
 
-# 19. NON-GOALS FOR THIS PASS
+# 20. NON-GOALS FOR THIS PASS
 
 Do not:
 - Re-enable Image Lab
