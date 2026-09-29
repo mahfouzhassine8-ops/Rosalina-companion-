@@ -1,0 +1,165 @@
+name: Rosalina 10018 Studio Voice Addition
+on:
+  push:
+    branches: [rosalina-10018-studio-voice-c1]
+    paths: [unified/**, tools/studio/**, .github/workflows/studio-voice.yml, STUDIO_VOICE_10018.md]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: rosalina-10018-studio-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  source:
+    if: github.ref == 'refs/heads/rosalina-10018-studio-voice-c1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      commit: ${{ steps.canonical.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0, ref: '${{ github.sha }}'}
+      - name: Materialize verified source and preserve protected checkpoint
+        id: canonical
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse origin/locked-rosalina-chat-live-phone-pass-10015)" = e212d17bb1904de55fe7b6cbea40443548cc73dc
+          python3 tools/studio/apply_integration.py
+          python3 -m unittest discover -s tools/studio -p test_gateway.py -v
+          git add --pathspec-from-file=qa/source-paths.txt
+          if ! git diff --cached --quiet; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m '10018: materialize verified additive Studio integration; preserve baseline'
+            git push origin HEAD:refs/heads/rosalina-10018-studio-voice-c1
+          fi
+          python3 tools/studio/verify_source.py
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          mkdir -p source-backup
+          git archive --format=zip HEAD -o source-backup/Rosalina-10018-Studio-source.zip
+          git rev-parse HEAD > source-backup/commit.txt
+          cp qa/source-materialization.json COMPLETION_10018.md STUDIO_VOICE_10018.md source-backup/
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with: {name: Rosalina-10018-Studio-source, path: source-backup/, if-no-files-found: error}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: Rosalina-10018-Studio-source-QA, path: qa/}
+  android:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0, ref: '${{ needs.source.outputs.commit }}', persist-credentials: false}
+      - uses: actions/checkout@v4
+        with: {repository: ggml-org/llama.cpp, ref: a97cce86a8addeb9f40cba7a261c94b1f0c576cb, path: third_party/llama.cpp, persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.13113456' 'cmake;3.31.6'
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.9', cache-read-only: false}
+      - uses: actions/download-artifact@v4
+        with: {name: Rosalina-native-cpu, path: unified/src/main/jniLibs/arm64-v8a, run-id: 36486880864, github-token: '${{ github.token }}'}
+      - uses: actions/download-artifact@v4
+        with: {name: Rosalina-native-vulkan, path: unified/src/main/jniLibs/arm64-v8a, run-id: 36486880864, github-token: '${{ github.token }}'}
+      - uses: actions/download-artifact@v4
+        with: {name: Rosalina-10018-Ort-Java-Bridge, path: bridge, run-id: 36548601606, github-token: '${{ github.token }}'}
+      - run: |
+          bash tools/prepare_companion_ci.sh release
+          python3 tools/completion10018/prepare_bridge.py bridge arm64-v8a
+          python3 tools/studio/verify_source.py
+      - name: Release tests and ARM64 APK
+        run: |
+          set -o pipefail
+          gradle :unified:testReleaseUnitTest :unified:assembleRelease --max-workers=2 --stacktrace 2>&1 | tee qa/release-build.log
+      - name: Verify unsigned APK and protected native library
+        run: |
+          set -euo pipefail
+          mkdir -p deliverables/signing-tools
+          cp unified/build/outputs/apk/release/unified-release-unsigned.apk deliverables/Rosalina-10018-Studio-ARM64-UNSIGNED.apk
+          python3 tools/verify_unified_apk.py deliverables/Rosalina-10018-Studio-ARM64-UNSIGNED.apk
+          python3 - <<'PY'
+          import json,hashlib,zipfile
+          expected=json.load(open('qa/protected-onnx.json'))['protectedSha256']
+          with zipfile.ZipFile('deliverables/Rosalina-10018-Studio-ARM64-UNSIGNED.apk') as z:
+              assert hashlib.sha256(z.read('lib/arm64-v8a/libonnxruntime.so')).hexdigest()==expected
+          PY
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging deliverables/*.apk > qa/package.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump xmltree deliverables/*.apk AndroidManifest.xml > qa/manifest.txt
+          ! grep -q ttsfixture qa/manifest.txt
+          python3 - <<'PYX'
+          import zipfile
+          with zipfile.ZipFile('deliverables/Rosalina-10018-Studio-ARM64-UNSIGNED.apk') as z:
+              assert not any('studio-fixture' in n for n in z.namelist())
+          PYX
+          grep -q expressive qa/manifest.txt
+          grep -q "versionCode='10018'" qa/package.txt
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" deliverables/signing-tools/
+          cp "$ANDROID_HOME/build-tools/35.0.0/zipalign" deliverables/signing-tools/
+          cp -r qa deliverables/
+          cp COMPLETION_10018.md STUDIO_VOICE_10018.md SIGNING.md deliverables/
+          git rev-parse HEAD > deliverables/commit.txt
+          sha256sum deliverables/*.apk > deliverables/SHA256SUMS-UNSIGNED.txt
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with: {name: Rosalina-10018-Studio-ARM64-unsigned, path: deliverables/, if-no-files-found: error}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Rosalina-10018-Studio-release-QA
+          path: |
+            unified/build/test-results/
+            qa/
+  emulator:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0, ref: '${{ needs.source.outputs.commit }}', persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.9', cache-read-only: false}
+      - uses: actions/download-artifact@v4
+        with: {name: Rosalina-10018-Ort-Java-Bridge, path: bridge, run-id: 36548601606, github-token: '${{ github.token }}'}
+      - run: |
+          bash tools/prepare_companion_ci.sh
+          python3 tools/completion10018/prepare_bridge.py bridge x86_64
+          python3 tools/studio/verify_source.py
+      - run: bash tools/studio/prepare_tls_fixture.sh
+      - name: Debug tests and instrumentation build
+        run: |
+          set -o pipefail
+          gradle :unified:testDebugUnitTest :unified:assembleDebug :unified:assembleDebugAndroidTest -PunifiedEmulatorQa=true --max-workers=2 --stacktrace 2>&1 | tee qa/debug-build.log
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_5
+          ram-size: 4096M
+          heap-size: 512M
+          disable-animations: false
+          script: bash tools/studio/emulator.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Rosalina-10018-Studio-emulator-QA
+          path: |
+            unified/build/outputs/androidTest-results/
+            unified/build/test-results/
+            qa/
