@@ -15,5 +15,5 @@ UNCHANGED = [
 subprocess.run(["git", "diff", "--exit-code", BASE, "HEAD", "--", *UNCHANGED], check=True)
 gradle = Path("unified/build.gradle.kts").read_text()
 assert 'applicationId = "com.rosalina.unified"' in gradle
-assert '?: 10015' in gradle
+assert '?: 10016' in gradle
 print("Locked 10012 preservation: media/native engines, model storage, avatar assets, package identity PASS")
