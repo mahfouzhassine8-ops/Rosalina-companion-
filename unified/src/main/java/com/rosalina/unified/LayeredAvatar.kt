@@ -10,50 +10,6 @@ import java.security.MessageDigest
 import java.util.concurrent.Executors
 import kotlin.math.*
 
-/** Parameters are visual controls, not an expression label painted over a fixed image. */
-internal data class FacePose(val leftEye:Float=1f,val rightEye:Float=1f,val browLeft:Float=0f,
-    val browRight:Float=0f,val browLift:Float=0f,val smile:Float=0f,val blush:Float=0f,val head:Float=0f)
-internal object FaceLibrary {
-    fun pose(e:RosalinaExpression)=when(e) {
-        RosalinaExpression.NEUTRAL->FacePose(.94f,.94f,smile=.1f)
-        RosalinaExpression.HAPPY->FacePose(.74f,.74f,-3f,3f,-1.5f,.85f,.1f,1f)
-        RosalinaExpression.SHY->FacePose(.63f,.68f,-4f,4f,1f,.35f,.55f,3f)
-        RosalinaExpression.TEASING->FacePose(.6f,.95f,7f,-8f,-1f,.7f,.15f,-3f)
-        RosalinaExpression.SAD->FacePose(.8f,.78f,-10f,10f,-2f,-.75f,0f,1.5f)
-        RosalinaExpression.SURPRISED->FacePose(1.1f,1.1f,-4f,4f,-5f,.05f,0f,-1f)
-        RosalinaExpression.THINKING->FacePose(.77f,.94f,8f,-5f,-1f,-.15f,0f,-2.5f)
-        RosalinaExpression.BLUSH->FacePose(.9f,.85f,-3f,3f,0f,.5f,.9f,2f)
-        RosalinaExpression.LISTENING->FacePose(1f,.98f,-2f,2f,-1f,.1f,0f,1f)
-        RosalinaExpression.SPEAKING->FacePose(.93f,.94f,0f,0f,0f,.25f,0f,0f)
-        RosalinaExpression.EYES_CLOSED->FacePose(.025f,.025f,0f,0f,0f,.35f,.1f,1f)
-        RosalinaExpression.WINK->FacePose(.025f,1f,3f,-4f,-1f,.7f,.2f,-2f)
-    }
-}
-internal data class RigPose(val face:FacePose,val blink:Float,val breath:Float,val sway:Float,
-    val head:Float,val leftArm:Float,val hand:Float,val rightArm:Float,val hair:Float,
-    val mouth:MouthPose,val gesture:Gesture,val actionTime:Float)
-internal object RigMotion {
-    fun sample(s:CompanionSnapshot,tier:MotionTier,now:Long,animate:Boolean=true):RigPose {
-        val performance=s.performance.atPhase(s.phase);val face=FaceLibrary.pose(performance.expression)
-        val t=now/1000.0;val elapsed=((now-s.changedAt).coerceAtLeast(0)/1000f)
-        val talking=s.phase==CompanionPhase.SPEAKING && s.playbackActive
-        val moving=animate && tier!=MotionTier.STATIC && s.phase!=CompanionPhase.INTERRUPTED
-        // Nonuniform blink spacing; this never advances an engine state or randomly changes emotion.
-        val cycle=(t/4.7).toInt();val within=t-cycle*4.7;val blinkStart=3.5+.35*sin(cycle*1.73)
-        val blink=if(moving && within in blinkStart..blinkStart+.19)sin((within-blinkStart)/.19*PI).toFloat() else 0f
-        val secondary=moving && tier.secondary
-        val breath=if(moving)(sin(t*1.31)*.0028).toFloat() else 0f
-        val sway=if(secondary)(sin(t*.49)*.7).toFloat() else 0f
-        // A restrained gesture envelope occurs once at real playback onset, then rests.
-        val envelope=if(talking && secondary && elapsed<3.6f)sin((elapsed/3.6f)*PI).toFloat() else 0f
-        val amount=performance.intensity.coerceIn(0f,1f)*envelope
-        val arms=when(performance.gesture){Gesture.OPEN_HAND->3.8f;Gesture.PLAYFUL->2.8f;Gesture.REASSURING->1.3f;else->.7f}
-        val mouth=if(talking)s.mouth.bounded() else MouthPose()
-        return RigPose(face,blink,breath,sway,face.head+if(moving)(sin(t*.73)*.45).toFloat() else 0f,
-            -amount*arms,amount*2.8f,amount*1.4f,if(secondary)(sin(t*.91+.9)*.9).toFloat() else 0f,
-            mouth,if(secondary && talking)performance.gesture else Gesture.NONE,elapsed)
-    }
-}
 internal data class RigLayer(val name:String,val bitmap:Bitmap,val x:Float,val y:Float,val pivotX:Float,val pivotY:Float,
     val parent:String,val order:Int,val space:String)
 internal class RigAssets(val layers:List<RigLayer>,val description:String) {
@@ -196,5 +152,79 @@ internal class LayeredAvatarRenderer(private val assets:RigAssets) {
             }
         }
         c.restore()
+    }
+}
+
+/** Native 2-D cutout animation of the user-selected design; no 3-D or phoneme claim. */
+internal class PortraitAvatarRenderer(val bitmap:Bitmap) {
+    private val paint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val skin=Paint(Paint.ANTI_ALIAS_FLAG)
+    private val ink=Paint(Paint.ANTI_ALIAS_FLAG).apply{style=Paint.Style.STROKE;strokeCap=Paint.Cap.ROUND}
+    private val path=Path()
+    private fun polygon(vararg points:Float)=Path().apply{moveTo(points[0],points[1]);for(i in 2 until points.size step 2)lineTo(points[i],points[i+1]);close()}
+    private val head=polygon(373f,0f,645f,0f,646f,115f,614f,213f,581f,255f,574f,291f,470f,291f,463f,252f,427f,206f,390f,115f)
+    private val leftArm=polygon(345f,338f,381f,350f,343f,457f,316f,554f,274f,660f,248f,734f,234f,789f,215f,843f,183f,841f,182f,769f,208f,704f,240f,620f,279f,520f,300f,420f)
+    private val rightArm=polygon(620f,338f,657f,334f,695f,445f,739f,556f,784f,664f,811f,728f,848f,787f,860f,841f,826f,855f,798f,817f,779f,763f,742f,704f,700f,616f,668f,531f,637f,449f)
+    private val hairLeft=polygon(311f,298f,360f,284f,349f,380f,310f,454f,292f,553f,257f,601f,222f,564f,213f,493f,254f,397f)
+    private val hairRight=polygon(653f,285f,683f,295f,704f,363f,747f,462f,782f,540f,782f,604f,747f,611f,714f,567f,711f,493f,679f,420f)
+    private fun inset(p:Path,x:Float,y:Float)=Path(p).apply{transform(Matrix().apply{setScale(.98f,.98f,x,y)})}
+    // Overlap source pixels at each joint to avoid antialiased clip cracks at rest.
+    private val cuts=Path().apply{addPath(inset(head,520f,150f));addPath(inset(leftArm,285f,585f));addPath(inset(rightArm,743f,589f));addPath(inset(hairLeft,292f,445f));addPath(inset(hairRight,716f,445f))}
+    private fun part(c:Canvas,clip:Path,rotation:Float,x:Float,y:Float){c.save();c.rotate(rotation,x,y);c.clipPath(clip);c.drawBitmap(bitmap,0f,0f,paint);c.restore()}
+    fun draw(c:Canvas,width:Int,height:Int,p:RigPose){
+        skin.shader=LinearGradient(0f,0f,width.toFloat(),height.toFloat(),Color.rgb(13,15,29),Color.rgb(33,21,45),Shader.TileMode.CLAMP)
+        c.drawPaint(skin);skin.shader=null
+        val scale=min(width/1025f,height/1535f)*.97f
+        c.save();c.translate((width-1025f*scale)/2f,(height-1535f*scale)/2f);c.scale(scale,scale)
+        c.rotate(p.sway*.65f,520f,960f);c.scale(1f,1f+p.breath,520f,950f)
+        c.save();c.clipOutPath(cuts);c.drawBitmap(bitmap,0f,0f,paint);c.restore()
+        // Keep photograph-derived joint travel small so seams stay restrained.
+        part(c,hairLeft,p.hair*.32f,352f,300f);part(c,hairRight,-p.hair*.32f,666f,300f)
+        part(c,leftArm,p.leftArm*.18f,349f,349f);part(c,rightArm,p.rightArm*.25f,646f,350f)
+        c.save();c.rotate(p.head*.28f,520f,276f);c.clipPath(head);c.drawBitmap(bitmap,0f,0f,paint)
+        eye(c,480f,158f,(p.face.leftEye*(1f-p.blink)).coerceIn(0f,1f))
+        eye(c,555f,158f,(p.face.rightEye*(1f-p.blink)).coerceIn(0f,1f))
+        if(p.face.blush>.05f){
+            skin.shader=RadialGradient(469f,189f,21f,intArrayOf(Color.argb((38*p.face.blush).toInt(),235,94,117),Color.TRANSPARENT),null,Shader.TileMode.CLAMP)
+            c.drawOval(446f,175f,492f,203f,skin)
+            skin.shader=RadialGradient(571f,189f,21f,intArrayOf(Color.argb((38*p.face.blush).toInt(),235,94,117),Color.TRANSPARENT),null,Shader.TileMode.CLAMP)
+            c.drawOval(548f,175f,594f,203f,skin);skin.shader=null
+        }
+        val m=p.mouth.bounded()
+        if(m.open>.02f){
+            // Replace the source smile only during real playback articulation.
+            skin.shader=RadialGradient(520f,206f,23f,intArrayOf(Color.rgb(251,224,205),Color.rgb(250,222,203)),null,Shader.TileMode.CLAMP)
+            c.drawOval(500f,198f,540f,218f,skin);skin.shader=null
+            val w=10f+7f*m.wide-4f*m.round;val h=2f+14f*m.open
+            skin.color=Color.rgb(84,36,48);c.drawOval(520f-w,204f-h*.3f,520f+w,206f+h,skin)
+            skin.color=Color.rgb(202,113,133);c.drawOval(520f-w*.64f,206f+h*.48f,520f+w*.64f,206f+h*.88f,skin)
+            if(m.open>.45f){skin.color=Color.rgb(247,231,220);c.drawRoundRect(521f-w*.7f,205f-h*.23f,519f+w*.7f,208f,2f,2f,skin)}
+        }
+        c.restore();c.restore()
+    }
+    private fun eye(c:Canvas,x:Float,y:Float,openness:Float){
+        val closed=1f-openness
+        if(closed<.12f)return
+        skin.shader=LinearGradient(x,y-15f,x,y+20f,bitmap.getPixel(520,145),bitmap.getPixel(x.toInt(),180),Shader.TileMode.CLAMP)
+        if(openness<.16f){
+            c.drawOval(x-25f,y-16f,x+25f,y+19f,skin);skin.shader=null
+            ink.color=Color.rgb(69,36,37);ink.strokeWidth=2.8f
+            path.reset();path.moveTo(x-20f,y);path.quadTo(x,y+7f,x+20f,y-1f);c.drawPath(path,ink)
+        }else{
+            // Upper eyelid progressively occludes the source eye; preserve its iris pixels.
+            c.save();c.clipRect(x-25f,y-17f,x+25f,y-14f+closed*32f)
+            c.drawOval(x-25f,y-17f,x+25f,y+20f,skin);c.restore();skin.shader=null
+        }
+    }
+    companion object {
+        private const val SHA="a028f5c39944d3df164e28f039539b3021225269d07451cabc2f0c03bef2f013"
+        fun load(context:Context):PortraitAvatarRenderer {
+            val encoded=context.assets.open("avatar-portrait/character.b64").bufferedReader().use{it.readText()}
+            val bytes=android.util.Base64.decode(encoded,android.util.Base64.DEFAULT)
+            require(hex(MessageDigest.getInstance("SHA-256").digest(bytes))==SHA){"Portrait checksum mismatch"}
+            val image=BitmapFactory.decodeByteArray(bytes,0,bytes.size) ?:error("Portrait cannot decode")
+            require(image.width==1025 && image.height==1535){"Portrait geometry changed"}
+            return PortraitAvatarRenderer(image)
+        }
     }
 }

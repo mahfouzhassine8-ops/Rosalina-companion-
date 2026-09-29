@@ -11,7 +11,7 @@ internal data class RenderProfile(val label:String,val width:Int,val height:Int,
 internal data class TaskRequest(
     val id:String=UUID.randomUUID().toString(),val kind:TaskKind,val prompt:String="",val photo:String="",
     val profile:RenderProfile=RenderProfile.Draft,val seconds:Int=6,val width:Int=256,val height:Int=256,
-    val seed:Long=42,val strength:Float=.65f,val backend:String="auto",val modelKey:String="",val uri:String=""
+    val seed:Long=42,val strength:Float=.65f,val backend:String="auto",val modelKey:String="",val uri:String="",val voiceStyle:String?=null,val systemVoice:String?=null
 )
 internal data class TaskState(
     val id:String="",val kind:TaskKind?=null,val busy:Boolean=false,val stopping:Boolean=false,

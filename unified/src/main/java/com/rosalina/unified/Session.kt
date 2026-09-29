@@ -143,8 +143,10 @@ internal class Session private constructor(private val context:Context) {
         expressiveFailed=false
         notice(if(accepted)"Candidate enabled by your device acceptance; compatibility fallback retained" else "Using the protected Android compatibility voice")
     }
-    fun auditionVoiceV3(text:String,delivery:String="") { if(!state.value.busy)begin(TaskRequest(kind=TaskKind.CHAT,modelKey="voice-v3-test",prompt=text.take(400),uri=delivery)) }
-    fun auditionOnlineVoice(text:String,delivery:String="") {if(!state.value.busy && onlineVoiceSettings.enabled())begin(TaskRequest(kind=TaskKind.CHAT,modelKey="online-voice-test",prompt=text.take(400),uri=delivery))}
+    suspend fun installedSystemVoices()=platformSpeech.installedVoiceNames()
+    fun selectSystemVoice(name:String){if(!state.value.busy)prefs.edit().putString("voice-system-name",name).apply()}
+    fun auditionVoiceV3(text:String,delivery:String="",style:String?=null) { if(!state.value.busy)begin(TaskRequest(kind=TaskKind.CHAT,modelKey="voice-v3-test",prompt=text.take(400),uri=delivery,voiceStyle=style)) }
+    fun auditionOnlineVoice(text:String,delivery:String="",style:String?=null) {if(!state.value.busy && onlineVoiceSettings.enabled())begin(TaskRequest(kind=TaskKind.CHAT,modelKey="online-voice-test",prompt=text.take(400),uri=delivery,voiceStyle=style))}
     fun toggleMicrophoneMute() {
         val input=capture ?:return
         runCatching{input.setMuted(!input.isMuted)}.onSuccess {
@@ -166,7 +168,7 @@ internal class Session private constructor(private val context:Context) {
     private fun usePlatformSpeech()=SpeechCompatibility.preferPlatform(Build.MANUFACTURER,Build.VERSION.SDK_INT,nativeSpeechCrashed || prefs.getBoolean("native-tts-crashed",false))
     private fun markNativeSpeechCrash(){nativeSpeechCrashed=true;prefs.edit().putBoolean("native-tts-crashed",true).apply()}
     fun testTone(){if(!state.value.busy)begin(TaskRequest(kind=TaskKind.CHAT,modelKey="tone-test",prompt="speaker tone"))}
-    fun testVoiceText(text:String,delivery:String=""){if(!state.value.busy)begin(TaskRequest(kind=TaskKind.CHAT,modelKey="voice-test",prompt=text.take(400),uri=delivery))}
+    fun testVoiceText(text:String,delivery:String="",style:String?=null,systemVoice:String?=null){if(!state.value.busy)begin(TaskRequest(kind=TaskKind.CHAT,modelKey="voice-test",prompt=text.take(400),uri=delivery,voiceStyle=style,systemVoice=systemVoice))}
     fun testVoice(){if(!state.value.busy)begin(TaskRequest(kind=TaskKind.CHAT,modelKey="voice-test",prompt="Rosalina speaker test. If you can hear this, local text to speech is working."))}
     fun refreshResources(){val r=thermal.read();mutable.update{it.copy(thermal=r.thermal,thermalAt=r.measuredAt,availableBytes=r.available,totalBytes=r.total)}}
     @Synchronized fun begin(r:TaskRequest):Boolean {
@@ -276,9 +278,11 @@ internal class Session private constructor(private val context:Context) {
     private suspend fun setTaskMode(r:TaskRequest,playback:Boolean=false)=withContext(Dispatchers.Main.immediate) {
         currentCoroutineContext().ensureActive();taskService?.setMode(r.id,r.kind,microphone=voiceActive,playback=playback)
     }
-    private fun voiceExpression(userText:String,spokenText:String):VoiceExpression {
-        val p=PerformanceDirector.decide(userText,spokenText,prefs.getBoolean("companion-flirty",false),prefs.getInt("voice-pace",100)/100f)
-        return VoiceExpression(p.emotion,energy=p.volume,pace=p.pace,intensity=p.intensity,performance=p)
+    private fun voiceExpression(userText:String,spokenText:String,styleKey:String?=null):VoiceExpression {
+        val intended=PerformanceDirector.decide(userText,spokenText,prefs.getBoolean("companion-flirty",false),prefs.getInt("voice-pace",100)/100f)
+        val style=NaturalVoiceStyle.fromKey(styleKey ?:prefs.getString("voice-natural-style","natural"))
+        val p=style.apply(intended)
+        return VoiceExpression(style.label,energy=p.volume,pace=p.pace,intensity=p.intensity,performance=p)
     }
     private fun Bundle.putExpression(expression:VoiceExpression) {
         putString("voiceProfile",expression.name)
@@ -297,7 +301,7 @@ internal class Session private constructor(private val context:Context) {
         val utterance=UUID.randomUUID().toString()
         presentation.preparingSpeech(r.id,utterance,face,"Android compatibility TTS",now(),performance)
         return try {
-            platformSpeech.speak(text,expression.pace,requestUtterance=utterance,volume=performance.volume,observe={event->
+            platformSpeech.speak(text,expression.pace,requestUtterance=utterance,volume=performance.volume,voiceName=r.systemVoice,observe={event->
                 val owns=state.value.id==r.id && presentation.snapshot.taskId==r.id && presentation.snapshot.utteranceId==event.utteranceId
                 if(owns)when(event.event){
                     "preparing"->Unit
@@ -337,7 +341,7 @@ internal class Session private constructor(private val context:Context) {
             val firstPlayback=CompletableDeferred<Unit>()
             val result=coroutineScope {
                 val attempt=async{expressive.call(Bundle().apply{
-                putString("operation","speak");putString("text",PerformanceDirector.localText(text,performance));putFloat("gain",performance.volume)
+                putString("operation","speak");putString("text",PerformanceDirector.localText(text,performance));putFloat("gain",performance.volume);putFloat("pace",performance.pace)
             }){event->if(presentation.snapshot.taskId==r.id && presentation.snapshot.utteranceId==utterance)when(event.getString("type")){
                 "stage"->update(r.id){it.copy(voiceStage=event.getString("text").orEmpty())}
                 "playback"->{val playing=event.getString("text")=="start";if(playing){started=true;firstPlayback.complete(Unit)}
@@ -377,7 +381,7 @@ internal class Session private constructor(private val context:Context) {
         val res=thermal.read();require(!res.low && res.thermal<=1){"Let the phone cool before comparing the candidate voice"}
         setTaskMode(r,playback=true);voiceV3Models.requireDirectory()
         expressiveFailed=false
-        speakCandidate(r,r.prompt,voiceExpression(r.uri,r.prompt),trial=true)
+        speakCandidate(r,r.prompt,voiceExpression(r.uri,r.prompt,r.voiceStyle),trial=true)
         update(r.id){it.copy(stage="Candidate audition complete · phone quality acceptance still required")}
     }
     private suspend fun performToneTest(r:TaskRequest) {
@@ -393,7 +397,7 @@ internal class Session private constructor(private val context:Context) {
         val initialized=now();var initializationMs:Long?=null
         try {
             platformSpeech.prepare();initializationMs=now()-initialized
-            val result=speakPlatform(r,text,voiceExpression(r.uri,text))
+            val result=speakPlatform(r,text,voiceExpression(r.uri,text,r.voiceStyle))
             auditions.record("Android baseline","",true,initializationMs,result.firstAudioMs,result.playbackMs,null,"system TTS process PSS unavailable",before,thermal.read().thermal)
             update(r.id){it.copy(stage="Baseline audition completed",voiceStage="",avatarEnergy=0f)}
         } catch(t:Throwable){auditions.record("Android baseline","",false,initializationMs,null,null,null,"system TTS process PSS unavailable",before,thermal.read().thermal,"not completed");throw t}
@@ -425,7 +429,7 @@ internal class Session private constructor(private val context:Context) {
     }
     private suspend fun performOnlineVoiceTest(r:TaskRequest) {
         check(onlineVoiceSettings.enabled()){"Explicitly enable the configured provider before an online audition"}
-        setTaskMode(r,playback=true);speakOnline(r,r.prompt,voiceExpression(r.uri,r.prompt),trial=true)
+        setTaskMode(r,playback=true);speakOnline(r,r.prompt,voiceExpression(r.uri,r.prompt,r.voiceStyle),trial=true)
     }
     private suspend fun performChat(r:TaskRequest,prompt:String,readAloud:Boolean)=coroutineScope {
         require(prompt.isNotBlank() && prompt.length<=8000){"Use a prompt between 1 and 8,000 characters"}

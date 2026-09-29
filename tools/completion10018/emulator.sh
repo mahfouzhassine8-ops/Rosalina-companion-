@@ -9,6 +9,7 @@ pack="$RUNNER_TEMP/chatterbox/Rosalina-Chatterbox-Turbo-Q4-Phone.zip"
 echo "4dbeaa27de61f943edd1df97bc9d4eec9b92c5a65054eb0a263f25f4d469bc64  $pack" | sha256sum -c
 adb push "$pack" /data/local/tmp/rosalina-chatterbox-phone.zip
 adb shell chmod 644 /data/local/tmp/rosalina-chatterbox-phone.zip
+gradle :unified:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.rosalina.unified.AvatarAuditTest -PunifiedEmulatorQa=true --max-workers=2 --stacktrace
 gradle :unified:connectedDebugAndroidTest -PunifiedEmulatorQa=true -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true --max-workers=2 --stacktrace
 adb shell run-as com.rosalina.unified tar -cf - files/audit-qa > qa/android-evidence.tar
 adb shell am start -W -n com.rosalina.unified/.MainActivity

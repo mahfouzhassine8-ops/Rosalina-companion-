@@ -16,9 +16,9 @@ import kotlin.math.sqrt
 internal class PcmSpeechOutput(private val context:Context,private val cancelled:AtomicBoolean) {
     private val current=AtomicReference<AudioTrack?>(null)
     private val currentFocus=AtomicReference<AudioFocusRequest?>(null)
-    private val audio=context.getSystemService(AudioManager::class.java)
+    private val audio=requireNotNull(context.getSystemService(AudioManager::class.java)){"Android audio service unavailable"}
     fun interrupt(){cancelled.set(true);runCatching{current.get()?.pause();current.get()?.flush()};currentFocus.getAndSet(null)?.let{runCatching{audio.abandonAudioFocusRequest(it)}}}
-    suspend fun play(pcm:ShortArray,rate:Int,requestStarted:Long,emit:(String,String,Bundle?)->Unit):Bundle=coroutineScope {
+    suspend fun play(pcm:ShortArray,rate:Int,requestStarted:Long,emit:(String,String,Bundle?)->Unit,pace:Float=1f):Bundle=coroutineScope {
         require(rate in 8000..48000 && pcm.isNotEmpty() && pcm.size<=rate*60){"Invalid PCM speech"}
         val attrs=AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
         val focus=AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT).setAudioAttributes(attrs)
@@ -34,6 +34,8 @@ internal class PcmSpeechOutput(private val context:Context,private val cancelled
                 .setBufferSizeInBytes(maxOf(minimum,rate/2)).setTransferMode(AudioTrack.MODE_STREAM).build()
             track=output;current.set(output);require(output.state==AudioTrack.STATE_INITIALIZED){"Speech player failed to initialize"}
             val firstSignal=pcm.indexOfFirst{kotlin.math.abs(it.toInt())>32};require(firstSignal>=0){"Speech PCM is silent"}
+            val speed=SpeechPace.bounded(pace)
+            if(speed!=1f)output.playbackParams=PlaybackParams().setAudioFallbackMode(PlaybackParams.AUDIO_FALLBACK_MODE_FAIL).setPitch(1f).setSpeed(speed)
             output.play();val playbackStarted=SystemClock.elapsedRealtime()
             meter=launch {
                 while(isActive && !cancelled.get()){
@@ -55,13 +57,13 @@ internal class PcmSpeechOutput(private val context:Context,private val cancelled
                 val n=output.write(pcm,offset,minOf(2048,pcm.size-offset),AudioTrack.WRITE_NON_BLOCKING);check(n>=0){"PCM write failed: $n"}
                 if(n==0){check(SystemClock.elapsedRealtime()-lastWrite<3000){"PCM output stalled"};delay(10)}else{offset+=n;lastWrite=SystemClock.elapsedRealtime()}
             }
-            val deadline=SystemClock.elapsedRealtime()+pcm.size*1000L/rate+2000
+            val deadline=SystemClock.elapsedRealtime()+SpeechPace.durationMillis(pcm.size,rate,speed)+2000
             while((output.playbackHeadPosition.toLong() and 0xffffffffL)<offset){
                 currentCoroutineContext().ensureActive();if(cancelled.get())throw CancellationException("Speech playback interrupted")
                 check(SystemClock.elapsedRealtime()<deadline){"PCM playback did not drain"};delay(15)
             }
             if(started.compareAndSet(false,true)){first.set(SystemClock.elapsedRealtime()-requestStarted);emit("playback","start",null)}
-            Bundle().apply{putLong("firstAudioMs",first.get());putLong("audioMs",pcm.size*1000L/rate);putLong("playbackMs",SystemClock.elapsedRealtime()-playbackStarted)
+            Bundle().apply{putLong("firstAudioMs",first.get());putLong("audioMs",pcm.size*1000L/rate);putFloat("playbackSpeed",speed);putLong("pacedAudioMs",SpeechPace.durationMillis(pcm.size,rate,speed));putLong("playbackMs",SystemClock.elapsedRealtime()-playbackStarted)
                 putLong("playedFrames",output.playbackHeadPosition.toLong() and 0xffffffffL);putInt("underruns",output.underrunCount);putInt("route",output.routedDevice?.type ?: -1)}
         }finally {
             withContext(NonCancellable){meter?.cancelAndJoin()}

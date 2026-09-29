@@ -382,8 +382,8 @@ class MainActivity:AppCompatActivity() {
         val capabilityKeys=arrayOf("adaptive","cool","maximum")
         val capability=Spinner(this).apply{adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,arrayOf("Adaptive phone load","Cool phone","Maximum phone"));setSelection(capabilityKeys.indexOf(session.prefs.getString("phone-capability","adaptive")).coerceAtLeast(0))}
         body.addView(text("Phone capability",14f,accent));body.addView(capability)
-        val pace=SeekBar(this).apply{max=50;progress=(session.prefs.getInt("voice-pace",100)-75).coerceIn(0,50)}
-        body.addView(text("Compatibility voice pace · 0.75–1.25×",14f));body.addView(pace)
+        val pace=SeekBar(this).apply{max=40;progress=(session.prefs.getInt("voice-pace",100)-80).coerceIn(0,40)}
+        body.addView(text("Voice pace · natural range 0.8–1.2×",14f));body.addView(pace)
         body.addView(text("The candidate uses native prosody and native reaction tags. Controlled whisper and every emotional style remain unverified until you hear them on this phone.",11f,muted))
         body.addView(button("Test current compatibility voice"){if(!session.state.value.busy){ensureNotifications();session.testVoice()}})
         body.addView(text("The approved Rosalina rig is the normal Live artwork. Previously imported portrait files are preserved privately, not deleted.",11f,muted))
@@ -396,16 +396,39 @@ class MainActivity:AppCompatActivity() {
         AlertDialog.Builder(this).setTitle("Rosalina settings").setView(ScrollView(this).apply{addView(body)}).setNegativeButton("Cancel",null).setPositiveButton("Save"){_,_->
             session.prefs.edit().putBoolean("spoken-replies",spoken.isChecked).putBoolean("hands-free",hands.isChecked)
                 .putBoolean("live-voice",live.isChecked).putBoolean("live-avatar",animate.isChecked).putBoolean("companion-flirty",flirty.isChecked)
-                .putString("phone-capability",capabilityKeys[capability.selectedItemPosition]).putInt("voice-pace",75+pace.progress)
+                .putString("phone-capability",capabilityKeys[capability.selectedItemPosition]).putInt("voice-pace",80+pace.progress)
                 .putString("system",system.text.toString()).putInt("max-tokens",(tokens.text.toString().toIntOrNull() ?:1024).coerceIn(64,4096)).apply()
             buildPane()
         }.show()
+    }
+    private fun systemVoiceDialog() {
+        if(session.state.value.busy)return
+        lifecycleScope.launch {
+            runCatching{session.installedSystemVoices()}.onSuccess{names->
+                if(isFinishing)return@onSuccess
+                if(names.isEmpty()){Toast.makeText(this@MainActivity,"Install an offline English voice in Android TTS settings",Toast.LENGTH_LONG).show();return@onSuccess}
+                val body=LinearLayout(this@MainActivity).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(10),dp(16),dp(12))}
+                body.addView(text("Choose a natural female voice by listening. Android does not reliably provide gender labels; all listed voices are installed offline English voices.",13f))
+                val voices=Spinner(this@MainActivity).apply{adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,names);setSelection(names.indexOf(session.prefs.getString("voice-system-name","")).coerceAtLeast(0))};body.addView(voices)
+                body.addView(button("Hear selected voice"){if(!session.state.value.busy){ensureNotifications();session.testVoiceText("Hi. I'm Rosalina. Let's take this one step at a time.",style="natural",systemVoice=names[voices.selectedItemPosition])}})
+                val female=CheckBox(this@MainActivity).apply{text="I heard this voice: it sounds female and natural";setTextColor(ink)};body.addView(female)
+                voices.onItemSelectedListener=object:AdapterView.OnItemSelectedListener{override fun onItemSelected(parent:AdapterView<*>?,view:View?,position:Int,id:Long){female.isChecked=false};override fun onNothingSelected(parent:AdapterView<*>?){female.isChecked=false}}
+                body.addView(button("Use this Android voice"){if(!session.state.value.busy && female.isChecked){session.selectSystemVoice(names[voices.selectedItemPosition]);Toast.makeText(this@MainActivity,"Offline female voice selection saved",Toast.LENGTH_SHORT).show()}else Toast.makeText(this@MainActivity,"Listen first, then confirm the female voice",Toast.LENGTH_LONG).show()})
+                AlertDialog.Builder(this@MainActivity).setTitle("Female voice comparison").setView(ScrollView(this@MainActivity).apply{addView(body)}).setPositiveButton("Close",null).show()
+            }.onFailure{Toast.makeText(this@MainActivity,"Voice list unavailable: ${it.message}",Toast.LENGTH_LONG).show()}
+        }
     }
     private fun voiceV3Dialog() {
         val body=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(10),dp(16),dp(12))}
         body.addView(text("Local Voice V3 candidate",21f,accent));body.addView(text(session.voiceV3Summary()+"\n"+session.voiceAuditionSummary(),12f,muted))
         body.addView(text("Chatterbox Turbo is the new local expressive candidate; the rejected Pocket voice is not offered. The proven Android voice stays primary until you approve this exact pack after a sustained phone comparison. No cloud speech or Mac is required.",13f))
         body.addView(button("Import verified Chatterbox phone ZIP"){if(!session.state.value.busy)pickVoiceV3.launch(arrayOf("application/zip","application/octet-stream"))})
+        val styles=NaturalVoiceStyle.entries
+        val style=Spinner(this).apply{adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,styles.map{it.label});setSelection(styles.indexOf(NaturalVoiceStyle.fromKey(session.prefs.getString("voice-natural-style","natural"))))}
+        body.addView(text("Female voice · natural delivery",14f,accent));body.addView(style)
+        body.addView(button("Compare installed Android voices"){systemVoiceDialog()})
+        body.addView(text("Natural realism is the default. These presets vary pace and volume while keeping pitch unchanged; they are not separate trained voices. Breathy/smoky timbre, whisper and emotional realism depend on the voice engine and must be heard, not assumed.",12f,muted))
+        fun selectStyle(){session.prefs.edit().putString("voice-natural-style",styles[style.selectedItemPosition].key).apply()}
         val phrases=arrayOf(
             "Hi. I'm Rosalina. Let's take this one step at a time.",
             "That sounds difficult. We can slow down, and work through it together.",
@@ -416,13 +439,14 @@ class MainActivity:AppCompatActivity() {
         val deliveryRequests=arrayOf("","gentle","tease me","a little chuckle","with a small sigh","whisper")
         val delivery=Spinner(this).apply{adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,arrayOf("Natural","Gentle","Teasing (companion style)","Small chuckle test","Sigh test","Whisper capability test"))};body.addView(delivery)
         body.addView(text("Identical words and selected delivery are used for every audition. A capability test is not a claim that the engine supports it.",11f,muted))
-        body.addView(row(button("Hear baseline"){if(!session.state.value.busy){ensureNotifications();session.testVoiceText(phrases[phrase.selectedItemPosition],deliveryRequests[delivery.selectedItemPosition])}},button("Hear local candidate"){if(!session.state.value.busy){ensureNotifications();session.auditionVoiceV3(phrases[phrase.selectedItemPosition],deliveryRequests[delivery.selectedItemPosition])}}))
-        body.addView(button("Hear configured online voice"){if(!session.state.value.busy && session.onlineVoiceSettings.enabled()){ensureNotifications();session.auditionOnlineVoice(phrases[phrase.selectedItemPosition],deliveryRequests[delivery.selectedItemPosition])}else Toast.makeText(this,"Configure and explicitly enable online voice first.",Toast.LENGTH_LONG).show()})
+        body.addView(row(button("Hear baseline"){if(!session.state.value.busy){ensureNotifications();session.testVoiceText(phrases[phrase.selectedItemPosition],deliveryRequests[delivery.selectedItemPosition],styles[style.selectedItemPosition].key)}},button("Hear local candidate"){if(!session.state.value.busy){ensureNotifications();session.auditionVoiceV3(phrases[phrase.selectedItemPosition],deliveryRequests[delivery.selectedItemPosition],styles[style.selectedItemPosition].key)}}))
+        body.addView(button("Hear configured online voice"){if(!session.state.value.busy && session.onlineVoiceSettings.enabled()){ensureNotifications();session.auditionOnlineVoice(phrases[phrase.selectedItemPosition],deliveryRequests[delivery.selectedItemPosition],styles[style.selectedItemPosition].key)}else Toast.makeText(this,"Configure and explicitly enable online voice first.",Toast.LENGTH_LONG).show()})
         body.addView(text("Compare the same phrase. Then test 10–15 minutes, repeated replies, Stop and background/return. A different voice alone does not establish improved quality. Controlled whisper, sigh and laughter are still unverified.",12f,muted))
+        body.addView(button("Use selected style for replies"){if(!session.state.value.busy){selectStyle();Toast.makeText(this,"Voice style saved · engine selection stays unchanged",Toast.LENGTH_SHORT).show()}})
         body.addView(button("Use candidate after my phone acceptance"){
             if(!session.state.value.busy){
                 val checks=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(8),dp(16),dp(8))}
-                val statements=listOf("More natural than the Android baseline","First-audio delay is acceptable","Repeated turns and Stop work","RAM and heat are reasonable","Whisper and Qwen still work","The expressive controls actually sound different","I completed a sustained physical-phone session")
+                val statements=listOf("The voice sounds female and fits Rosalina", "More natural than the Android baseline","First-audio delay is acceptable","Repeated turns and Stop work","RAM and heat are reasonable","Whisper and Qwen still work","The expressive controls actually sound different","I completed a sustained physical-phone session")
                 val boxes=statements.map{label->CheckBox(this).apply{text=label;setTextColor(ink);checks.addView(this)}}
                 val dialog=AlertDialog.Builder(this).setTitle("Physical-phone acceptance")
                     .setView(ScrollView(this).apply{addView(checks)}).setNegativeButton("Not yet",null).setPositiveButton("Accept this pack",null).create()

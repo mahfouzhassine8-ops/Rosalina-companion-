@@ -34,6 +34,7 @@ internal class PlatformSpeech(private val context:Context,private val testEngine
     private val main=Handler(Looper.getMainLooper())
     @Volatile private var engine:TextToSpeech?=null
     @Volatile private var ready=false
+    private var defaultVoiceName=""
     private val active=AtomicReference("")
     private val activeFocus=AtomicReference<AudioFocusRequest?>(null)
     @Volatile private var completion:CompletableDeferred<Unit>?=null
@@ -64,6 +65,7 @@ internal class PlatformSpeech(private val context:Context,private val testEngine
                 }
                 check(created.voice?.isNetworkConnectionRequired==false){"An offline system voice could not be verified"}
             }
+            defaultVoiceName=created.voice?.name.orEmpty()
             engine=created;ready=true
             return created
         } catch(t:Throwable) {
@@ -71,12 +73,18 @@ internal class PlatformSpeech(private val context:Context,private val testEngine
             throw t
         }
     }
+    suspend fun installedVoiceNames():List<String> = mutex.withLock {
+        ensureEngine().voices.orEmpty().filter{!it.isNetworkConnectionRequired && it.locale.language=="en" &&
+            !it.features.orEmpty().contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)}
+            .sortedWith(compareByDescending<android.speech.tts.Voice>{it.quality}.thenBy{it.name})
+            .map{it.name}
+    }
     suspend fun prepare():String=mutex.withLock {
         val e=ensureEngine()
         "Android system TTS · engine=${e.defaultEngine ?: "default"} · voice=${e.voice?.name ?: "default"} · offline=${e.voice?.isNetworkConnectionRequired==false}"
     }
     suspend fun speak(text:String,pace:Float,onStart:()->Unit={},onDone:()->Unit={},
-        observe:(SpeechObservation)->Unit={},requestUtterance:String?=null,volume:Float=1f):PlatformSpeechResult=mutex.withLock {
+        observe:(SpeechObservation)->Unit={},requestUtterance:String?=null,volume:Float=1f,voiceName:String?=null):PlatformSpeechResult=mutex.withLock {
         require(text.isNotBlank()){"Nothing to speak"}
         currentCoroutineContext().ensureActive()
         val e=ensureEngine()
@@ -87,7 +95,7 @@ internal class PlatformSpeech(private val context:Context,private val testEngine
         val began=SystemClock.elapsedRealtime()
         val playbackBegan=AtomicLong(-1L);val playbackAnchor=AtomicLong(-1L)
         val envelope=PlaybackEnvelope();var lipSource="unavailable"
-        val audio=context.getSystemService(AudioManager::class.java)
+        val audio=requireNotNull(context.getSystemService(AudioManager::class.java)){"Android audio service unavailable"}
         val mediaVolume=audio.getStreamVolume(AudioManager.STREAM_MUSIC)
         val max=audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         val muted=runCatching{audio.isStreamMute(AudioManager.STREAM_MUSIC)}.getOrDefault(false)
@@ -103,6 +111,10 @@ internal class PlatformSpeech(private val context:Context,private val testEngine
             activeFocus.set(focus)
             observe(SpeechObservation("preparing",utterance))
             withContext(Dispatchers.Main.immediate) {
+                val requested=voiceName ?:context.getSharedPreferences("rosalina-unified",Context.MODE_PRIVATE).getString("voice-system-name",defaultVoiceName)
+                val selected=e.voices.orEmpty().firstOrNull{it.name==requested && !it.isNetworkConnectionRequired && it.locale.language=="en" && !it.features.orEmpty().contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)}
+                check(selected!=null){"The selected offline voice is unavailable. Choose an installed female voice in Settings."}
+                check(e.setVoice(selected)==TextToSpeech.SUCCESS){"Android could not select this offline voice"}
                 e.setSpeechRate(pace.coerceIn(.75f,1.25f))
                 e.setOnUtteranceProgressListener(object:UtteranceProgressListener(){
                     override fun onStart(id:String?){if(owns(id)){
@@ -154,7 +166,7 @@ internal class PlatformSpeech(private val context:Context,private val testEngine
     }
     fun stop() {
         val e=engine
-        activeFocus.getAndSet(null)?.let{runCatching{context.getSystemService(AudioManager::class.java).abandonAudioFocusRequest(it)}}
+        activeFocus.getAndSet(null)?.let{runCatching{context.getSystemService(AudioManager::class.java)?.abandonAudioFocusRequest(it)}}
         val target=active.get();completion?.cancel(CancellationException("Speech stopped by user"))
         main.post{if(active.get()==target)runCatching{e?.stop()}}
     }
