@@ -6,7 +6,9 @@ trap 'adb logcat -d > qa/emulator-logcat.txt 2>/dev/null || true; adb shell run-
 adb shell settings put global animator_duration_scale 1
 adb shell settings put global transition_animation_scale 1
 adb shell settings put global window_animation_scale 1
-gradle :unified:connectedDebugAndroidTest -PunifiedEmulatorQa=true --max-workers=2 --stacktrace
+# Keep the disposable emulator test install until screenshots and update evidence are copied.
+# Same flag used by the official android/nowinandroid project (AGP post-test cleanup).
+gradle :unified:connectedDebugAndroidTest -PunifiedEmulatorQa=true -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true --max-workers=2 --stacktrace
 adb shell run-as com.rosalina.unified tar -cf - files/audit-qa > qa/avatar-pixel-evidence.tar
 adb install -r unified/build/outputs/apk/debug/unified-debug.apk
 adb shell am start -W -n com.rosalina.unified/.MainActivity
