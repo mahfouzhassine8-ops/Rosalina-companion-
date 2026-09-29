@@ -33,13 +33,16 @@ internal class VoiceCapture(private val context: Context, private val handsFree:
     @Volatile var outputRoute = -1
     fun headphones() = outputRoute in intArrayOf(AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLUETOOTH_SCO)
     fun canInterrupt() = handsFree && (headphones() || (echo?.enabled == true && changedMode))
-    fun describe() = "Hands-free requested=$handsFree; output route=$outputRoute; app communication route=$routedByApp; Bluetooth permission=${if(Build.VERSION.SDK_INT<31) "legacy" else ContextCompat.checkSelfPermission(context,Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED}; AEC available=${AcousticEchoCanceler.isAvailable()}; AEC enabled=${echo?.enabled == true}; acoustic interruption=${canInterrupt()}"
+    fun describe():String {
+        val bt=Build.VERSION.SDK_INT<31 || ContextCompat.checkSelfPermission(context,Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED
+        val communication=if(Build.VERSION.SDK_INT>=31)runCatching{audio.communicationDevice?.type ?: -1}.getOrDefault(-1) else outputRoute
+        return "Hands-free requested=$handsFree; output route=${AudioRoutePolicy.label(outputRoute)}($outputRoute); communication route=${AudioRoutePolicy.label(communication)}($communication); app communication route=$routedByApp; audio mode=${audio.mode}; Bluetooth permission=${if(Build.VERSION.SDK_INT<31) "legacy" else bt}; AEC available=${AcousticEchoCanceler.isAvailable()}; AEC enabled=${echo?.enabled == true}; acoustic interruption=${canInterrupt()}"
+    }
     private fun preferredCommunicationDevice():AudioDeviceInfo? {
-        if(Build.VERSION.SDK_INT<31 || ContextCompat.checkSelfPermission(context,Manifest.permission.BLUETOOTH_CONNECT)!=PackageManager.PERMISSION_GRANTED)return null
+        if(Build.VERSION.SDK_INT<31)return null
+        val bluetoothAllowed=ContextCompat.checkSelfPermission(context,Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED
         val devices=runCatching{audio.availableCommunicationDevices}.getOrDefault(emptyList())
-        val priority=intArrayOf(AudioDeviceInfo.TYPE_BLE_HEADSET,AudioDeviceInfo.TYPE_BLUETOOTH_SCO,AudioDeviceInfo.TYPE_USB_HEADSET,AudioDeviceInfo.TYPE_WIRED_HEADSET)
-        for(type in priority){val match=devices.firstOrNull{it.type==type};if(match!=null)return match}
-        return null
+        return devices.filter{AudioRoutePolicy.usable(it.type,bluetoothAllowed)}.minByOrNull{AudioRoutePolicy.rank(it.type,bluetoothAllowed)}
     }
     fun start() {
         check(record == null && !closed)
@@ -60,6 +63,7 @@ internal class VoiceCapture(private val context: Context, private val handsFree:
             val r = AudioRecord(source, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minimum, 12800))
             record = r
             require(r.state == AudioRecord.STATE_INITIALIZED) { "Microphone initialization failed" }
+            if(Build.VERSION.SDK_INT>=23 && preferred?.isSource==true)runCatching{r.setPreferredDevice(preferred)}
             if (communication) echo = runCatching { AcousticEchoCanceler.create(r.audioSessionId)?.apply { enabled = true } }.getOrNull()
             if (NoiseSuppressor.isAvailable()) noise = runCatching { NoiseSuppressor.create(r.audioSessionId)?.apply { enabled = true } }.getOrNull()
             r.startRecording()
