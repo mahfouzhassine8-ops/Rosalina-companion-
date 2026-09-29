@@ -201,7 +201,8 @@ internal class LiveAvatarView @JvmOverloads constructor(context: Context, attrs:
             state == AvatarState.SPEAKING -> "Motion follows voice energy"
             else -> "Local animated portrait"
         }
-        canvas.drawText(title, 16f * density, height - 34f * density, labelPaint)
-        canvas.drawText(detail, 16f * density, height - 15f * density, subPaint)
+        // Keep state text above the bottom Companion glass instead of drawing it behind controls.
+        canvas.drawText(title, clip.left + 14f * density, clip.top + 27f * density, labelPaint)
+        canvas.drawText(detail, clip.left + 14f * density, clip.top + 46f * density, subPaint)
     }
 }
