@@ -130,28 +130,36 @@ Examples:
 
 This is behavior mapping, not a new AI model. Keep it deterministic enough to debug.
 
-# 8. VOICE V3 / HUMANIZATION
+# 8. VOICE V3 / HUMANIZATION — REQUIRED IN THE SAME PASS
 
-The next build must include a dedicated voice-humanization pass so Rosalina does not sound like a generic phone reader.
+This is a required part of the same end-to-end build, not a separate optional follow-up or a cosmetic settings page.
+
+User-confirmed direction:
+The voice pass should include natural prosody, emotional pacing, softer/louder delivery, whispers, breaths, sighs, little laughs, hesitations, playful delivery, affectionate tone, teasing tone, and reactions that match her facial expression and body movement. She should sound like the Rosalina in the approved template rather than a phone reading text aloud.
 
 Primary objective:
 - Make Rosalina sound conversational, emotionally responsive, warm, natural, and alive while preserving the phone-proven 10015 speech reliability.
+- Audible output alone is not sufficient to complete Voice V3. The voice-quality improvement must also be demonstrated.
 
-Architecture:
-- Keep the Samsung-safe Android system TTS path from 10015 as the mandatory compatibility fallback.
-- Add or integrate a more expressive local primary speech path only if it is stable on the target phone.
-- If the expressive local engine fails, crashes, overheats the phone, or cannot meet Live latency, fall back automatically to Android system TTS without breaking Chat or Live.
-- Do not remove the working Android TTS compatibility path.
-- Do not require cloud speech or the Mac.
+Architecture and promotion rule:
+- 10015 uses the Android system TTS compatibility path on the user's Samsung after Kokoro native speech failures. Preserve that working implementation as the protected compatibility fallback.
+- Evaluate and integrate a better primary LOCAL expressive voice engine as part of this pass. Selecting an engine, adding a control, or leaving only the existing system reader is not completion of the expressive-voice requirement.
+- Keep the proven 10015 path active until the candidate expressive engine passes real-device speech quality, repeated playback, Stop/cancellation, latency, RAM and thermal tests.
+- Promote the expressive local engine to primary only after those checks pass on the target Samsung. Once validated, use it for both Chat read-aloud and Live replies.
+- If the primary engine fails initialization, crashes, becomes unavailable, or cannot operate within the validated memory/thermal/latency limits, release its resources and fall back automatically to Android system TTS. Preserve the reply and prevent duplicate or replayed speech.
+- Do not silently return to the known-crashing Kokoro path and label it repaired. Any Kokoro reuse requires separate evidence that its native speech failure has been resolved.
+- Do not remove or rewrite the working Android TTS fallback merely to accommodate a new voice engine.
+- Do not require cloud speech or the Mac. Verify an installed offline voice configuration for the selected speech paths; do not silently enable network speech processing.
+- If no evaluated local expressive engine meets the device requirements, retain the working fallback and explicitly report Voice V3 as incomplete. Do not call a fallback-only build humanized or pristine.
 
 Humanization behaviors:
-- Natural sentence rhythm
-- Context-aware pacing
+- Natural prosody: intonation, emphasis and sentence rhythm
+- Emotional, context-aware pacing
 - Natural pauses and hesitation
 - Emphasis on meaningful words
-- Softer and louder delivery where appropriate
-- Breathier delivery where appropriate
-- Whisper-capable delivery where supported
+- Softer and louder delivery where appropriate, without changing the user's system-volume setting
+- Natural breaths and breathier delivery where appropriate
+- Whisper-capable delivery where supported and audibly validated
 - Small sighs
 - Small laughs / chuckles
 - Warm affectionate tone
@@ -163,16 +171,17 @@ Humanization behaviors:
 - Calm delivery
 - Emotionally restrained delivery when the conversation calls for it
 
-The voice must not sound like every sentence uses the same speed, pitch, energy, or cadence.
+The voice must not use the same cadence, speed, emphasis and emotional intensity for every sentence. Merely adjusting playback speed/pitch is not by itself proof of natural prosody or genuine whisper support. Do not read performance instructions such as "sigh" or "laugh" aloud as though they were the intended nonverbal reaction. Report unsupported behaviors rather than pretending they are implemented.
 
 Expression synchronization:
-- Voice tone, face expression, posture, gesture intensity and lip sync should agree with one another.
+- Voice tone, facial expression, posture, gesture intensity and lip sync should agree with one another.
 - Happy voice -> Happy expression / lighter gesture.
 - Teasing voice -> Teasing expression / playful restrained movement.
 - Reassuring voice -> softer expression / slower movement.
 - Thinking voice -> Thinking expression / reduced gesture.
 - Sad or subdued voice -> restrained body motion and softer delivery.
 - Interrupted -> speech stops, lip sync stops, gesture stops, Interrupted state appears immediately.
+- Drive speaking state from actual playback events. Distinguish measured audio-energy lip motion from timing-only animation; do not label timing-only or amplitude-only movement phoneme-accurate lip sync.
 
 Mature/flirty personality:
 - Allow a clearly adult, mature, affectionate and flirty conversational style.
@@ -196,21 +205,25 @@ Voice performance rules:
 - Background/return must not duplicate or replay an already-completed spoken reply.
 
 Voice diagnostics:
-- Report the actual speech engine in use.
+- Report the actual speech engine in use and the selected voice.
+- Report whether the selected voice is configured for offline execution.
 - Report fallback reason when Android system TTS was selected.
 - Report speech initialization time.
 - Report first-audio latency where available.
-- Report speech playback duration.
-- Report whether lip sync is receiving real playback activity.
+- Report speech playback duration separately from synthesis completion.
+- Report whether lip sync is receiving real playback activity or audio-energy data.
 - Report speech process exit/crash separately from Chat/Whisper failures.
 
 Voice acceptance on the actual phone:
 - Chat spoken replies remain audible.
 - Live spoken replies remain audible over repeated turns.
-- Voice sounds materially more natural than plain system-reader cadence when the expressive engine is active.
-- Automatic fallback remains reliable when the expressive engine is unavailable.
+- Compare the same representative phrases on the protected 10015 voice and the candidate expressive voice. Include neutral, affectionate, playful, reassuring, subdued and whispered delivery where supported, plus breaths, sighs and chuckles.
+- The user must be able to hear a material improvement in naturalness, not only a different speaker or speed setting.
+- Measure first-audio delay, sustained-session RAM and thermal behavior relative to the baseline; include a 10–15 minute repeated Chat/Live session rather than a single successful utterance.
+- Exercise Stop, interruption, background/return and a controlled primary-engine failure. Fallback must preserve audible replies without replaying already spoken content.
 - No speech-engine crash is allowed to kill Chat or Live.
 - Voice humanization must not meaningfully worsen Live responsiveness or thermal stability.
+- Report each required behavior as implemented and tested, implemented but awaiting phone acceptance, or unsupported/blocked. Do not treat successful fallback as acceptance of expressive voice quality.
 
 # 9. LIVE VOICE SCREEN
 
@@ -238,7 +251,7 @@ Preserve the 10015 working Chat behavior.
 
 Requirements:
 - Fast text-first response remains the priority.
-- Spoken replies continue through the proven Samsung-safe Android TTS path on SM-F976U1 / Android 37.
+- Preserve the proven Samsung-safe Android TTS path on SM-F976U1 / Android 37; use the expressive local primary only after the Voice V3 promotion checks pass, with automatic compatibility fallback retained.
 - Chat history remains intact across app recreation, fold/unfold, orientation and backgrounding.
 - Chat must not initialize image/video engines.
 - Avatar presence may be shown in Chat if lightweight, but must never slow text generation or destabilize the working speech path.
@@ -252,6 +265,8 @@ Keep settings focused on Chat, Live and the avatar:
 - Live Voice enable/behavior
 - Microphone / hands-free behavior
 - Voice choice/pace where actually supported
+- Optional mature/flirty personality control
+- Expressive voice controls only where actually supported; show the active engine and any fallback reason
 - Avatar animation enable/disable
 - Avatar movement intensity if needed
 - Lip sync enable/disable only if necessary for diagnostics/accessibility
@@ -421,6 +436,14 @@ Avatar:
 - No obvious low-resolution fallback under normal conditions
 - No runaway animation or excessive battery/thermal load
 - Thermal degradation works without breaking conversation
+
+Voice V3:
+- The required humanization behaviors and voice-quality comparison in Section 8 have been demonstrated on the target phone
+- Voice, expression and movement agree with the response and actual playback
+- The local primary meets validated latency, RAM and thermal limits
+- The preserved 10015 compatibility fallback works when the primary is unavailable
+- Stop/interruption works with both speech paths
+- Missing or unsupported expressive behaviors are explicitly disclosed; fallback-only output is not a Voice V3 quality pass
 
 Navigation:
 - Only Chat, Live Voice and Settings are exposed as app destinations
