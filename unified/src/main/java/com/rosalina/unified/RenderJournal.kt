@@ -11,6 +11,7 @@ import java.security.MessageDigest
 /** Private measurements of actual jobs, including failed jobs. Never an inferred phone benchmark. */
 internal class RenderJournal(context: Context) {
     private val file = File(context.filesDir, "performance/recent-renders.json")
+    private val sourceCommit=runCatching{context.assets.open("source-commit.txt").bufferedReader().use{it.readText().trim()}}.getOrDefault("unknown")
     private var current: JSONObject? = null
     private var started = 0L
     private var lastStage = ""
@@ -22,7 +23,8 @@ internal class RenderJournal(context: Context) {
         val profile = if (request.kind == TaskKind.ANIMATE) "${request.width}x${request.height}/${request.seconds}s/12" else "${request.profile.width}x${request.profile.height}/${request.profile.steps}"
         val key = hex(MessageDigest.getInstance("SHA-256").digest("${request.kind}/$profile/${request.seed}/${request.prompt}/${request.photo}/${request.strength}".toByteArray()))
         current = JSONObject().put("id", request.id).put("matchKey", key).put("kind", request.kind.name).put("profile", profile)
-            .put("requestedBackend", request.backend).put("device", Build.MODEL).put("android", Build.VERSION.SDK_INT)
+            .put("requestedBackend", request.backend).put("appVersion",BuildConfig.VERSION_NAME).put("appVersionCode",BuildConfig.VERSION_CODE).put("sourceCommit",sourceCommit)
+            .put("device", Build.MODEL).put("android", Build.VERSION.SDK_INT)
             .put("initialThermal", resources.thermal).put("peakThermal", resources.thermal).put("minAvailableBytes", resources.available)
             .put("peakWorkerRssBytes", 0L).put("peakWorkerCpuPct", JSONObject.NULL).put("peakGpuBusyPct", JSONObject.NULL)
             .put("maxCpuCurrentKhz",0L).put("maxGpuCurrentHz",0L).put("createdAt", System.currentTimeMillis())
@@ -53,6 +55,6 @@ internal class RenderJournal(context: Context) {
     @Synchronized fun describe(): String {
         val rows = runCatching { JSONArray(file.readText()) }.getOrDefault(JSONArray())
         return "Actual render records (wall time includes thermal pacing; RSS excludes unreported GPU memory):\n" + rows.toString(2) +
-            "\nCompare only successful records with the same matchKey/model versions and comparable initial thermal state. A probe PASS is not Wan performance or compatibility acceptance.\n"
+            "\nRecords without appVersion/sourceCommit predate this audit metadata. Compare only successful records from the same app/source, matchKey/model versions, and comparable initial thermal state. A probe PASS is not Wan performance or compatibility acceptance.\n"
     }
 }
