@@ -65,6 +65,8 @@ class MainActivity:AppCompatActivity() {
     private var lastResult="";private var lastPhoto=""
     private lateinit var drawer:LinearLayout
     private val railButtons=mutableMapOf<ShellSection,Button>()
+    private val focusSections=listOf(ShellSection.COMPANION,ShellSection.SETTINGS_MODELS)
+    private val focusModels=listOf(ModelKey.CHAT,ModelKey.STT,ModelKey.TTS)
     private val controls=mutableListOf<View>()
     private val pickModel=registerForActivityResult(ActivityResultContracts.OpenDocument()){uri->if(uri!=null){runCatching{contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION)};session.begin(TaskRequest(kind=TaskKind.IMPORT,modelKey=session.prefs.getString("pending-model",ModelKey.CHAT.name).orEmpty(),uri=uri.toString()))}}
     private val pickPhoto=registerForActivityResult(ActivityResultContracts.OpenDocument()){uri->if(uri!=null)session.importPhoto(uri)}
@@ -82,13 +84,13 @@ class MainActivity:AppCompatActivity() {
         super.onCreate(savedInstanceState)
         val legacy=savedInstanceState?.getString("mode") ?:session.prefs.getString("tab","Chat").orEmpty()
         section=ShellSection.parse(savedInstanceState?.getString("section") ?:session.prefs.getString("section",null),legacy)
+        if(section !in focusSections)section=ShellSection.COMPANION
         companionMode=CompanionMode.parse(savedInstanceState?.getString("companion-mode") ?:session.prefs.getString("companion-mode","CHAT"))
         photoMode=PhotoMode.parse(savedInstanceState?.getString("photo-mode") ?:session.prefs.getString("photo-mode",if(legacy=="Edit")"EDIT" else "CREATE"))
         syncMode()
         buildUi();buildPane();onBackPressedDispatcher.addCallback(this,drawerBack)
         lifecycleScope.launch{repeatOnLifecycle(Lifecycle.State.STARTED){
             launch{session.state.sample(50).collect{update(it)}}
-            launch(Dispatchers.IO){while(isActive){if(!session.state.value.busy)runCatching{session.refreshResources()};delay(2000)}}
         }}
     }
     override fun onResume(){super.onResume();avatar?.setActive(true);lifecycleScope.launch{withContext(Dispatchers.IO){runCatching{session.refreshResources()}};if(section==ShellSection.COMPANION && companionMode==CompanionMode.CHAT && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))session.prepareChat()}}
@@ -151,7 +153,7 @@ class MainActivity:AppCompatActivity() {
         drawer.addView(text("ROSALINA",24f))
         drawer.addView(text("PRIVATE  ·  ON DEVICE",10f,accent).apply{letterSpacing=.12f})
         drawer.addView(text("MENU",10f,muted).apply{setPadding(0,dp(24),0,dp(6))})
-        for(item in ShellSection.entries) {
+        for(item in focusSections) {
             val sub=when(item){
                 ShellSection.COMPANION->"Chat & Live"
                 ShellSection.PHOTO->"Create & Edit"
@@ -167,7 +169,7 @@ class MainActivity:AppCompatActivity() {
         val shell=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}
         val rail=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER_HORIZONTAL;setPadding(dp(4),dp(6),dp(4),dp(6));background=shape(Color.rgb(20,15,29))}
         rail.addView(button("☰"){toggleDrawer()}.apply{contentDescription="Open navigation menu"},LinearLayout.LayoutParams(-1,dp(52)))
-        for(item in ShellSection.entries) {
+        for(item in focusSections) {
             val b=button(sectionGlyph(item)){selectSection(item)}.apply{contentDescription=sectionLabel(item)};railButtons[item]=b
             rail.addView(b,LinearLayout.LayoutParams(-1,dp(58)).apply{topMargin=dp(7)})
         }
@@ -201,6 +203,7 @@ class MainActivity:AppCompatActivity() {
     }
     private fun buildPane() {
         drafts.flush();avatar?.setActive(false);previewJobs.values.forEach{it.cancel()};previewJobs.clear();liveMic=null
+        if(section !in focusSections)section=ShellSection.COMPANION
         content.removeAllViews();controls.clear();preview=null;reference=null;resultLabel=null;chatList=null;chatScroll=null;streaming=null;avatar=null;liveText="";lastResult="";lastPhoto="";rendered=emptyList()
         refreshRail();syncMode()
         val transitionDetail=when(section){ShellSection.COMPANION->companionMode.name;ShellSection.PHOTO->photoMode.name;ShellSection.ANIMATE->"MOTION";ShellSection.SETTINGS_MODELS->"SETTINGS"}
@@ -288,12 +291,12 @@ class MainActivity:AppCompatActivity() {
     }
     private fun buildSettingsModelsPane() {
         val body=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(8),dp(10),dp(8),dp(18))}
-        body.addView(text("Settings & Models",28f));body.addView(text("One place for Companion, Live Voice, avatar, diagnostics and local models.",12f,muted))
+        body.addView(text("Settings & Models",28f));body.addView(text("Chat + Live Focus. Photo and video engines stay preserved but inactive so conversation gets the phone.",12f,muted))
         body.addView(text("APP SETTINGS",11f,accent).apply{setPadding(0,dp(18),0,dp(4))})
         body.addView(button("Companion · Live Voice · Live Avatar\nOpen conversation, voice and avatar preferences"){settingsDialog()})
         body.addView(button("Diagnostics\nDevice, audio route, model and runtime details"){diagnosticsDialog()})
         body.addView(text("MODELS",11f,accent).apply{setPadding(0,dp(18),0,dp(4))})
-        for(key in ModelKey.entries){
+        for(key in focusModels){
             val installed=session.models.path(key)!=null
             body.addView(LinearLayout(this).apply{
                 orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;background=shape(panel);setPadding(dp(12),dp(10),dp(12),dp(10))
@@ -301,8 +304,8 @@ class MainActivity:AppCompatActivity() {
                 addView(text(if(installed)"Installed" else key.approximate,11f,if(installed)Color.rgb(124,235,167) else muted))
             },LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(6)})
         }
-        body.addView(button("Models Manager\nDownload, import and inspect local models"){modelDialog()},LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(4)})
-        body.addView(text("Rosalina remains private and on-device unless you explicitly enable an implemented online provider. Existing local models and app data are preserved.",11f,muted).apply{setPadding(0,dp(14),0,0)})
+        body.addView(button("Models Manager\nChat, listening and voice models"){modelDialog()},LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(4)})
+        body.addView(text("Image/video models already on the phone are left untouched, but this build will not load or run them. Rosalina remains private and on-device unless you explicitly enable an implemented online provider.",11f,muted).apply{setPadding(0,dp(14),0,0)})
         content.addView(ScrollView(this).apply{isFillViewport=true;addView(body)},FrameLayout.LayoutParams(-1,-1))
     }
     private fun profileDescription():String {
@@ -315,16 +318,13 @@ class MainActivity:AppCompatActivity() {
         if(section==ShellSection.SETTINGS_MODELS)return
         val p=prompt.text.toString().trim();if(p.isBlank()){session.notice("Enter a message first");return}
         val kind=when(section){
-            ShellSection.COMPANION->Route.kind(p)
-            ShellSection.PHOTO->if(photoMode==PhotoMode.CREATE)TaskKind.CREATE else TaskKind.EDIT
-            ShellSection.ANIMATE->TaskKind.ANIMATE
+            ShellSection.COMPANION->TaskKind.CHAT
             ShellSection.SETTINGS_MODELS->return
+            ShellSection.PHOTO,ShellSection.ANIMATE->{session.notice("Photo and video tools are inactive in Chat + Live Focus");return}
         }
-        mode=when(kind){TaskKind.CHAT->"Chat";TaskKind.CREATE->"Create";TaskKind.EDIT->"Edit";TaskKind.ANIMATE->"Animate";else->mode}
-        val photo=session.prefs.getString("photo","").orEmpty()
-        if(kind in listOf(TaskKind.EDIT,TaskKind.ANIMATE) && photo.isBlank()){session.notice("Choose a photo, then send the request again");pickPhoto.launch(arrayOf("image/*"));return}
-        ensureNotifications();val aspect=session.prefs.getString("aspect","256×256").orEmpty().split('×')
-        val r=TaskRequest(kind=kind,prompt=p,photo=photo,profile=if(session.prefs.getBoolean("standard",false))RenderProfile.Standard else RenderProfile.Draft,seconds=session.prefs.getInt("seconds",6),width=aspect.getOrNull(0)?.toIntOrNull() ?:256,height=aspect.getOrNull(1)?.toIntOrNull() ?:256,strength=session.prefs.getFloat("strength",.65f),seed=session.prefs.getLong("seed",42),backend=backendChoice())
+        mode="Chat"
+        ensureNotifications()
+        val r=TaskRequest(kind=kind,prompt=p)
         if(session.begin(r) && section==ShellSection.COMPANION){
             prompt.text.clear();drafts.flush()
             if(kind in listOf(TaskKind.CREATE,TaskKind.EDIT,TaskKind.ANIMATE)){
@@ -351,7 +351,7 @@ class MainActivity:AppCompatActivity() {
     private fun update(s:TaskState) {
         status.change(s.stage+if(s.voiceStage.isNotBlank())"\n${s.voiceStage}" else "")
         avatar?.bind(s)
-        thermal.change("Thermal: ${ThermalPolicy.label(s.thermal)} · Available RAM: ${String.format("%.1f",s.availableBytes/1e9)} GB"+if(s.busy)"\n${s.elapsedMs/1000}s elapsed${if(s.eta.isBlank())"" else " · ${s.eta}"}${if(s.workHint.isBlank() || s.kind==TaskKind.VOICE)"" else "\n${s.workHint}"}" else "")
+        thermal.change(if(s.busy)"Private · on-device · ${s.elapsedMs/1000}s elapsed" else "Private · on-device")
         stop.visibility=if(s.busy)View.VISIBLE else View.GONE;stop.isEnabled=!s.stopping
         progress.visibility=if(s.busy && s.kind !in listOf(TaskKind.CHAT,TaskKind.VOICE))View.VISIBLE else View.GONE
         if(progress.isIndeterminate!=(s.percent==null))progress.isIndeterminate=s.percent==null
@@ -384,8 +384,8 @@ class MainActivity:AppCompatActivity() {
     private fun modelDialog() {
         val body=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(14),dp(8),dp(14),dp(8))}
         body.addView(text("This update keeps the unified app's existing model imports. Other Rosalina apps remain untouched.",13f,muted))
-        for(key in ModelKey.entries){body.addView(text(key.label,17f,accent));body.addView(text(session.models.summary(key),11f,muted));body.addView(row(button("Download"){runCatching{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(key.url)))}} ,button("Import"){if(!session.state.value.busy){session.prefs.edit().putString("pending-model",key.name).apply();pickModel.launch(arrayOf("*/*"))}else session.notice("Finish or stop the current task before importing")}))}
-        body.addView(text("Video decoder: bundled and checksum-checked. Voice imports use original .tar.bz2 packs.",12f,muted))
+        for(key in focusModels){body.addView(text(key.label,17f,accent));body.addView(text(session.models.summary(key),11f,muted));body.addView(row(button("Download"){runCatching{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(key.url)))}} ,button("Import"){if(!session.state.value.busy){session.prefs.edit().putString("pending-model",key.name).apply();pickModel.launch(arrayOf("*/*"))}else session.notice("Finish or stop the current task before importing")}))}
+        body.addView(text("Only Chat, Listening and Voice are active in this build. Existing image/video model files are preserved and ignored.",12f,muted))
         AlertDialog.Builder(this).setTitle("Rosalina models").setView(ScrollView(this).apply{addView(body)}).setPositiveButton("Close",null).show()
     }
     private fun settingsDialog() {
@@ -405,7 +405,7 @@ class MainActivity:AppCompatActivity() {
         val adaptiveLive=Switch(this).apply{text="Adaptive Live learning · learn my conversation rhythm";setTextColor(ink);isChecked=session.prefs.getBoolean("adaptive-live-learning",true)};body.addView(adaptiveLive)
         body.addView(text(session.liveLearningSummary(),11f,muted))
         val online=Switch(this).apply{text="Allow internet enhancements · local fallback always available";setTextColor(ink);isChecked=session.prefs.getBoolean("online-enhancements",false)};body.addView(online)
-        body.addView(text("This preference is saved only. No internet or Mac execution provider is implemented in this candidate; Chat, Photo, Animate and Voice run locally. No API key is bundled.",11f,muted))
+        body.addView(text("This preference is saved only. No internet or Mac execution provider is implemented in this candidate; Chat and Live run locally. No API key is bundled.",11f,muted))
 
         body.addView(text("VOICE V2 · EXPRESSIVE ROSALINA",16f,accent))
         val styleKeys=arrayOf("adaptive","natural","warm","breathy","deep","bright","squeaky","intimate")
@@ -439,7 +439,6 @@ class MainActivity:AppCompatActivity() {
         body.addView(text("Live Voice starts only after you tap Mic. Speaker interruption requires enabled echo cancellation; otherwise use a supported headphone route or tap Mic. Stop ends listening. Classic mode remains available above.",12f,muted))
         body.addView(button("Reset Live learning"){if(!session.state.value.busy)session.resetLiveLearning()})
         body.addView(button("Clear conversation"){if(!session.state.value.busy)AlertDialog.Builder(this).setMessage("Clear this app's conversation? Models and other apps will not change.").setNegativeButton("Keep",null).setPositiveButton("Clear"){_,_->session.clearConversation()}.show()})
-        body.addView(button("Open Samsung Thermal Guardian"){val launch=packageManager.getLaunchIntentForPackage("com.samsung.android.thermalguardian") ?:packageManager.getLaunchIntentForPackage("com.android.samsung.utilityapp");if(launch!=null)startActivity(launch)else session.notice("Samsung Thermal Guardian is not installed or has no launch activity")})
         AlertDialog.Builder(this).setTitle("Rosalina settings").setView(ScrollView(this).apply{addView(body)}).setNegativeButton("Cancel",null).setPositiveButton("Save"){_,_->
             val pacePercent=70+pace.progress
             session.prefs.edit()
@@ -470,7 +469,7 @@ class MainActivity:AppCompatActivity() {
     }
     private fun diagnosticsDialog() {
         lifecycleScope.launch {
-            val info=withContext(Dispatchers.IO){session.diagnostics(includeExits=true)}
+            val info=withContext(Dispatchers.IO){runCatching{session.refreshResources()};session.diagnostics(includeExits=true)}
             if(!isFinishing && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))AlertDialog.Builder(this@MainActivity).setTitle("Rosalina diagnostics").setMessage(info).setPositiveButton("Copy diagnostics"){_,_->getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Rosalina diagnostics",info))}.setNegativeButton("Close",null).show()
         }
     }
