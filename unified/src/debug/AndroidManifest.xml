@@ -1,0 +1,12 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Debug-only synthetic PCM fixture. NEVER packaged in the release APK.
+             TtsEngines discovers engines with MATCH_DEFAULT_ONLY. -->
+        <service android:name="com.rosalina.unified.testspeech.OfflineFixtureTts" android:exported="true" android:process=":ttsfixture" android:label="Rosalina CI PCM fixture">
+            <intent-filter>
+                <action android:name="android.intent.action.TTS_SERVICE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>

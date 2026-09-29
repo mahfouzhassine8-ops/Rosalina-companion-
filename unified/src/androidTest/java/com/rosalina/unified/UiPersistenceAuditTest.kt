@@ -22,7 +22,7 @@ class UiPersistenceAuditTest {
         yield(v);if(v is ViewGroup)for(i in 0 until v.childCount)yieldAll(descendants(v.getChildAt(i)))
     }
     private fun clickLabel(a:MainActivity,label:String){
-        val b=descendants(a.window.decorView).filterIsInstance<Button>().first{it.contentDescription?.toString()==label}
+        val b=descendants(a.window.decorView).filterIsInstance<Button>().first{it.isShown && it.contentDescription?.toString()==label}
         assertTrue(b.performClick())
     }
     @Test fun latestKeystrokesSurviveImmediateRecreation(){
@@ -36,8 +36,8 @@ class UiPersistenceAuditTest {
         ActivityScenario.launch(MainActivity::class.java).use{scenario->
             scenario.onActivity{a->
                 a.findViewById<EditText>(1001).setText("Keep this chat request")
-                clickLabel(a,"Settings & Models")
-                clickLabel(a,"Companion")
+                clickLabel(a,"Open navigation menu");clickLabel(a,"Drawer Settings")
+                clickLabel(a,"Open navigation menu");clickLabel(a,"Drawer Chat")
                 assertEquals("Keep this chat request",a.findViewById<EditText>(1001).text.toString())
                 val descriptions=descendants(a.window.decorView).mapNotNull{it.contentDescription?.toString()}.toList()
                 assertFalse(descriptions.contains("Photo"))

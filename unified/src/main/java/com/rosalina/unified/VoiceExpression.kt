@@ -9,7 +9,8 @@ internal data class VoiceExpression(
     val energy:Float=1f,
     val pace:Float=1f,
     val intensity:Float=1f,
-    val stylized:Boolean=false
+    val stylized:Boolean=false,
+    val performance:PerformanceState?=null
 ) {
     fun safe(realismGuard:Boolean=true):VoiceExpression {
         val pitchLimit=if(stylized || !realismGuard)12f else 4f

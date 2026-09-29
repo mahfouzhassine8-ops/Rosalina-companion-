@@ -64,7 +64,7 @@ internal class EngineRpc(private val context:Context,private val type:Class<out 
         listeners[id]=channel
         try {
             m.send(Message.obtain().apply{what=RPC_RUN;data=Bundle(values).apply{putString("id",id)};replyTo=replies})
-            for(event in channel)when(event.getString("type")){"error"->error(event.getString("text") ?:"Native engine failed");"done"->{onEvent(event);return event};else->onEvent(event)}
+            for(event in channel)when(event.getString("type")){"error"->error(event.getString("text") ?:"Native engine failed");"cancelled"->error("Engine interrupted: "+event.getString("text").orEmpty());"done"->{onEvent(event);return event};else->onEvent(event)}
             error("Engine disconnected without completing its request")
         }finally{listeners.remove(id);channel.cancel()}
     }
@@ -82,7 +82,7 @@ internal class EngineRpc(private val context:Context,private val type:Class<out 
                 val graceful=died!=null && withTimeoutOrNull(750){died.await();true}==true
                 if(!graceful && m.binder.isBinderAlive) {
                     withContext(Dispatchers.IO) {
-                        val suffix=when(type){ChatService::class.java->":chat";ListenService::class.java->":listen";else->":speech"}
+                        val suffix=when(type){ChatService::class.java->":chat";ListenService::class.java->":listen";ExpressiveSpeechService::class.java->":expressive";else->":speech"}
                         val expected=context.packageName+suffix
                         val cmd=runCatching{File("/proc/$oldPid/cmdline").readText().substringBefore('\u0000')}.getOrDefault("")
                         if(oldPid>0 && cmd==expected)android.os.Process.killProcess(oldPid)
@@ -108,17 +108,18 @@ abstract class NativeRpcService:Service() {
                     runCatching{reply.send(Message.obtain().apply{what=RPC_EVENT;data=b})}
                 }
                 if(!owner.compareAndSet(null,id))send("error","Engine already has an active request")else {
-                    send("stage","Preparing local engine")
+                    beginRequest();send("stage","Preparing local engine")
                     scope.launch {
                         var result:Bundle?=null;var failure:Throwable?=null
                         try{result=execute(values){type,text,extra->send(type,text,extra)}}catch(t:Throwable){failure=t}finally{owner.compareAndSet(id,null)}
-                        if(failure==null)send("done",extra=result)else if(failure !is CancellationException)send("error",failure.message ?:failure.javaClass.simpleName)
+                        if(failure==null)send("done",extra=result)else if(failure is CancellationException)send("cancelled","Request cancelled")else send("error",failure.message ?:failure.javaClass.simpleName)
                     }
                 }
             }
         };true
     })
     protected abstract suspend fun execute(values:Bundle,emit:(String,String,Bundle?)->Unit):Bundle
+    protected open fun beginRequest(){}
     protected open fun interrupt(){}
     override fun onBind(intent:Intent?):IBinder=messenger.binder
     override fun onUnbind(intent:Intent?):Boolean{interrupt();scope.cancel();android.os.Process.killProcess(android.os.Process.myPid());return false}

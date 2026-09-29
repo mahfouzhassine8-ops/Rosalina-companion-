@@ -29,6 +29,16 @@ internal class VoiceCapture(private val context: Context, private val handsFree:
     private var routedByApp = false
     private var previousCommunicationDevice: AudioDeviceInfo? = null
     @Volatile private var closed = false
+    private val recordingLock=Any()
+    @Volatile var isMuted=false;private set
+    @Volatile private var muteEpoch=0L
+    val recordingActive:Boolean get()=synchronized(recordingLock){!closed && !isMuted && record?.recordingState==AudioRecord.RECORDSTATE_RECORDING}
+    fun setMuted(value:Boolean)=synchronized(recordingLock) {
+        check(!closed){"Microphone is closed"}
+        val r=record ?:error("Microphone is not active")
+        if(value==isMuted)return@synchronized
+        if(value){r.stop();isMuted=true;muteEpoch++}else{r.startRecording();check(r.recordingState==AudioRecord.RECORDSTATE_RECORDING){"Microphone did not resume"};isMuted=false;muteEpoch++}
+    }
     @Volatile var outputActive = false
     @Volatile var outputRoute = -1
     fun headphones() = outputRoute in intArrayOf(AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLUETOOTH_SCO)
@@ -36,7 +46,7 @@ internal class VoiceCapture(private val context: Context, private val handsFree:
     fun describe():String {
         val bt=Build.VERSION.SDK_INT<31 || ContextCompat.checkSelfPermission(context,Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED
         val communication=if(Build.VERSION.SDK_INT>=31)runCatching{audio.communicationDevice?.type ?: -1}.getOrDefault(-1) else outputRoute
-        return "Hands-free requested=$handsFree; output route=${AudioRoutePolicy.label(outputRoute)}($outputRoute); communication route=${AudioRoutePolicy.label(communication)}($communication); app communication route=$routedByApp; audio mode=${audio.mode}; Bluetooth permission=${if(Build.VERSION.SDK_INT<31) "legacy" else bt}; AEC available=${AcousticEchoCanceler.isAvailable()}; AEC enabled=${echo?.enabled == true}; acoustic interruption=${canInterrupt()}"
+        return "Hands-free requested=$handsFree; microphone muted=$isMuted; recording=$recordingActive; output route=${AudioRoutePolicy.label(outputRoute)}($outputRoute); communication route=${AudioRoutePolicy.label(communication)}($communication); app communication route=$routedByApp; audio mode=${audio.mode}; Bluetooth permission=${if(Build.VERSION.SDK_INT<31) "legacy" else bt}; AEC available=${AcousticEchoCanceler.isAvailable()}; AEC enabled=${echo?.enabled == true}; acoustic interruption=${canInterrupt()}"
     }
     private fun preferredCommunicationDevice():AudioDeviceInfo? {
         if(Build.VERSION.SDK_INT<31)return null
@@ -74,10 +84,10 @@ internal class VoiceCapture(private val context: Context, private val handsFree:
         val r = record ?: error("Microphone not open")
         val folder = File(context.filesDir, "voice-input").apply { mkdirs() }
         val file = File(folder, "${UUID.randomUUID()}.pcm")
-        val gate = VoiceGate()
+        var gate = VoiceGate()
         val preRoll = ArrayDeque<ByteArray>()
         val samples = ShortArray(640)
-        var began = false; var outputAtStart = false; var count = 0
+        var began = false; var outputAtStart = false; var count = 0;var seenMuteEpoch=muteEpoch
         var idleSince = SystemClock.elapsedRealtime(); var keep = false; var manualQuiet = 0
         try {
             FileOutputStream(file).use { out ->
@@ -88,7 +98,14 @@ internal class VoiceCapture(private val context: Context, private val handsFree:
                 while (count < 480000) {
                     currentCoroutineContext().ensureActive()
                     check(!closed) { "Voice input closed" }
-                    val n = r.read(samples, 0, samples.size, AudioRecord.READ_NON_BLOCKING)
+                    if(seenMuteEpoch!=muteEpoch){
+                        // Discard speech spanning a privacy mute transition, including pre-roll.
+                        seenMuteEpoch=muteEpoch;preRoll.clear();gate=VoiceGate();began=false;count=0;manualQuiet=0
+                        out.channel.truncate(0);out.channel.position(0);idleSince=SystemClock.elapsedRealtime()
+                    }
+                    if(isMuted){idleSince=SystemClock.elapsedRealtime();delay(50);continue}
+                    val n=synchronized(recordingLock){if(isMuted || closed)0 else r.read(samples,0,samples.size,AudioRecord.READ_NON_BLOCKING)}
+                    if(seenMuteEpoch!=muteEpoch)continue
                     require(n >= 0) { "Microphone read failed: $n" }
                     if (n == 0) { delay(10); continue }
                     val data = ByteBuffer.allocate(n * 2).order(ByteOrder.LITTLE_ENDIAN).apply { asShortBuffer().put(samples, 0, n) }.array()
@@ -115,8 +132,8 @@ internal class VoiceCapture(private val context: Context, private val handsFree:
             VoiceRecording(file, outputAtStart)
         } finally { if (!keep) file.delete() }
     }
-    override fun close() {
-        if (closed) return
+    override fun close():Unit = synchronized(recordingLock) {
+        if (closed) return@synchronized
         closed = true
         runCatching { record?.stop() }; runCatching { record?.release() }; record = null
         runCatching { echo?.release() }; runCatching { noise?.release() }; echo = null; noise = null

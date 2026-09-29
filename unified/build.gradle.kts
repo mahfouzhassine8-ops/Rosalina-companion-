@@ -10,8 +10,8 @@ android {
         applicationId = "com.rosalina.unified"
         minSdk = 30
         targetSdk = 35
-        versionCode = providers.gradleProperty("unifiedVersionCode").orNull?.toInt() ?: 10015
-        versionName = "1.0-chat-live-focus-c3"
+        versionCode = providers.gradleProperty("unifiedVersionCode").orNull?.toInt() ?: 10018
+        versionName = "1.0-companion-completion-c2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += if (emulatorQa) "x86_64" else "arm64-v8a" }
     }
@@ -28,6 +28,7 @@ android {
 dependencies {
     if (!emulatorQa) implementation(project(":lib"))
     implementation(files("libs/sherpa-onnx-1.13.8.aar"))
+    implementation(files("libs/rosalina-ort-java-1.23.2.jar"))
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.activity:activity-ktx:1.9.3")

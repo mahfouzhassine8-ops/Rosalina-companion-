@@ -1,5 +1,4 @@
 package com.rosalina.unified
-
 import android.content.Context
 import android.view.View
 import android.view.ViewGroup
@@ -11,65 +10,20 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-
-/** Runs against production UI code. No stub replaces MainActivity or the avatar. */
 @RunWith(AndroidJUnit4::class)
 class CompanionAuditTest {
-    private val context: Context get() = InstrumentationRegistry.getInstrumentation().targetContext
-    private val prefs get() = context.getSharedPreferences("rosalina-unified", Context.MODE_PRIVATE)
-
-    @Before fun resetNavigation() {
-        prefs.edit().putString("section", "COMPANION").putString("companion-mode", "CHAT")
-            .putString("tab", "Chat").putBoolean("live-avatar", true).commit()
-    }
-
-    private fun descendants(view: View): Sequence<View> = sequence {
-        yield(view)
-        if (view is ViewGroup) for (i in 0 until view.childCount) yieldAll(descendants(view.getChildAt(i)))
-    }
-
-    private fun click(activity: MainActivity, text: String) {
-        val button = descendants(activity.window.decorView).filterIsInstance<Button>()
-            .firstOrNull { it.text.toString() == text }
-        assertNotNull("Missing control: $text", button)
-        assertTrue("Disabled control: $text", button!!.isEnabled)
-        assertTrue(button.performClick())
-    }
-
-    @Test fun chatLiveSwitchRepeatedlyThenRecreate() {
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            repeat(5) {
-                scenario.onActivity { click(it, "Live") }
-                InstrumentationRegistry.getInstrumentation().waitForIdleSync()
-                Thread.sleep(120)
-                scenario.onActivity { a ->
-                    assertTrue(descendants(a.window.decorView).filterIsInstance<Button>()
-                        .any { it.text.toString().contains("Start / Speak") })
-                    click(a, "Chat")
-                }
-            }
-            scenario.onActivity { click(it, "Live") }
-            scenario.recreate()
-            scenario.onActivity { click(it, "Chat") }
-        }
-    }
-
-    @Test fun coldLaunchDirectlyIntoSavedLive() {
-        prefs.edit().putString("companion-mode", "LIVE").commit()
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            scenario.onActivity { a ->
-                assertTrue(descendants(a.window.decorView).filterIsInstance<Button>()
-                    .any { it.text.toString().contains("Start / Speak") })
-            }
-            scenario.recreate()
-            scenario.onActivity { click(it, "Chat") }
-        }
-    }
-
-    @Test fun liveEndBeforeStartingDoesNotCrash() {
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            scenario.onActivity { a -> click(a, "Live"); click(a, "■  End") }
-            scenario.onActivity { click(it, "Chat") }
-        }
-    }
+    private val context get()=InstrumentationRegistry.getInstrumentation().targetContext
+    @Before fun reset(){context.getSharedPreferences("rosalina-unified",Context.MODE_PRIVATE).edit().putString("section","COMPANION").putString("companion-mode","CHAT").putString("tab","Chat").putBoolean("live-avatar",true).commit()}
+    private fun views(v:View):Sequence<View> = sequence{yield(v);if(v is ViewGroup)for(i in 0 until v.childCount)yieldAll(views(v.getChildAt(i)))}
+    private fun click(a:MainActivity,label:String){val b=views(a.window.decorView).filterIsInstance<Button>().first{it.isShown && it.contentDescription?.toString()==label};assertTrue(b.isEnabled);assertTrue(b.performClick())}
+    private fun select(a:MainActivity,label:String){click(a,"Open navigation menu");click(a,"Drawer $label");assertFalse(views(a.window.decorView).first{it.contentDescription=="Close navigation menu"}.isShown)}
+    @Test fun repeatedNavigationUsesHiddenDrawerAndFullLiveWidth(){ActivityScenario.launch(MainActivity::class.java).use{scenario->
+        repeat(5){scenario.onActivity{select(it,"Live Voice")};InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            scenario.onActivity{a->val scene=views(a.window.decorView).first{it.tag=="live-scene"};val content=views(a.window.decorView).first{it.tag=="companion-content"};assertTrue(scene.width>0);assertEquals(content.width,scene.width);assertEquals(content.height,scene.height);select(a,"Chat");assertFalse(views(a.window.decorView).any{it is LiveAvatarView})}}
+        scenario.onActivity{select(it,"Live Voice")};scenario.recreate();scenario.onActivity{a->assertTrue(views(a.window.decorView).any{it.isShown && it.contentDescription=="Start Live Voice"});select(a,"Chat")}
+    }}
+    @Test fun savedLiveRecreatesWithoutStartingMic(){context.getSharedPreferences("rosalina-unified",0).edit().putString("companion-mode","LIVE").commit();ActivityScenario.launch(MainActivity::class.java).use{scenario->
+        scenario.onActivity{a->assertTrue(views(a.window.decorView).any{it.isShown && it.contentDescription=="Start Live Voice"});assertFalse(Session.get(a).presentation.snapshot.microphoneActive)};scenario.recreate();scenario.onActivity{select(it,"Chat")}
+    }}
+    @Test fun endInactiveLiveReturnsToChatWithoutKillingActivity(){ActivityScenario.launch(MainActivity::class.java).use{scenario->scenario.onActivity{a->select(a,"Live Voice");click(a,"End Live Voice");assertFalse(a.isFinishing);assertNotNull(a.findViewById<View>(1001))}}}
 }
