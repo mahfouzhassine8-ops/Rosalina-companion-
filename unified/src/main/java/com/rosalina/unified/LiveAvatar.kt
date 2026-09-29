@@ -8,6 +8,8 @@ import android.util.AttributeSet
 import android.util.Base64
 import android.view.Choreographer
 import android.view.View
+import java.io.File
+import java.io.FileOutputStream
 import kotlin.math.min
 
 internal enum class AvatarState { IDLE, LISTENING, THINKING, SPEAKING, INTERRUPTED, BUSY, ERROR }
@@ -32,23 +34,71 @@ internal object AvatarStateResolver {
 internal object AvatarAsset {
     @Volatile private var image: Bitmap? = null
     @Volatile var status = "Not decoded"; private set
+    private fun original(context:Context)=File(context.filesDir,"avatar/original-image")
+    private fun decodeOriginal(file:File):Bitmap {
+        return ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)){decoder,info,_->
+            decoder.allocator=ImageDecoder.ALLOCATOR_SOFTWARE
+            val longest=maxOf(info.size.width,info.size.height)
+            if(longest>2048){
+                val scale=2048f/longest
+                decoder.setTargetSize((info.size.width*scale).toInt().coerceAtLeast(1),(info.size.height*scale).toInt().coerceAtLeast(1))
+            }
+        }
+    }
     @Synchronized fun load(context: Context): Bitmap? {
         image?.let { return it }
         return runCatching {
-            val encoded = (0..1).joinToString("") { index ->
-                context.assets.open("avatar/$index.b64").bufferedReader().use { it.readText() }
+            val private=original(context)
+            val decoded=if(private.isFile)decodeOriginal(private) else {
+                val encoded=(0..1).joinToString(""){index->context.assets.open("avatar/$index.b64").bufferedReader().use{it.readText()}}
+                val bytes=Base64.decode(encoded,Base64.DEFAULT)
+                BitmapFactory.decodeByteArray(bytes,0,bytes.size) ?:error("Bundled clean Rosalina portrait decode returned null")
             }
-            val bytes = Base64.decode(encoded, Base64.DEFAULT)
-            (BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: error("Avatar JPEG decode returned null"))
-                .also { image = it; status = "Approved portrait decoded: ${it.width}x${it.height}; local 2-D mesh rig" }
+            decoded.also {
+                image=it
+                status=(if(private.isFile)"Private original portrait" else "Bundled clean fallback portrait")+" decoded: ${it.width}x${it.height}; local 2-D mesh rig"
+            }
         }.getOrElse { status = "Avatar decode failed: ${it.javaClass.simpleName}: ${it.message}"; null }
     }
+    /** Copies exact selected encoded bytes into private storage; only the in-memory display decode is sampled. */
+    @Synchronized fun importOriginal(context:Context,uri:android.net.Uri):String {
+        val folder=File(context.filesDir,"avatar").apply{mkdirs()}
+        val target=original(context);val part=File(folder,"original-image.part")
+        try {
+            context.contentResolver.openInputStream(uri)?.use{input->
+                FileOutputStream(part).use{out->
+                    val buffer=ByteArray(65536);var total=0L
+                    while(true){val n=input.read(buffer);if(n<0)break;total+=n;require(total<=50_000_000L){"Avatar image is larger than 50 MB"};out.write(buffer,0,n)}
+                    out.fd.sync()
+                }
+            } ?:error("Selected avatar image could not be opened")
+            var sourceWidth=0;var sourceHeight=0
+            val probe=ImageDecoder.decodeBitmap(ImageDecoder.createSource(part)){decoder,info,_->
+                sourceWidth=info.size.width;sourceHeight=info.size.height
+                require(sourceWidth>=400 && sourceHeight>=400){"Choose the original high-resolution Rosalina portrait (at least 400 px in both dimensions)"}
+                decoder.allocator=ImageDecoder.ALLOCATOR_SOFTWARE
+                val longest=maxOf(sourceWidth,sourceHeight);val scale=minOf(1f,256f/longest)
+                decoder.setTargetSize((sourceWidth*scale).toInt().coerceAtLeast(1),(sourceHeight*scale).toInt().coerceAtLeast(1))
+            };probe.recycle()
+            if(target.exists())target.delete()
+            check(part.renameTo(target)){"Could not finalize the private avatar image"}
+            image=null;status="Original portrait saved: ${sourceWidth}x${sourceHeight}; reload pending"
+            return "Original Rosalina portrait saved privately · ${sourceWidth}×${sourceHeight}"
+        } finally { part.delete() }
+    }
+    @Synchronized fun restoreBundled(context:Context):String {
+        original(context).delete();image=null;status="Bundled portrait reload pending"
+        return "Bundled Rosalina portrait restored"
+    }
+    fun hasPrivateOriginal(context:Context)=original(context).isFile
 }
 
 internal class LiveAvatarView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : View(context, attrs) {
     private val density = resources.displayMetrics.density
     private val bitmap = AvatarAsset.load(context)
     internal val imageLoaded: Boolean get() = bitmap != null
+    internal val sourceWidth: Int get() = bitmap?.width ?: 0
+    internal val sourceHeight: Int get() = bitmap?.height ?: 0
     private val rig = AvatarRig()
     private val imagePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val bgPaint = Paint().apply { color = Color.rgb(15, 11, 23) }
