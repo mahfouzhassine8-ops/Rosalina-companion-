@@ -1,7 +1,7 @@
-name: Rosalina 10018 Integrated Candidate
+name: Rosalina 10018 Smooth Motion and Voice
 on:
   push:
-    branches: [rosalina-10015-companion-completion-c2-10018]
+    branches: [rosalina-10018-smooth-motion-voice]
     paths: [unified/**, tools/completion10018/**, .github/workflows/companion-completion.yml]
   workflow_dispatch:
 permissions:
@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   source:
-    if: github.ref == 'refs/heads/rosalina-10015-companion-completion-c2-10018'
+    if: github.ref == 'refs/heads/rosalina-10018-smooth-motion-voice'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -33,7 +33,7 @@ jobs:
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git commit -m '10018: materialize checksum-verified companion application and tests'
-            git push origin HEAD:refs/heads/rosalina-10015-companion-completion-c2-10018
+            git push origin HEAD:refs/heads/rosalina-10018-smooth-motion-voice
           fi
           python3 tools/completion10018/materialize.py --check
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"

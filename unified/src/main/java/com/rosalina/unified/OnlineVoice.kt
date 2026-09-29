@@ -105,7 +105,7 @@ internal class OnlineVoice(private val context:Context,val settings:OnlineVoiceS
             val pcmBytes=ByteBuffer.wrap(raw).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
             val pcm=ShortArray(pcmBytes.remaining());pcmBytes.get(pcm)
             for(i in pcm.indices)pcm[i]=(pcm[i]*performance.volume).toInt().coerceIn(-32768,32767).toShort()
-            output.play(pcm,24000,started,emit).apply{
+            output.play(pcm,24000,started,emit,performance.pace).apply{
                 putString("engine","Optional ElevenLabs ${settings.model()}");putBoolean("offline",false)
                 putLong("setupMs",initialized);putLong("pssKb",Debug.getPss().toLong())
             }

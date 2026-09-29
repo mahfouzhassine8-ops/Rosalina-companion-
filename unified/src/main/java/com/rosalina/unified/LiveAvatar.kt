@@ -113,7 +113,9 @@ internal class LiveAvatarView @JvmOverloads constructor(context:Context,attrs:At
     private var fallback:Bitmap?=null
     private val imagePaint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val budget=MotionBudget()
-    private var tier=MotionTier.NORMAL
+    private val transitions=RigTransitions()
+    private var motionEnabled=context.getSharedPreferences("rosalina-unified",Context.MODE_PRIVATE).getBoolean("live-avatar",true)
+    private var tier=if(motionEnabled)MotionTier.NORMAL else MotionTier.STATIC
     private var snapshot=CompanionSnapshot()
     private var active=true
     private var running=false
@@ -142,23 +144,24 @@ internal class LiveAvatarView @JvmOverloads constructor(context:Context,attrs:At
             Choreographer.getInstance().postFrameCallbackDelayed(this,(1000L/tier.fps.coerceAtLeast(1)-2).coerceAtLeast(16))
         }
     }
-    private fun canAnimate()=active && isAttachedToWindow && isShown && windowVisibility==VISIBLE && renderer!=null && tier.fps>0 && ValueAnimator.areAnimatorsEnabled()
+    private fun canAnimate()=active && motionEnabled && isAttachedToWindow && isShown && windowVisibility==VISIBLE && renderer!=null && tier.fps>0 && ValueAnimator.areAnimatorsEnabled()
     private fun updateClock(){val next=canAnimate();if(next==running)return;running=next
-        if(next){lastFrame=0;Choreographer.getInstance().postFrameCallback(frame)}else Choreographer.getInstance().removeFrameCallback(frame)
+        if(next){transitions.reset();lastFrame=0;Choreographer.getInstance().postFrameCallback(frame)}else Choreographer.getInstance().removeFrameCallback(frame)
     }
-    fun setActive(value:Boolean){active=value;updateClock();if(value)invalidate()}
+    fun setActive(value:Boolean){if(active!=value)transitions.reset();active=value;updateClock();if(value)invalidate()}
     override fun onAttachedToWindow(){super.onAttachedToWindow();updateClock()}
-    override fun onDetachedFromWindow(){running=false;Choreographer.getInstance().removeFrameCallback(frame);super.onDetachedFromWindow()}
+    override fun onDetachedFromWindow(){transitions.reset();running=false;Choreographer.getInstance().removeFrameCallback(frame);super.onDetachedFromWindow()}
     override fun onWindowVisibilityChanged(visibility:Int){super.onWindowVisibilityChanged(visibility);if(isAttachedToWindow)updateClock()}
     override fun onVisibilityChanged(changedView:View,visibility:Int){super.onVisibilityChanged(changedView,visibility);if(isAttachedToWindow)updateClock()}
     fun bind(state:TaskState,presentation:CompanionSnapshot?=null){
         val old=snapshot;snapshot=presentation ?:CompanionSnapshot()
-        tier=budget.sample(state.thermal,true,SystemClock.elapsedRealtime());updateClock()
+        motionEnabled=context.getSharedPreferences("rosalina-unified",Context.MODE_PRIVATE).getBoolean("live-avatar",true)
+        tier=budget.sample(state.thermal,motionEnabled,SystemClock.elapsedRealtime());updateClock()
         if(old.phase!=snapshot.phase || old.expression!=snapshot.expression || old.utteranceId!=snapshot.utteranceId || !running)invalidate()
     }
     override fun onDraw(canvas:Canvas){
         super.onDraw(canvas);renderedFrames++
-        renderer?.let{it.draw(canvas,width,height,RigMotion.sample(snapshot,tier,SystemClock.elapsedRealtime(),active && ValueAnimator.areAnimatorsEnabled()));return}
+        renderer?.let{it.draw(canvas,width,height,transitions.sample(snapshot,tier,SystemClock.elapsedRealtime(),active && motionEnabled && ValueAnimator.areAnimatorsEnabled()));return}
         canvas.drawColor(Color.rgb(10,11,24))
         fallback?.let{b->val scale=min(width.toFloat()/b.width,height.toFloat()/b.height);val w=b.width*scale;val h=b.height*scale
             canvas.drawBitmap(b,null,RectF((width-w)/2,(height-h)/2,(width+w)/2,(height+h)/2),imagePaint)}

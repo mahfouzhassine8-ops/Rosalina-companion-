@@ -9,8 +9,8 @@ import argparse, hashlib, json, pathlib, subprocess
 BASE = "e212d17bb1904de55fe7b6cbea40443548cc73dc"
 REUSE = "a449b57fe3996d12d2bd4ce5a1f211d792c76ad9"
 PREFIX = "unified/src/main/java/com/rosalina/unified/"
-DIRECT = {'PerformanceState.kt': '74406a1ce6f265f8d638cd0562b419aa817a6669d834f8ca645abc899e99c2f0', 'CompanionRuntime.kt': '52c62e08afbf3dd9149857a6e762a88d34a62c4af8604c115d7299e2e031c5ad', 'ChatterboxTokenizer.kt': 'ccf3058faa8dfc77f1de1b08f22d6cd70f65b799732c8b7af12f12352917503f', 'ChatterboxEngine.kt': '9e973771a2de8451440c05bb04a8b9f24aa8e4111dc1549a29208e58c2caa4cf', 'ExpressiveSpeechService.kt': '955c6cbbc2c8214d17b4ea8565626b3c4fc0de6450e04094142369ddb70be957', 'VoiceAuditions.kt': '4be53a44d262422f3a4a63a4de05550b54ff0aa435d7d0b9363d24f11b030789', 'VoiceV3Models.kt': 'ce45e8812fe898e855d79934e3049dca3fa4ddc7d62ce3700977f71a18cb84ce', 'PlaybackEnvelope.kt': '266f8de6b141ada2f39e0dc0614209723606b814923ef435355854df6e634cde', 'PcmSpeechOutput.kt': 'b21d0b463fc0c7cf4154f42f7498fb63dc9329a53cfa67118e1905a1e68dfe00', 'OnlineVoice.kt': '595cdba94b254f01f8daf10079a37c21b0510c9b873f809fbc9f42263095db3b', 'LayeredAvatar.kt': 'd66b771dfe357065b819b774525e8765ce3f82b9a1b28cfa5f28ace5d38a50a8'}
-SNAPSHOT = "078bbc0c1687564256d0b4415f54cd22ff145aa93fa4c2e2d03e06b04a000eaa"
+DIRECT = {'PerformanceState.kt': '74406a1ce6f265f8d638cd0562b419aa817a6669d834f8ca645abc899e99c2f0', 'CompanionRuntime.kt': '52c62e08afbf3dd9149857a6e762a88d34a62c4af8604c115d7299e2e031c5ad', 'ChatterboxTokenizer.kt': 'ccf3058faa8dfc77f1de1b08f22d6cd70f65b799732c8b7af12f12352917503f', 'ChatterboxEngine.kt': '9e973771a2de8451440c05bb04a8b9f24aa8e4111dc1549a29208e58c2caa4cf', 'ExpressiveSpeechService.kt': '6861d1ff8aaa2724821ca4ac3e76a54668b67de48a818c7f71a466a3ba657444', 'VoiceAuditions.kt': '4be53a44d262422f3a4a63a4de05550b54ff0aa435d7d0b9363d24f11b030789', 'VoiceV3Models.kt': 'ce45e8812fe898e855d79934e3049dca3fa4ddc7d62ce3700977f71a18cb84ce', 'PlaybackEnvelope.kt': '266f8de6b141ada2f39e0dc0614209723606b814923ef435355854df6e634cde', 'PcmSpeechOutput.kt': 'f802924df19c258c1f4994a5b2ce2712c0292271b1d8ecd712e5855e66cc3ab1', 'OnlineVoice.kt': '84c9f9ad531a9aaa9f3469502ae6ffd3351532a136f2e7f5b09b4d9c4d565530', 'LayeredAvatar.kt': '6ca898f5678171cbe1dc5fc2dcc64f619915006d9bec725395708430bd496a98', 'RigMotion.kt': '376569c08881c75c4d4ae1458ff6409ac0db9fd044ba98ec9d9d12ed82314ca4', 'RigTransitions.kt': '59f1274042882ca3a42bc51397fb8040da62032bfb7cdf2e401a6de83847d5ff', 'SpeechPace.kt': '3c52d616a2130490afea0a3834ac49a79e553e4d731097513144a23e660ad760'}
+SNAPSHOT = "e4112685f8e25217392d2f1d908bda249ae863c52c6c1581344422ebd6af6259"
 PARTS = ["part00.json", "part01.json", "part02.json", "part04.json", "part05.json", "part06.json", "part07.json", "part08.json"]
 CORE = ["app", "lib", "studio", "image-engine", "motion", "motion-engine", "unified-native",
         PREFIX+"ListenService.kt", PREFIX+"SpeechService.kt", PREFIX+"Models.kt", PREFIX+"NativeWorker.kt",
@@ -45,7 +45,7 @@ def main(check=False):
             raise RuntimeError("Invalid or duplicate source path")
         if p!="COMPLETION_10018.md" and not p.startswith(("unified/", "tools/")): raise RuntimeError("Source path out of scope")
         seen.add(p);expected[p]=r["resultSha256"]
-    if len(expected)!=41 or digest(json.dumps(expected,sort_keys=True,separators=(",",":")).encode())!=SNAPSHOT:
+    if len(expected)!=46 or digest(json.dumps(expected,sort_keys=True,separators=(",",":")).encode())!=SNAPSHOT:
         raise RuntimeError("Source checkpoint inventory differs from reviewed snapshot")
     from revisions import apply_revisions
     apply_revisions(check)

@@ -337,7 +337,7 @@ internal class Session private constructor(private val context:Context) {
             val firstPlayback=CompletableDeferred<Unit>()
             val result=coroutineScope {
                 val attempt=async{expressive.call(Bundle().apply{
-                putString("operation","speak");putString("text",PerformanceDirector.localText(text,performance));putFloat("gain",performance.volume)
+                putString("operation","speak");putString("text",PerformanceDirector.localText(text,performance));putFloat("gain",performance.volume);putFloat("pace",performance.pace)
             }){event->if(presentation.snapshot.taskId==r.id && presentation.snapshot.utteranceId==utterance)when(event.getString("type")){
                 "stage"->update(r.id){it.copy(voiceStage=event.getString("text").orEmpty())}
                 "playback"->{val playing=event.getString("text")=="start";if(playing){started=true;firstPlayback.complete(Unit)}

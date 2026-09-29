@@ -36,7 +36,7 @@ class ExpressiveSpeechService:NativeRpcService() {
             val synthesized=SystemClock.elapsedRealtime()-start
             val gain=values.getFloat("gain",.95f).coerceIn(.55f,1f)
             val pcm=ShortArray(samples.size){(samples[it].coerceIn(-1f,1f)*gain*32767).toInt().toShort()}
-            output.play(pcm,24000,start,emit).apply{
+            output.play(pcm,24000,start,emit,values.getFloat("pace",1f)).apply{
                 putString("engine","Chatterbox Turbo Q4 / ORT ${engine!!.runtimeVersion}");putBoolean("offline",true)
                 putLong("setupMs",initialized);putLong("synthesisMs",synthesized-initialized);putLong("peakPssKb",peak.get());putLong("pssKb",Debug.getPss().toLong())
                 putInt("thermalBefore",before);putInt("thermalAfter",thermal.currentThermalStatus)
