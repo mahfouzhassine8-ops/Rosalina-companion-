@@ -1,8 +1,12 @@
 package com.rosalina.unified
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.media.*
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import androidx.core.content.ContextCompat
 import com.k2fsa.sherpa.onnx.*
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -59,6 +63,12 @@ class SpeechService:NativeRpcService() {
             putInt("speakers",e.numSpeakers());putLong("elapsedMs",SystemClock.elapsedRealtime()-start)
         }
     }
+    private fun preferredOutput(am:AudioManager):AudioDeviceInfo? {
+        if(Build.VERSION.SDK_INT>=31)runCatching{am.communicationDevice}.getOrNull()?.let{return it}
+        val bluetoothAllowed=Build.VERSION.SDK_INT<31 || ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED
+        val devices=runCatching{am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).toList()}.getOrDefault(emptyList())
+        return devices.filter{AudioRoutePolicy.usable(it.type,bluetoothAllowed)}.minByOrNull{AudioRoutePolicy.rank(it.type,bluetoothAllowed)}
+    }
     private suspend fun speak(values:Bundle,emit:(String,String,Bundle?)->Unit):Bundle {
         val engine=ensureVoice(emit)
         val text=values.getString("text").orEmpty().trim();require(text.isNotBlank() && text.length<=1000){"Invalid speech chunk"}
@@ -74,7 +84,8 @@ class SpeechService:NativeRpcService() {
             pace=values.getFloat("pace",values.getFloat("speed",1f)),
             intensity=values.getFloat("voiceIntensity",1f)
         ).safe()
-        val attributes=AudioAttributes.Builder().setUsage(if(values.getBoolean("conversation"))AudioAttributes.USAGE_VOICE_COMMUNICATION else AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
+        // Rosalina is assistant speech, not a telephone-call output stream.
+        val attributes=AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
         val am=getSystemService(AudioManager::class.java)
         val request=AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT).setAudioAttributes(attributes).setOnAudioFocusChangeListener{loss->if(loss<0)interrupt()}.build()
         focus=request
@@ -83,6 +94,9 @@ class SpeechService:NativeRpcService() {
             require(am.requestAudioFocus(request)==AudioManager.AUDIOFOCUS_REQUEST_GRANTED){"Audio focus was not granted"}
             val out=AudioTrack.Builder().setAudioAttributes(attributes).setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT).setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build()).setBufferSizeInBytes(maxOf(rate,AudioTrack.getMinBufferSize(rate,AudioFormat.CHANNEL_OUT_MONO,AudioFormat.ENCODING_PCM_FLOAT))).setTransferMode(AudioTrack.MODE_STREAM).build()
             audio=out;track=out
+            val preferred=preferredOutput(am)
+            val preferredApplied=preferred?.let{runCatching{out.setPreferredDevice(it)}.getOrDefault(false)} ?:false
+            out.setVolume(1f)
             val dsp=VoiceDspProcessor(rate,expression)
             val pitchFactor=VoiceDspProcessor.pitchFactor(expression.pitchSemitones)
             val pitchApplied=runCatching {
@@ -108,13 +122,22 @@ class SpeechService:NativeRpcService() {
                     check(n>0){"Audio output stopped accepting samples: $n"}
                     if(first==0L)first=SystemClock.elapsedRealtime()-started
                     offset+=n;total+=n
-                    if(!announced){announced=true;emit("playback","start",Bundle().apply{putInt("route",out.routedDevice?.type ?: -1);putString("profile",expression.summary());putBoolean("pitchApplied",pitchApplied)})}
+                    if(!announced){
+                        announced=true
+                        val actual=out.routedDevice?.type ?: -1
+                        emit("playback","start",Bundle().apply{
+                            putInt("route",actual);putString("routeLabel",AudioRoutePolicy.label(actual))
+                            putInt("preferredRoute",preferred?.type ?: -1);putString("preferredRouteLabel",AudioRoutePolicy.label(preferred?.type ?: -1))
+                            putBoolean("preferredApplied",preferredApplied);putString("profile",expression.summary());putBoolean("pitchApplied",pitchApplied)
+                        })
+                    }
                 }
                 val avatarNow=SystemClock.elapsedRealtime()
                 if(offset>0 && !cancelled.get() && avatarNow-lastAvatarEmit>=70L){
                     val rms=sqrt(energySum/shaped.size).toFloat()
                     emit("avatar","energy",Bundle().apply{putFloat("energy",(rms*4.5f).coerceIn(0f,1f))})
-                    emit("playback","start",Bundle().apply{putInt("route",out.routedDevice?.type ?: -1)})
+                    val actual=out.routedDevice?.type ?: -1
+                    emit("playback","start",Bundle().apply{putInt("route",actual);putString("routeLabel",AudioRoutePolicy.label(actual));putInt("preferredRoute",preferred?.type ?: -1);putString("preferredRouteLabel",AudioRoutePolicy.label(preferred?.type ?: -1));putBoolean("preferredApplied",preferredApplied)})
                     lastAvatarEmit=avatarNow
                 }
                 if(cancelled.get())0 else 1
@@ -130,6 +153,10 @@ class SpeechService:NativeRpcService() {
                 putString("voiceProfile",expression.summary())
                 putBoolean("pitchApplied",pitchApplied)
                 putBoolean("interrupted",interrupted)
+                val actual=out.routedDevice?.type ?: -1
+                putInt("route",actual);putString("routeLabel",AudioRoutePolicy.label(actual))
+                putInt("preferredRoute",preferred?.type ?: -1);putString("preferredRouteLabel",AudioRoutePolicy.label(preferred?.type ?: -1));putBoolean("preferredApplied",preferredApplied)
+                putInt("audioMode",am.mode)
             }
         }finally{emit("avatar","energy",Bundle().apply{putFloat("energy",0f)});emit("playback","stop",null);runCatching{audio?.pause();audio?.flush();audio?.release()};track=null;runCatching{am.abandonAudioFocusRequest(request)};focus=null}
     }
