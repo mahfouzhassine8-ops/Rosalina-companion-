@@ -392,6 +392,11 @@ class MainActivity:AppCompatActivity() {
         val body=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(6),dp(16),dp(6))}
         val system=field("System prompt").apply{setText(session.prefs.getString("system",Session.DEFAULT_SYSTEM))};body.addView(text("Chat system prompt",16f,accent));body.addView(system)
         val tokens=field("Maximum response tokens").apply{inputType=InputType.TYPE_CLASS_NUMBER;minLines=1;setText(session.prefs.getInt("max-tokens",1024).toString())};body.addView(text("Maximum response length · 64–4096 tokens",13f));body.addView(tokens)
+        val capabilityKeys=arrayOf("adaptive","cool","maximum")
+        val capabilityNames=arrayOf("Adaptive · recommended","Cool · lowest heat","Maximum · strongest local responses")
+        val capability=Spinner(this).apply{adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,capabilityNames);setSelection(capabilityKeys.indexOf(session.prefs.getString("phone-capability","adaptive")).coerceAtLeast(0))}
+        body.addView(text("Phone capability",13f,accent));body.addView(capability)
+        body.addView(text(session.phoneCapabilitySummary()+"\nAdaptive automatically shortens Live responses and reduces overlap when RAM or heat gets tighter. Cool favors temperature and battery. Maximum keeps the strongest local behavior.",11f,muted))
         val spoken=Switch(this).apply{text="Read text-chat replies aloud";setTextColor(ink);isChecked=session.prefs.getBoolean("spoken-replies",false)};body.addView(spoken)
         val handsFree=Switch(this).apply{text="Hands-free interruption in Voice mode";setTextColor(ink);isChecked=session.prefs.getBoolean("hands-free",true)};body.addView(handsFree)
         val liveVoice=Switch(this).apply{text="Live conversation mode · keep local voice engines warm";setTextColor(ink);isChecked=session.prefs.getBoolean("live-voice",true)};body.addView(liveVoice)
@@ -437,13 +442,13 @@ class MainActivity:AppCompatActivity() {
         val spinner=Spinner(this).apply{adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,voices);setSelection(session.prefs.getInt("speaker",3).coerceIn(0,10))};body.addView(text("Base Rosalina voice identity",13f));body.addView(spinner)
         body.addView(text("Pitch is changed independently from pace when Android's pitch-preserving playback is available. Breath/tone/rasp are streamed locally with smoothing and clipping protection. Local voice remains available even when online enhancements are disabled or unavailable.",12f,muted))
         body.addView(text("Live Voice starts only after you tap Mic. Speaker interruption requires enabled echo cancellation; otherwise use a supported headphone route or tap Mic. Stop ends listening. Classic mode remains available above.",12f,muted))
-        body.addView(button("Test Rosalina speaker"){if(!session.state.value.busy){ensureNotifications();session.testVoice()}})
+        body.addView(row(button("Test phone speaker tone"){if(!session.state.value.busy){ensureNotifications();session.testTone()}},button("Test Rosalina voice"){if(!session.state.value.busy){ensureNotifications();session.testVoice()}}))
         body.addView(button("Reset Live learning"){if(!session.state.value.busy)session.resetLiveLearning()})
         body.addView(button("Clear conversation"){if(!session.state.value.busy)AlertDialog.Builder(this).setMessage("Clear this app's conversation? Models and other apps will not change.").setNegativeButton("Keep",null).setPositiveButton("Clear"){_,_->session.clearConversation()}.show()})
         AlertDialog.Builder(this).setTitle("Rosalina settings").setView(ScrollView(this).apply{addView(body)}).setNegativeButton("Cancel",null).setPositiveButton("Save"){_,_->
             val pacePercent=70+pace.progress
             session.prefs.edit()
-                .putString("system",system.text.toString()).putBoolean("spoken-replies",spoken.isChecked).putBoolean("hands-free",handsFree.isChecked)
+                .putString("system",system.text.toString()).putString("phone-capability",capabilityKeys[capability.selectedItemPosition]).putBoolean("spoken-replies",spoken.isChecked).putBoolean("hands-free",handsFree.isChecked)
                 .putBoolean("live-voice",liveVoice.isChecked).putBoolean("live-avatar",liveAvatar.isChecked).putInt("live-endpoint-ms",550+liveEndpoint.progress)
                 .putBoolean("adaptive-live-learning",adaptiveLive.isChecked).putBoolean("online-enhancements",online.isChecked)
                 .putString("voice-style",styleKeys[style.selectedItemPosition]).putBoolean("voice-realism",realism.isChecked).putInt("voice-expression",expression.progress)
