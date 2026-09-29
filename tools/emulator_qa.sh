@@ -14,13 +14,13 @@ adb install -r unified/build/outputs/apk/debug/unified-debug.apk
 adb shell am start -W -n com.rosalina.unified/.MainActivity
 sleep 1
 adb exec-out screencap -p > qa/unified-emulator.png
-# Run a clean QA-signer update simulation from installed 10014 to 10015.
-# The connected test package above is already 10015, so remove that disposable install first.
+# Run a clean QA-signer update simulation from installed 10015 to 10016.
+# The connected test package above is already 10016, so remove that disposable install first.
 adb uninstall com.rosalina.unified || true
-gradle :unified:assembleDebug -PunifiedEmulatorQa=true -PunifiedVersionCode=10014 --max-workers=2
+gradle :unified:assembleDebug -PunifiedEmulatorQa=true -PunifiedVersionCode=10016 --max-workers=2
 adb install unified/build/outputs/apk/debug/unified-debug.apk
 adb shell "run-as com.rosalina.unified sh -c 'mkdir -p files && echo preserved > files/update-marker.txt'"
 gradle :unified:assembleDebug -PunifiedEmulatorQa=true -PunifiedVersionCode=10015 --max-workers=2
 adb install -r unified/build/outputs/apk/debug/unified-debug.apk
 adb shell run-as com.rosalina.unified cat files/update-marker.txt | grep preserved
-echo 'QA-signer x86_64 update 10014 -> 10015 and data continuity passed; permanent-signer Samsung update still requires signed APK verification' > qa/update-test.txt
+echo 'QA-signer x86_64 update 10015 -> 10016 and data continuity passed; permanent-signer Samsung update still requires signed APK verification' > qa/update-test.txt
