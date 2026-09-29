@@ -154,3 +154,75 @@ internal class LayeredAvatarRenderer(private val assets:RigAssets) {
         c.restore()
     }
 }
+
+/** Native 2-D cutout animation of the user-selected design; no 3-D or phoneme claim. */
+internal class PortraitAvatarRenderer(val bitmap:Bitmap) {
+    private val paint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val skin=Paint(Paint.ANTI_ALIAS_FLAG)
+    private val ink=Paint(Paint.ANTI_ALIAS_FLAG).apply{style=Paint.Style.STROKE;strokeCap=Paint.Cap.ROUND}
+    private val path=Path()
+    private fun polygon(vararg points:Float)=Path().apply{moveTo(points[0],points[1]);for(i in 2 until points.size step 2)lineTo(points[i],points[i+1]);close()}
+    private val head=polygon(373f,0f,645f,0f,646f,115f,614f,213f,581f,255f,574f,291f,470f,291f,463f,252f,427f,206f,390f,115f)
+    private val leftArm=polygon(345f,338f,381f,350f,343f,457f,316f,554f,274f,660f,248f,734f,234f,789f,215f,843f,183f,841f,182f,769f,208f,704f,240f,620f,279f,520f,300f,420f)
+    private val rightArm=polygon(620f,338f,657f,334f,695f,445f,739f,556f,784f,664f,811f,728f,848f,787f,860f,841f,826f,855f,798f,817f,779f,763f,742f,704f,700f,616f,668f,531f,637f,449f)
+    private val hairLeft=polygon(311f,298f,360f,284f,349f,380f,310f,454f,292f,553f,257f,601f,222f,564f,213f,493f,254f,397f)
+    private val hairRight=polygon(653f,285f,683f,295f,704f,363f,747f,462f,782f,540f,782f,604f,747f,611f,714f,567f,711f,493f,679f,420f)
+    private val cuts=Path().apply{addPath(head);addPath(leftArm);addPath(rightArm);addPath(hairLeft);addPath(hairRight)}
+    private fun part(c:Canvas,clip:Path,rotation:Float,x:Float,y:Float){c.save();c.rotate(rotation,x,y);c.clipPath(clip);c.drawBitmap(bitmap,0f,0f,paint);c.restore()}
+    fun draw(c:Canvas,width:Int,height:Int,p:RigPose){
+        skin.shader=LinearGradient(0f,0f,width.toFloat(),height.toFloat(),Color.rgb(13,15,29),Color.rgb(33,21,45),Shader.TileMode.CLAMP)
+        c.drawPaint(skin);skin.shader=null
+        val scale=min(width/1025f,height/1535f)*.97f
+        c.save();c.translate((width-1025f*scale)/2f,(height-1535f*scale)/2f);c.scale(scale,scale)
+        c.rotate(p.sway*.65f,520f,960f);c.scale(1f,1f+p.breath,520f,950f)
+        c.save();c.clipOutPath(cuts);c.drawBitmap(bitmap,0f,0f,paint);c.restore()
+        // Keep photograph-derived joint travel small so seams stay restrained.
+        part(c,hairLeft,p.hair*.32f,352f,300f);part(c,hairRight,-p.hair*.32f,666f,300f)
+        part(c,leftArm,p.leftArm*.18f,349f,349f);part(c,rightArm,p.rightArm*.25f,646f,350f)
+        c.save();c.rotate(p.head*.28f,520f,276f);c.clipPath(head);c.drawBitmap(bitmap,0f,0f,paint)
+        eye(c,480f,158f,(p.face.leftEye*(1f-p.blink)).coerceIn(0f,1f))
+        eye(c,555f,158f,(p.face.rightEye*(1f-p.blink)).coerceIn(0f,1f))
+        if(p.face.blush>.05f){
+            skin.shader=RadialGradient(469f,189f,21f,intArrayOf(Color.argb((38*p.face.blush).toInt(),235,94,117),Color.TRANSPARENT),null,Shader.TileMode.CLAMP)
+            c.drawOval(446f,175f,492f,203f,skin)
+            skin.shader=RadialGradient(571f,189f,21f,intArrayOf(Color.argb((38*p.face.blush).toInt(),235,94,117),Color.TRANSPARENT),null,Shader.TileMode.CLAMP)
+            c.drawOval(548f,175f,594f,203f,skin);skin.shader=null
+        }
+        val m=p.mouth.bounded()
+        if(m.open>.02f){
+            // Replace the source smile only during real playback articulation.
+            skin.shader=RadialGradient(520f,206f,23f,intArrayOf(Color.rgb(251,224,205),Color.rgb(250,222,203)),null,Shader.TileMode.CLAMP)
+            c.drawOval(500f,198f,540f,218f,skin);skin.shader=null
+            val w=10f+7f*m.wide-4f*m.round;val h=2f+14f*m.open
+            skin.color=Color.rgb(84,36,48);c.drawOval(520f-w,204f-h*.3f,520f+w,206f+h,skin)
+            skin.color=Color.rgb(202,113,133);c.drawOval(520f-w*.64f,206f+h*.48f,520f+w*.64f,206f+h*.88f,skin)
+            if(m.open>.45f){skin.color=Color.rgb(247,231,220);c.drawRoundRect(521f-w*.7f,205f-h*.23f,519f+w*.7f,208f,2f,2f,skin)}
+        }
+        c.restore();c.restore()
+    }
+    private fun eye(c:Canvas,x:Float,y:Float,openness:Float){
+        val closed=1f-openness
+        if(closed<.12f)return
+        skin.shader=LinearGradient(x,y-15f,x,y+20f,Color.rgb(234,188,172),Color.rgb(250,220,201),Shader.TileMode.CLAMP)
+        if(openness<.16f){
+            c.drawOval(x-25f,y-16f,x+25f,y+19f,skin);skin.shader=null
+            ink.color=Color.rgb(69,36,37);ink.strokeWidth=2.8f
+            path.reset();path.moveTo(x-20f,y);path.quadTo(x,y+7f,x+20f,y-1f);c.drawPath(path,ink)
+        }else{
+            // Upper eyelid progressively occludes the source eye; preserve its iris pixels.
+            c.save();c.clipRect(x-25f,y-17f,x+25f,y-14f+closed*32f)
+            c.drawOval(x-25f,y-17f,x+25f,y+20f,skin);c.restore();skin.shader=null
+        }
+    }
+    companion object {
+        private const val SHA="a028f5c39944d3df164e28f039539b3021225269d07451cabc2f0c03bef2f013"
+        fun load(context:Context):PortraitAvatarRenderer {
+            val encoded=context.assets.open("avatar-portrait/character.b64").bufferedReader().use{it.readText()}
+            val bytes=android.util.Base64.decode(encoded,android.util.Base64.DEFAULT)
+            require(hex(MessageDigest.getInstance("SHA-256").digest(bytes))==SHA){"Portrait checksum mismatch"}
+            val image=BitmapFactory.decodeByteArray(bytes,0,bytes.size) ?:error("Portrait cannot decode")
+            require(image.width==1025 && image.height==1535){"Portrait geometry changed"}
+            return PortraitAvatarRenderer(image)
+        }
+    }
+}

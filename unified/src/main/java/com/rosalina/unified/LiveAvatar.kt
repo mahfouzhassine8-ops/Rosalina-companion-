@@ -111,6 +111,7 @@ internal class LiveAvatarView @JvmOverloads constructor(context:Context,attrs:At
     private var asset:RigAssets?=null
     private var failure:String?=null
     private var fallback:Bitmap?=null
+    private var portrait:PortraitAvatarRenderer?=null
     private val imagePaint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val budget=MotionBudget()
     private val transitions=RigTransitions()
@@ -125,13 +126,17 @@ internal class LiveAvatarView @JvmOverloads constructor(context:Context,attrs:At
     internal val sourceWidth:Int get()=if(asset!=null)594 else fallback?.width ?:0
     internal val sourceHeight:Int get()=if(asset!=null)1082 else fallback?.height ?:0
     internal val motionRunning:Boolean get()=running
-    internal fun qualitySummary()="layers=${asset?.layers?.size ?:0}; ${asset?.description ?: "loading/error"}; texture memory=${asset?.bytes ?:0}; fps=${tier.fps}; frames=$renderedFrames; scene-distance views are small source assets, not HD; failure=${failure ?: "none"}"
+    internal fun qualitySummary()="${if(portrait!=null) "Animated 2-D portrait · facial masks and cutout joints · source 1025×1535 · no 3-D/walking" else "layers=${asset?.layers?.size ?:0}; ${asset?.description ?: "loading/error"}"}; fps=${tier.fps}; frames=$renderedFrames; failure=${failure ?: "none"}"
     init {RigAssets.request(context,this)}
     internal fun artworkReady(value:RigAssets?,error:String?) {
         asset=value;failure=error;renderer=value?.let{LayeredAvatarRenderer(it)}
         if(value==null){
             // A verified asset failure is the only normal route to the emergency bitmap.
-            Thread {val image=AvatarAsset.load(context.applicationContext);post{fallback=image;updateClock();invalidate()}}.start()
+            Thread {
+                val animated=runCatching{PortraitAvatarRenderer.load(context.applicationContext)}.getOrNull()
+                val image=animated?.bitmap ?: AvatarAsset.load(context.applicationContext)
+                post{fallback=image;portrait=animated;if(animated!=null)failure=null;updateClock();invalidate()}
+            }.start()
         }
         updateClock();invalidate()
     }
@@ -144,7 +149,7 @@ internal class LiveAvatarView @JvmOverloads constructor(context:Context,attrs:At
             Choreographer.getInstance().postFrameCallbackDelayed(this,(1000L/tier.fps.coerceAtLeast(1)-2).coerceAtLeast(16))
         }
     }
-    private fun canAnimate()=active && motionEnabled && isAttachedToWindow && isShown && windowVisibility==VISIBLE && renderer!=null && tier.fps>0 && ValueAnimator.areAnimatorsEnabled()
+    private fun canAnimate()=active && motionEnabled && isAttachedToWindow && isShown && windowVisibility==VISIBLE && (renderer!=null || portrait!=null) && tier.fps>0 && ValueAnimator.areAnimatorsEnabled()
     private fun updateClock(){val next=canAnimate();if(next==running)return;running=next
         if(next){transitions.reset();lastFrame=0;Choreographer.getInstance().postFrameCallback(frame)}else Choreographer.getInstance().removeFrameCallback(frame)
     }
@@ -161,6 +166,7 @@ internal class LiveAvatarView @JvmOverloads constructor(context:Context,attrs:At
     }
     override fun onDraw(canvas:Canvas){
         super.onDraw(canvas);renderedFrames++
+        portrait?.let{it.draw(canvas,width,height,transitions.sample(snapshot,tier,SystemClock.elapsedRealtime(),active && motionEnabled && ValueAnimator.areAnimatorsEnabled()));return}
         renderer?.let{it.draw(canvas,width,height,transitions.sample(snapshot,tier,SystemClock.elapsedRealtime(),active && motionEnabled && ValueAnimator.areAnimatorsEnabled()));return}
         canvas.drawColor(Color.rgb(10,11,24))
         fallback?.let{b->val scale=min(width.toFloat()/b.width,height.toFloat()/b.height);val w=b.width*scale;val h=b.height*scale
