@@ -17,7 +17,7 @@ jobs:
           path: original
           run-id: 36539019432
           github-token: ${{ github.token }}
-      - name: Remove unused reference encoder and losslessly compress the phone pack
+      - name: Lossless phone package and transport parts
         run: |
           python3 - <<'PY'
           import pathlib,zipfile,json,hashlib
@@ -29,21 +29,41 @@ jobs:
               manifest['files']={name:digest for name,digest in manifest['files'].items() if 'speech_encoder_quantized' not in name}
               manifest['phonePackaging']='Original licensed reference conditioning retained; unused reference-encoder graphs omitted. No model quantization or audio changes.'
               data=json.dumps(manifest,sort_keys=True,indent=2).encode()
+              assert hashlib.sha256(data).hexdigest()=='82c6252a59092943e69ea0b13460ee3c5336939471be98176d2e19fcdff8a96e'
               (qa/'chatterbox-manifest.json').write_bytes(data)
               with zipfile.ZipFile(out/'Rosalina-Chatterbox-Turbo-Q4-Phone.zip','w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as dst:
                   for name,digest in sorted(manifest['files'].items()):
                       contents=z.read(name)
                       assert hashlib.sha256(contents).hexdigest()==digest,name
-                      dst.writestr(name,contents)
-                  dst.writestr('model-manifest.json',data)
+                      info=zipfile.ZipInfo(name,date_time=(2026,9,29,0,0,0));info.compress_type=zipfile.ZIP_DEFLATED
+                      dst.writestr(info,contents,compress_type=zipfile.ZIP_DEFLATED,compresslevel=9)
+                  info=zipfile.ZipInfo('model-manifest.json',date_time=(2026,9,29,0,0,0));info.compress_type=zipfile.ZIP_DEFLATED
+                  dst.writestr(info,data,compress_type=zipfile.ZIP_DEFLATED,compresslevel=9)
           pack=out/'Rosalina-Chatterbox-Turbo-Q4-Phone.zip'
-          receipt={'bytes':pack.stat().st_size,'sha256':hashlib.sha256(pack.read_bytes()).hexdigest(),'manifestSha256':hashlib.sha256(data).hexdigest(),'phoneAccepted':False}
+          contents=pack.read_bytes()
+          receipt={'bytes':len(contents),'sha256':hashlib.sha256(contents).hexdigest(),'manifestSha256':hashlib.sha256(data).hexdigest(),'phoneAccepted':False,'parts':[]}
+          for i,start in enumerate(range(0,len(contents),300000000)):
+              folder=pathlib.Path('part'+str(i+1));folder.mkdir()
+              part=folder/('phone.zip.part'+str(i+1));part.write_bytes(contents[start:start+300000000])
+              receipt['parts'].append({'name':part.name,'bytes':part.stat().st_size,'sha256':hashlib.sha256(part.read_bytes()).hexdigest()})
           (qa/'phone-pack-receipt.json').write_text(json.dumps(receipt,indent=2))
-          assert pack.stat().st_size<530000000,receipt
           print(receipt)
           PY
       - uses: actions/upload-artifact@v4
         with: {name: Rosalina-Chatterbox-Turbo-Phone-Pack, path: phone/, compression-level: 0}
       - uses: actions/upload-artifact@v4
+        with: {name: Rosalina-Chatterbox-Phone-Part1, path: part1/, compression-level: 0}
+      - uses: actions/upload-artifact@v4
+        with: {name: Rosalina-Chatterbox-Phone-Part2, path: part2/, compression-level: 0}
+      - uses: actions/upload-artifact@v4
         if: always()
         with: {name: Rosalina-Chatterbox-Phone-Pack-Receipt, path: receipt/}
+  graphics-api:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          mkdir -p graphics-api
+          curl --fail --location --retry 3 https://repo.maven.apache.org/maven2/org/robolectric/android-all-instrumented/15-robolectric-12650502-i7/android-all-instrumented-15-robolectric-12650502-i7.jar -o graphics-api/android-all-instrumented-15-robolectric-12650502-i7.jar
+          sha256sum graphics-api/* > graphics-api/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with: {name: Rosalina-native-graphics-api35, path: graphics-api/, compression-level: 0}
