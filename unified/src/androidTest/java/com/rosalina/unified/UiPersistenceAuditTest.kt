@@ -32,16 +32,16 @@ class UiPersistenceAuditTest {
             scenario.onActivity{assertEquals("Immediate draft preservation",it.findViewById<EditText>(1001).text.toString())}
         }
     }
-    @Test fun photoEditDraftAndModeSurviveSectionRoundTrip(){
+    @Test fun focusBuildHidesMediaSectionsAndPreservesChatDraft(){
         ActivityScenario.launch(MainActivity::class.java).use{scenario->
             scenario.onActivity{a->
-                clickLabel(a,"Photo")
-                descendants(a.window.decorView).filterIsInstance<Button>().first{it.text.toString()=="Edit"}.performClick()
-                a.findViewById<EditText>(1001).setText("Keep this edit request")
+                a.findViewById<EditText>(1001).setText("Keep this chat request")
                 clickLabel(a,"Settings & Models")
-                clickLabel(a,"Photo")
-                assertEquals("Keep this edit request",a.findViewById<EditText>(1001).text.toString())
-                assertTrue(descendants(a.window.decorView).filterIsInstance<Button>().any{it.text.toString()=="Transform photo"})
+                clickLabel(a,"Companion")
+                assertEquals("Keep this chat request",a.findViewById<EditText>(1001).text.toString())
+                val descriptions=descendants(a.window.decorView).mapNotNull{it.contentDescription?.toString()}.toList()
+                assertFalse(descriptions.contains("Photo"))
+                assertFalse(descriptions.contains("Animate"))
             }
         }
     }
