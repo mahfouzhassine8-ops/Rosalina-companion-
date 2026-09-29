@@ -1,0 +1,38 @@
+name: Rosalina Avatar Render Test Kit
+on:
+  push:
+    branches: [rosalina-10015-companion-completion-c2-10018]
+    paths: [.github/workflows/companion-render-kit.yml]
+permissions:
+  contents: read
+jobs:
+  kit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.9'}
+      - run: |
+          mkdir -p render-probe
+          cd render-probe
+          cat > settings.gradle <<'EOF'
+          rootProject.name='avatar-render-kit'
+          EOF
+          cat > build.gradle <<'EOF'
+          plugins { id 'java' }
+          repositories { google(); mavenCentral() }
+          dependencies {
+            testImplementation 'org.robolectric:robolectric:4.14.1'
+            testImplementation 'org.robolectric:android-all-instrumented:14-robolectric-10818077-i7'
+          }
+          tasks.register('exportKit',Copy) {
+            from configurations.testRuntimeClasspath
+            into layout.buildDirectory.dir('render-kit')
+          }
+          EOF
+          gradle exportKit --max-workers=2
+          cd build/render-kit
+          sha256sum * > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with: {name: Rosalina-avatar-native-render-kit, path: render-probe/build/render-kit/, compression-level: 0}
