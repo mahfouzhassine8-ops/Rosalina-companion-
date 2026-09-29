@@ -1,0 +1,42 @@
+name: Voice V3 Candidate Pack
+on:
+  push:
+    branches: [rosalina-10015-companion-voice-v3-c1]
+    paths: [tools/voice_v3_pack.py, .github/workflows/voice-v3-candidate-pack.yml]
+permissions:
+  contents: read
+concurrency:
+  group: voice-v3-pack-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  pocket-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - name: Install pinned host runtime
+        run: python3 -m pip install sherpa-onnx==1.13.8 soundfile==0.13.1 numpy==2.2.6 scipy==1.15.3
+      - name: Prepare candidate and synthesize actual audition WAVs
+        run: python3 tools/voice_v3_pack.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: VoiceV3-metadata
+          path: |
+            voice-v3-output/voice-v3-pack.json
+            voice-v3-output/host-voice-v3.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: VoiceV3-Pocket-candidate-pack
+          path: voice-v3-output/Rosalina-VoiceV3-Pocket-INT8-Candidate.zip
+          compression-level: 0
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: VoiceV3-host-auditions
+          path: voice-v3-output/auditions/
+          if-no-files-found: error
