@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit
 class RuntimeTest {
     private val context get()=InstrumentationRegistry.getInstrumentation().targetContext
     @Test fun chatStreamingReusesTextViewAndKeepsEveryCharacter() {
-        context.getSharedPreferences("rosalina-unified",Context.MODE_PRIVATE).edit().putString("tab","Chat").commit()
+        context.getSharedPreferences("rosalina-unified",Context.MODE_PRIVATE).edit().putString("section","COMPANION").putString("companion-mode","CHAT").putString("tab","Chat").commit()
         ActivityScenario.launch(MainActivity::class.java).use{scenario->scenario.onActivity{activity->
             val update=MainActivity::class.java.getDeclaredMethod("update",TaskState::class.java).apply{isAccessible=true}
             val field=MainActivity::class.java.getDeclaredField("streaming").apply{isAccessible=true}

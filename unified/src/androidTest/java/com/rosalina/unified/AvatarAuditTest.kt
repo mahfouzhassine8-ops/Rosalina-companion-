@@ -50,6 +50,11 @@ class AvatarAuditTest {
             scenario.onActivity{view=descendants(it.window.decorView).filterIsInstance<LiveAvatarView>().first()}
             Thread.sleep(400)
             scenario.onActivity{assertTrue("Visible avatar needs a live frame clock",view!!.motionRunning);assertTrue(view!!.renderedFrames>1)}
+            val screenshot=InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+            assertNotNull("Capture the real Companion screen",screenshot)
+            val output=File(context.filesDir,"audit-qa").apply{mkdirs()}
+            try { File(output,"companion-visible.png").outputStream().use{screenshot!!.compress(Bitmap.CompressFormat.PNG,100,it)} }
+            finally { screenshot?.recycle() }
             scenario.moveToState(Lifecycle.State.CREATED)
             Thread.sleep(250)
             var stopped=0L

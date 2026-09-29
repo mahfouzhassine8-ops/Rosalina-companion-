@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 mkdir -p qa
-trap 'adb logcat -d > qa/emulator-logcat.txt 2>/dev/null || true' EXIT
+trap 'adb logcat -d > qa/emulator-logcat.txt 2>/dev/null || true; adb shell run-as com.rosalina.unified tar -cf - files/audit-qa > qa/avatar-pixel-evidence.tar 2>qa/avatar-export-errors.txt || true' EXIT
 # Exercise the real avatar frame clock, not just an animation-disabled screenshot.
 adb shell settings put global animator_duration_scale 1
 adb shell settings put global transition_animation_scale 1
