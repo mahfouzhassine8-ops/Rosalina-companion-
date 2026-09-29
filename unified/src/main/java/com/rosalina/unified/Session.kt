@@ -77,6 +77,8 @@ internal class Session private constructor(private val context:Context) {
     fun prepareChat() {
         if(state.value.busy || state.value.quarantined || models.path(ModelKey.CHAT)==null)return
         if(chat.pid>0 && warmSystem==prefs.getString("system",DEFAULT_SYSTEM))return
+        val profile=runCatching{capability()}.getOrNull()
+        if(profile!=null && !profile.allowPrewarm){notice("${profile.label} · chat loads when you send a message");return}
         begin(TaskRequest(kind=TaskKind.CHAT,modelKey="prepare"))
     }
     private suspend fun warmChat(r:TaskRequest) {
@@ -114,8 +116,12 @@ internal class Session private constructor(private val context:Context) {
         }}
     }
     fun notice(text:String){mutable.update{if(it.busy)it else it.copy(stage=text)}}
+    private fun capabilityMode()=prefs.getString("phone-capability","adaptive") ?:"adaptive"
+    private fun capability(resources:Resources=thermal.read())=PhoneCapabilityPolicy.choose(resources,capabilityMode())
+    fun phoneCapabilitySummary():String=runCatching{capability().summary()}.getOrDefault("Phone capability · unavailable")
     fun liveLearningSummary()=learner.snapshot().summary()
     fun resetLiveLearning(){learner.reset();notice("Adaptive Live learning reset")}
+    fun testTone(){if(!state.value.busy)begin(TaskRequest(kind=TaskKind.CHAT,modelKey="tone-test",prompt="speaker tone"))}
     fun testVoice(){if(!state.value.busy)begin(TaskRequest(kind=TaskKind.CHAT,modelKey="voice-test",prompt="Rosalina speaker test. If you can hear this, local text to speech is working."))}
     fun refreshResources(){val r=thermal.read();mutable.update{it.copy(thermal=r.thermal,thermalAt=r.measuredAt,availableBytes=r.available,totalBytes=r.total)}}
     @Synchronized fun begin(r:TaskRequest):Boolean {
@@ -178,7 +184,7 @@ internal class Session private constructor(private val context:Context) {
                 historyReady.await()
                 coroutineScope { when(r.kind) {
                     TaskKind.IMPORT->{chat.shutdown();warmSystem=null;listen.shutdown();speech.shutdown();models.import(ModelKey.valueOf(r.modelKey),Uri.parse(r.uri)){text,p->update(r.id){it.copy(stage=text,percent=p)}}}
-                    TaskKind.CHAT->when(r.modelKey){"prepare"->warmChat(r);"voice-test"->performVoiceTest(r);else->performChat(r,r.prompt,prefs.getBoolean("spoken-replies",false))}
+                    TaskKind.CHAT->when(r.modelKey){"prepare"->warmChat(r);"tone-test"->performToneTest(r);"voice-test"->performVoiceTest(r);else->performChat(r,r.prompt,prefs.getBoolean("spoken-replies",false))}
                     TaskKind.VOICE->performVoice(r)
                     else->render(r)
                 } }
@@ -241,6 +247,13 @@ internal class Session private constructor(private val context:Context) {
         putFloat("pace",expression.pace)
         putFloat("voiceIntensity",expression.intensity)
     }
+    private suspend fun performToneTest(r:TaskRequest) {
+        setTaskMode(r,playback=true)
+        update(r.id){it.copy(stage="Testing Android media speaker",voiceStage="440 Hz tone")}
+        val result=speech.call(Bundle().apply{putString("operation","tone")}){}
+        playbackMetrics="Android speaker tone; route=${result.getString("routeLabel")}(${result.getInt("route",-1)}); volume=${result.getInt("streamVolume",-1)}/${result.getInt("streamMax",-1)}; muted=${result.getBoolean("streamMuted")}; encoding=${result.getString("encoding")}; usage=${result.getString("usage")}"
+        update(r.id){it.copy(stage="Speaker tone completed",voiceStage="")}
+    }
     private suspend fun performVoiceTest(r:TaskRequest) {
         models.requirePath(ModelKey.TTS)
         setTaskMode(r,playback=true)
@@ -270,7 +283,8 @@ internal class Session private constructor(private val context:Context) {
         update(r.id){it.copy(answer="",voiceStage="",stage="Preparing response")};addTurn("You",prompt)
         val queue=Channel<String>(64);var shortened=false
         val liveSpeech=voiceActive && prefs.getBoolean("live-voice",true)
-        val liveTuning=LiveVoiceTuning(endpointMs=prefs.getInt("live-endpoint-ms",820),clauseChars=prefs.getInt("live-clause-chars",120))
+        val phone=capability()
+        val liveTuning=LiveVoiceTuning(endpointMs=maxOf(prefs.getInt("live-endpoint-ms",820),phone.endpointFloorMs),clauseChars=maxOf(prefs.getInt("live-clause-chars",120),phone.clauseChars))
         fun cutSpoken(value:String)=if(liveSpeech)LiveSpeechChunker.cut(value,liveTuning)else SpeechText.cut(value)
         fun enqueue(text:String){if(text.isNotBlank() && !shortened && !queue.trySend(text).isSuccess){shortened=true;update(r.id){it.copy(voiceStage="Spoken reply shortened · full reply remains in Chat")}}}
         val speechJob=if(readAloud)launch {
@@ -325,7 +339,7 @@ internal class Session private constructor(private val context:Context) {
         val answer=StringBuilder();var spoken=0;var lastSpeechScan=0L
         chatNeedsReset=true
         try {
-            val responseLimit=if(liveSpeech)learner.responseLimit(prefs.getInt("max-tokens",1024))else prefs.getInt("max-tokens",1024)
+            val requested=prefs.getInt("max-tokens",1024);val responseLimit=if(liveSpeech)minOf(learner.responseLimit(requested),phone.liveTokenCap)else minOf(requested,phone.chatTokenCap)
             val result=chat.call(Bundle().apply{putString("model",model.path);putString("prompt",prompt);putString("system",prefs.getString("system",DEFAULT_SYSTEM));putInt("maxTokens",responseLimit)}){event->
                 when(event.getString("type")) {
                     "stage"->update(r.id){it.copy(stage=event.getString("text").orEmpty(),pid=event.getInt("pid"),backend="Qwen · preserved CPU engine")}
@@ -340,7 +354,7 @@ internal class Session private constructor(private val context:Context) {
                 }
             }
             chatNeedsReset=false;warmSystem=prefs.getString("system",DEFAULT_SYSTEM);lastChatFirstTextMs=result.getLong("firstTextMs")
-            chatMetrics="Chat warm model=${result.getBoolean("warmModel")}; clean recovery=${result.getBoolean("recovered")}; setup=${result.getLong("modelSetupMs")} ms; first text=${result.getLong("firstTextMs")} ms; response=${result.getLong("responseMs")} ms; characters=${result.getInt("characters")}; emitted text pieces=${result.getInt("textPieces")} (not native token count); chat PSS=${result.getLong("chatPssKb")} KiB"
+            chatMetrics="${phone.summary()}; response cap=$responseLimit; Chat warm model=${result.getBoolean("warmModel")}; clean recovery=${result.getBoolean("recovered")}; setup=${result.getLong("modelSetupMs")} ms; first text=${result.getLong("firstTextMs")} ms; response=${result.getLong("responseMs")} ms; characters=${result.getInt("characters")}; emitted text pieces=${result.getInt("textPieces")} (not native token count); chat PSS=${result.getLong("chatPssKb")} KiB"
             if(readAloud){val visible=SpeechText.spoken(answer.toString());val span=if(liveSpeech)220 else 500;while(spoken<visible.length){val end=minOf(visible.length,spoken+span);enqueue(visible.substring(spoken,end).trim());spoken=end}}
         } finally {queue.close();val visible=SpeechText.visible(answer.toString());if(visible.isNotBlank())addTurn("Rosalina",visible)}
         speechJob?.join();update(r.id){it.copy(answer="",voiceStage="",avatarEnergy=0f)}
@@ -377,13 +391,14 @@ internal class Session private constructor(private val context:Context) {
                     val interrupted=AtomicBoolean(false)
                     val responseDone=AtomicBoolean(false)
                     val recorded=AtomicReference<VoiceRecording?>(null)
-                    val response=async{performChat(r,transcript,true)}
-                    val next=async {
+                    val turnProfile=capability();val response=async{performChat(r,transcript,true)}
+                    val next=if(turnProfile.overlapListening)async {
                         input.capture(::manual,::finished,{responseDone.get()}) {
                             interrupted.set(true);response.cancel(CancellationException("User voice interruption"));speech.interruptNow()
                             update(r.id){it.copy(stage="Listening · interrupted",voiceStage="")}
                         }?.also{recorded.set(it)}
-                    }
+                    } else null
+                    val interruptWatch=if(next==null)launch {while(isActive && !responseDone.get()){if(voiceInterrupt){voiceInterrupt=false;interrupted.set(true);speech.interruptNow();response.cancel(CancellationException("User requested interruption"))};delay(60)}}else null
                     try {
                         try{response.await()}catch(e:CancellationException){currentCoroutineContext().ensureActive();if(!interrupted.get())throw e}
                         finally {
@@ -406,44 +421,34 @@ internal class Session private constructor(private val context:Context) {
     }
 
     private suspend fun prepareLiveVoice(r:TaskRequest)=coroutineScope {
-        val res=thermal.read()
-        require(!res.low && res.available>=3_500_000_000L){"Live Voice needs more free RAM. Close other large apps or turn off Live conversation mode to use Classic Voice."}
+        val res=thermal.read();val phone=capability(res)
+        require(!res.low && res.available>=3_500_000_000L){"Live Voice needs more free RAM. Close other large apps or use text Chat."}
         val system=prefs.getString("system",DEFAULT_SYSTEM) ?:DEFAULT_SYSTEM
         val model=models.requirePath(ModelKey.CHAT)
         val started=SystemClock.elapsedRealtime()
-        update(r.id){it.copy(stage="Listening · LIVE · warming local voice",backend="Live coordinator · Qwen + Whisper + Kokoro")}
-
-        val listenWarm=async {
-            listen.call(Bundle().apply{putString("operation","prepare")}){event->
-                if(event.getString("type")=="stage")update(r.id){it.copy(voiceStage=event.getString("text").orEmpty())}
-            }
+        update(r.id){it.copy(stage="Listening · LIVE · warming Qwen",backend="${phone.label} · staged warmup")}
+        chatNeedsReset=true
+        val qwen=chat.call(Bundle().apply{putString("operation","prepare");putString("model",model.path);putString("system",system)}){event->
+            if(event.getString("type")=="stage")update(r.id){it.copy(stage="Listening · LIVE · "+event.getString("text").orEmpty(),pid=event.getInt("pid"),backend="${phone.label} · Qwen")}
         }
-        val speechWarm=async {
-            speech.call(Bundle().apply{putString("operation","prepare")}){event->
-                if(event.getString("type")=="stage")update(r.id){it.copy(voiceStage=event.getString("text").orEmpty())}
-            }
-        }
-        val chatWarm=async {
-            chatNeedsReset=true
-            chat.call(Bundle().apply{
-                putString("operation","prepare");putString("model",model.path);putString("system",system)
-            }){event->
-                if(event.getString("type")=="stage")update(r.id){it.copy(stage="Listening · LIVE · "+event.getString("text").orEmpty(),pid=event.getInt("pid"),backend="Live coordinator · Qwen + Whisper + Kokoro")}
-            }
-        }
-        val stt=listenWarm.await();val tts=speechWarm.await();val qwen=chatWarm.await()
+        currentCoroutineContext().ensureActive();delay(120)
+        update(r.id){it.copy(stage="Listening · LIVE · warming Whisper",voiceStage="Listening engine")}
+        val stt=listen.call(Bundle().apply{putString("operation","prepare")}){event->if(event.getString("type")=="stage")update(r.id){it.copy(voiceStage=event.getString("text").orEmpty())}}
+        currentCoroutineContext().ensureActive();delay(80)
+        update(r.id){it.copy(stage="Listening · LIVE · warming voice",voiceStage="Rosalina voice")}
+        val tts=speech.call(Bundle().apply{putString("operation","prepare")}){event->if(event.getString("type")=="stage")update(r.id){it.copy(voiceStage=event.getString("text").orEmpty())}}
         check(stt.getBoolean("prepared") && tts.getBoolean("prepared") && qwen.getBoolean("prepared")){"Live engines did not confirm preparation"}
         chatNeedsReset=false;warmSystem=system
-        liveWarmMetrics="Live Voice = cascaded local full-duplex coordinator (not audio-native); warmup "+(SystemClock.elapsedRealtime()-started)+" ms; Qwen setup="+qwen.getLong("modelSetupMs")+" ms; Whisper setup="+stt.getLong("setupMs")+" ms / PSS="+stt.getLong("pssKb")+" KiB; voice setup="+tts.getLong("elapsedMs")+" ms"
+        liveWarmMetrics="${phone.summary()}; staged warmup "+(SystemClock.elapsedRealtime()-started)+" ms; Qwen setup="+qwen.getLong("modelSetupMs")+" ms; Whisper setup="+stt.getLong("setupMs")+" ms / PSS="+stt.getLong("pssKb")+" KiB; voice setup="+tts.getLong("elapsedMs")+" ms"
         liveMetrics=liveWarmMetrics
-        update(r.id){it.copy(stage="Listening · LIVE · speak naturally",voiceStage="",backend="Live coordinator · all engines warm")}
+        update(r.id){it.copy(stage="Listening · LIVE · speak naturally",voiceStage="",backend="${phone.label} · Live ready")}
     }
 
     private suspend fun performLiveVoice(r:TaskRequest) = coroutineScope {
         require(ContextCompat.checkSelfPermission(context,Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED){"Microphone permission is required"}
         models.requirePath(ModelKey.STT);models.requirePath(ModelKey.TTS);models.requirePath(ModelKey.CHAT)
         voiceActive=true
-        val endpoint=prefs.getInt("live-endpoint-ms",820).coerceIn(550,1400)
+        val startProfile=capability();val endpoint=maxOf(prefs.getInt("live-endpoint-ms",820),startProfile.endpointFloorMs).coerceIn(550,1400)
         val input=VoiceCapture(context,prefs.getBoolean("hands-free",true),endpoint);capture=input
         var pending:VoiceRecording?=null;var previousOutput=""
         fun manual():Boolean {val value=voiceInterrupt;voiceInterrupt=false;return value}
@@ -495,10 +500,12 @@ internal class Session private constructor(private val context:Context) {
                         liveMetrics=liveWarmMetrics+"\n"+learner.snapshot().summary()+"\n"+OnlineEnhancements.state(context,prefs).summary()
                         previousOutput=snapshot.lastOrNull{it.first=="Rosalina"}?.second.orEmpty()
                         responseDone.set(true)
-                        update(r.id){it.copy(stage="Listening · LIVE · your turn",answer="",voiceStage="",backend="Live coordinator · warm")}
-                        pending=next.await();recorded.set(null)
+                        interruptWatch?.cancelAndJoin()
+                        update(r.id){it.copy(stage="Listening · LIVE · your turn",answer="",voiceStage="",backend="${turnProfile.label} · Live ready")}
+                        pending=next?.await() ?: input.capture(::manual,::finished,{true}){}
+                        recorded.set(null)
                     } finally {
-                        withContext(NonCancellable){response.cancelAndJoin();next.cancelAndJoin();recorded.getAndSet(null)?.file?.delete()}
+                        withContext(NonCancellable){response.cancelAndJoin();next?.cancelAndJoin();interruptWatch?.cancelAndJoin();recorded.getAndSet(null)?.file?.delete()}
                     }
                 }
                 if(pending==null)return@coroutineScope
@@ -636,6 +643,6 @@ internal class Session private constructor(private val context:Context) {
     }
     fun diagnostics(s:TaskState=state.value,includeExits:Boolean=false):String {
         val prior=if(s.id.isBlank())runCatching{File(context.filesDir,"last-diagnostics.txt").readText().takeLast(50000)}.getOrDefault("")else ""
-        return "ROSALINA UNIFIED CANDIDATE\nVersion: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\nPackage: ${context.packageName}\n$deviceFacts\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}\nAndroid: ${Build.VERSION.SDK_INT}; ABI: ${Build.SUPPORTED_ABIS.joinToString()}\nAvatar: ${AvatarAsset.status}; state=${AvatarStateResolver.resolve(s)}\nUI transition: ${prefs.getString("last-ui-transition","none")}\nCurrent RAM total: ${s.totalBytes}; available: ${s.availableBytes}\nCurrent thermal: ${s.thermal} ${ThermalPolicy.label(s.thermal)}; sampled elapsedRealtime=${s.thermalAt}\n${thermal.describe()}\nTask: ${s.id} ${s.kind}; stage: ${s.stage}; PID: ${s.pid}; last PID: ${s.lastPid}\nLast native stage: ${s.lastStage}; last sampling: ${s.lastStep}/${s.lastTotal}\nBackend: ${s.backend}\nElapsed: ${s.elapsedMs} ms\nWork pacing: ${s.workHint}\n$chatMetrics\nInput: $speechMetrics\nOutput: $playbackMetrics\n$liveMetrics\n${learner.snapshot().summary()}\n${OnlineEnhancements.state(context,prefs).summary()}\n${models.diagnostic()}\nError: ${s.error}\nGPU compute check:\n$probeLog\nNative log tail:\n${s.logTail}\n${journal.describe()}\n${if(includeExits)CrashJournal.describe(context) else ""}\nSamsung output acceptance: candidate; not established by CI\n${if(prior.isBlank())"" else "Previous recorded diagnostics:\n$prior"}"
+        return "ROSALINA UNIFIED CANDIDATE\nVersion: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\nPackage: ${context.packageName}\n$deviceFacts\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}\nAndroid: ${Build.VERSION.SDK_INT}; ABI: ${Build.SUPPORTED_ABIS.joinToString()}\nAvatar: ${AvatarAsset.status}; state=${AvatarStateResolver.resolve(s)}\nUI transition: ${prefs.getString("last-ui-transition","none")}\nCurrent RAM total: ${s.totalBytes}; available: ${s.availableBytes}\nCurrent thermal: ${s.thermal} ${ThermalPolicy.label(s.thermal)}; sampled elapsedRealtime=${s.thermalAt}\nPhone capability: ${runCatching{capability().summary()}.getOrDefault("unavailable")}\n${thermal.describe()}\nTask: ${s.id} ${s.kind}; stage: ${s.stage}; PID: ${s.pid}; last PID: ${s.lastPid}\nLast native stage: ${s.lastStage}; last sampling: ${s.lastStep}/${s.lastTotal}\nBackend: ${s.backend}\nElapsed: ${s.elapsedMs} ms\nWork pacing: ${s.workHint}\n$chatMetrics\nInput: $speechMetrics\nOutput: $playbackMetrics\n$liveMetrics\n${learner.snapshot().summary()}\n${OnlineEnhancements.state(context,prefs).summary()}\n${models.diagnostic()}\nError: ${s.error}\nGPU compute check:\n$probeLog\nNative log tail:\n${s.logTail}\n${journal.describe()}\n${if(includeExits)CrashJournal.describe(context) else ""}\nSamsung output acceptance: candidate; not established by CI\n${if(prior.isBlank())"" else "Previous recorded diagnostics:\n$prior"}"
     }
 }
