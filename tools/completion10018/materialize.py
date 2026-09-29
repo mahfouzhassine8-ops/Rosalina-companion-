@@ -33,6 +33,12 @@ def protect():
     if "res.available>=3_500_000_000L" not in session: raise RuntimeError("Protected Live RAM guard changed")
     return count
 def main(check=False):
+    # A canonical additive Studio inventory supersedes only the old materialization
+    # recipe; its verifier still calls protect() and verifies all inherited files.
+    studio=pathlib.Path("tools/studio/inventory.json")
+    if studio.is_file():
+        subprocess.run(["python3","tools/studio/verify_source.py"],check=True)
+        return
     here=pathlib.Path(__file__).resolve().parent
     if sorted(p.name for p in here.glob("part*.json"))!=sorted(PARTS): raise RuntimeError("Source receipt parts differ")
     records=[]

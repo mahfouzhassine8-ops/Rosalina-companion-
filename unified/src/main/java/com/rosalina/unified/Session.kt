@@ -44,6 +44,16 @@ internal class Session private constructor(private val context:Context) {
     val voiceV3Models=VoiceV3Models(context)
     val onlineVoiceSettings=OnlineVoiceSettings(context)
     private val onlineVoice=OnlineVoice(context,onlineVoiceSettings)
+    val studioVoiceSettings=StudioVoiceSettings(context)
+    private val studioVoice=StudioVoice(context,studioVoiceSettings)
+    @Volatile private var studioFailed=false
+    fun studioVoiceSummary()=studioVoice.summary()
+    fun studioVoiceStatus()=studioVoice.status()
+    suspend fun checkStudioConnection()=studioVoice.probe()
+    fun disableStudioVoice(){studioVoiceSettings.disable();studioVoice.stop();notice("Studio Voice disabled; phone speech remains available")}
+    fun auditionStudioVoice(text:String,delivery:String="") {
+        if(!state.value.busy && studioVoiceSettings.enabled())begin(TaskRequest(kind=TaskKind.CHAT,modelKey="studio-voice-test",prompt=text.take(400),uri=delivery))
+    }
     private val auditions=VoiceAuditions(prefs)
     @Volatile private var onlineFailed=false
     @Volatile private var expressiveFailed=false
@@ -155,7 +165,7 @@ internal class Session private constructor(private val context:Context) {
     private fun interruptSpeech() {
         val id=state.value.id
         presentation.interrupt(id,now())
-        speech.interruptNow();expressive.interruptNow();platformSpeech.stop();onlineVoice.stop()
+        speech.interruptNow();expressive.interruptNow();platformSpeech.stop();onlineVoice.stop();studioVoice.stop()
         capture?.outputActive=false
     }
     private fun capabilityMode()=prefs.getString("phone-capability","adaptive") ?:"adaptive"
@@ -173,7 +183,7 @@ internal class Session private constructor(private val context:Context) {
         if(r.kind in listOf(TaskKind.CREATE,TaskKind.EDIT,TaskKind.ANIMATE)){notice("Photo and video tools are inactive in Chat + Live Focus");return false}
         if(state.value.quarantined){notice("Force-stop Rosalina before starting another worker");return false}
         if(!lease.acquire(r.id))return false
-        request=r;stopReason="";finishListening=false;voiceInterrupt=false;probeLog="";onlineFailed=false;expressiveFailed=false
+        request=r;stopReason="";finishListening=false;voiceInterrupt=false;probeLog="";onlineFailed=false;expressiveFailed=false;studioFailed=false
         presentation.begin(r.id,now())
         mutable.value=TaskState(id=r.id,kind=r.kind,busy=true,stage="Preparing",result=state.value.result,revision=state.value.revision,eta=if(r.kind in listOf(TaskKind.CREATE,TaskKind.EDIT,TaskKind.ANIMATE))"ETA calibrating…" else "")
         prefs.edit().putString("active-id",r.id).apply()
@@ -235,14 +245,14 @@ internal class Session private constructor(private val context:Context) {
                     TaskKind.IMPORT->{chat.shutdown();warmSystem=null;listen.shutdown();speech.shutdown();expressive.shutdown()
                         if(r.modelKey=="VOICE_V3")voiceV3Models.importPack(Uri.parse(r.uri)){text,p->update(r.id){it.copy(stage=text,percent=p)}}
                         else models.import(ModelKey.valueOf(r.modelKey),Uri.parse(r.uri)){text,p->update(r.id){it.copy(stage=text,percent=p)}}}
-                    TaskKind.CHAT->when(r.modelKey){"prepare"->warmChat(r);"tone-test"->performToneTest(r);"voice-test"->performVoiceTest(r);"voice-v3-test"->performVoiceV3Test(r);"online-voice-test"->performOnlineVoiceTest(r);else->performChat(r,r.prompt,prefs.getBoolean("spoken-replies",false))}
+                    TaskKind.CHAT->when(r.modelKey){"prepare"->warmChat(r);"tone-test"->performToneTest(r);"voice-test"->performVoiceTest(r);"voice-v3-test"->performVoiceV3Test(r);"online-voice-test"->performOnlineVoiceTest(r);"studio-voice-test"->performStudioVoiceTest(r);else->performChat(r,r.prompt,prefs.getBoolean("spoken-replies",false))}
                     TaskKind.VOICE->performVoice(r)
                     else->render(r)
                 } }
             }catch(t:Throwable){failure=t}
             finally {
                 withContext(NonCancellable) {
-                    ticker.cancelAndJoin();platformSpeech.stop();onlineVoice.stop();capture?.close();capture=null;voiceActive=false
+                    ticker.cancelAndJoin();platformSpeech.stop();onlineVoice.stop();studioVoice.stop();capture?.close();capture=null;voiceActive=false
                     presentation.end(r.id,now())
                     var finalFailure=failure
                     try{listen.shutdown()}catch(t:Throwable){finalFailure=if(t is WorkerQuarantined)t else finalFailure ?:t}
@@ -423,6 +433,38 @@ internal class Session private constructor(private val context:Context) {
             return started
         }finally{presentation.playback(r.id,utterance,false,now());capture?.outputActive=false;update(r.id){it.copy(voiceStage="",avatarEnergy=0f)}}
     }
+    private suspend fun speakStudio(r:TaskRequest,text:String,expression:VoiceExpression,trial:Boolean=false):Boolean {
+        val performance=expression.performance ?:PerformanceState(expression=RosalinaExpression.SPEAKING)
+        val utterance=UUID.randomUUID().toString();val started=AtomicBoolean(false);val before=thermal.read().thermal
+        presentation.preparingSpeech(r.id,utterance,performance.expression,"Studio Voice · private network",now(),performance)
+        try {
+            val result=studioVoice.speak(text,performance){kind,label,event->
+                if(presentation.snapshot.taskId==r.id && presentation.snapshot.utteranceId==utterance)when(kind){
+                    "stage"->update(r.id){it.copy(voiceStage=label)}
+                    "playback"->{val playing=label=="start";if(playing)started.set(true)
+                        presentation.playback(r.id,utterance,playing,now());capture?.outputActive=playing;capture?.outputRoute=event?.getInt("route",-1) ?:-1
+                        update(r.id){it.copy(voiceStage=if(playing)"Speaking · Studio Voice · private network" else "",avatarEnergy=0f)}}
+                    "energy"->if(event!=null){presentation.energy(r.id,utterance,event.getFloat("energy"),"Studio PCM / playback-head estimate",MouthPose(event.getFloat("mouthOpen"),event.getFloat("mouthWide"),event.getFloat("mouthRound")));update(r.id){it.copy(avatarEnergy=presentation.snapshot.energy)}}
+                }
+            }
+            playbackMetrics="Studio Voice · private network; first audio=${result.getLong("firstAudioMs")} ms; playback=${result.getLong("playbackMs")} ms; underruns=${result.getInt("underruns")}; response clause only; Mac engine/quality not independently verified"
+            if(trial)auditions.record("Studio Voice","",true,result.getLong("setupMs"),result.getLong("firstAudioMs"),result.getLong("playbackMs"),null,"Mac memory not sampled",before,thermal.read().thermal)
+            return true
+        }catch(t:Throwable){
+            if(t is CancellationException)throw t
+            currentCoroutineContext().ensureActive();studioFailed=true;studioVoice.stop()
+            // Do not journal network exception messages, remote bodies, keys, addresses or reply text.
+            voiceFallbackReason=(t as? StudioVoiceException)?.failure?.label ?:"Studio unavailable; phone voice selected"
+            playbackMetrics=voiceFallbackReason+if(started.get())"; partial clause not replayed" else "; phone fallback before first audio"
+            if(trial){auditions.record("Studio Voice","",false,null,null,null,null,"Mac memory not sampled",before,thermal.read().thermal,"Studio audition failed");throw IllegalStateException("Studio audition failed. Phone speech remains available.")}
+            return !StudioFallbackPolicy.mayReplayClause(started.get(),false)
+        }finally{presentation.playback(r.id,utterance,false,now());capture?.outputActive=false;update(r.id){it.copy(voiceStage="",avatarEnergy=0f)}}
+    }
+    private suspend fun performStudioVoiceTest(r:TaskRequest) {
+        check(studioVoiceSettings.enabled()){"Enable the configured Studio connection before an audition"}
+        setTaskMode(r,playback=true);speakStudio(r,r.prompt,voiceExpression(r.uri,r.prompt),trial=true)
+        update(r.id){it.copy(stage="Studio audition complete · phone listening acceptance still required")}
+    }
     private suspend fun performOnlineVoiceTest(r:TaskRequest) {
         check(onlineVoiceSettings.enabled()){"Explicitly enable the configured provider before an online audition"}
         setTaskMode(r,playback=true);speakOnline(r,r.prompt,voiceExpression(r.uri,r.prompt),trial=true)
@@ -446,7 +488,10 @@ internal class Session private constructor(private val context:Context) {
                 val expression=voiceExpression(prompt,text)
                 val utterance=UUID.randomUUID().toString();var nativePlaybackStarted=false
                 try {
-                    if(onlineVoiceSettings.enabled() && !onlineFailed && speakOnline(r,text,expression))continue
+                    val studioPreferred=studioVoiceSettings.preferred()
+                    if(studioPreferred && !studioFailed && studioVoice.readyForReply() && speakStudio(r,text,expression))continue
+                    // Choosing the Mac is not consent to escalate a failed Mac request to cloud speech.
+                    if(!studioPreferred && onlineVoiceSettings.enabled() && !onlineFailed && speakOnline(r,text,expression))continue
                     if(candidateEligible()){
                         if(speakCandidate(r,text,expression))continue
                     }else if(expressive.pid>0){expressive.shutdown()}
@@ -810,6 +855,6 @@ internal class Session private constructor(private val context:Context) {
     }
     fun diagnostics(s:TaskState=state.value,includeExits:Boolean=false):String {
         val prior=if(s.id.isBlank())runCatching{File(context.filesDir,"last-diagnostics.txt").readText().takeLast(50000)}.getOrDefault("")else ""
-        return "ROSALINA UNIFIED CANDIDATE\nVersion: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\nPackage: ${context.packageName}\n$deviceFacts\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}\nAndroid: ${Build.VERSION.SDK_INT}; ABI: ${Build.SUPPORTED_ABIS.joinToString()}\nPresentation: ${presentation.summary()}\nVoice V3: ${voiceV3Summary()}\nAuditions: ${voiceAuditionSummary()}\nAvatar: ${AvatarAsset.status}; state=${AvatarStateResolver.resolve(s)}\nUI transition: ${prefs.getString("last-ui-transition","none")}\nCurrent RAM total: ${s.totalBytes}; available: ${s.availableBytes}\nCurrent thermal: ${s.thermal} ${ThermalPolicy.label(s.thermal)}; sampled elapsedRealtime=${s.thermalAt}\nPhone capability: ${runCatching{capability().summary()}.getOrDefault("unavailable")}\n${thermal.describe()}\nTask: ${s.id} ${s.kind}; stage: ${s.stage}; PID: ${s.pid}; last PID: ${s.lastPid}\nLast native stage: ${s.lastStage}; last sampling: ${s.lastStep}/${s.lastTotal}\nBackend: ${s.backend}\nElapsed: ${s.elapsedMs} ms\nWork pacing: ${s.workHint}\n$chatMetrics\nInput: $speechMetrics\nOutput: $playbackMetrics\n$liveMetrics\n${learner.snapshot().summary()}\n${onlineVoiceSettings.summary()}\n${models.diagnostic()}\nError: ${s.error}\nGPU compute check:\n$probeLog\nNative log tail:\n${s.logTail}\n${journal.describe()}\n${if(includeExits)CrashJournal.describe(context) else ""}\nSamsung output acceptance: candidate; not established by CI\n${if(prior.isBlank())"" else "Previous recorded diagnostics:\n$prior"}"
+        return "ROSALINA UNIFIED CANDIDATE\nVersion: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\nPackage: ${context.packageName}\n$deviceFacts\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}\nAndroid: ${Build.VERSION.SDK_INT}; ABI: ${Build.SUPPORTED_ABIS.joinToString()}\nPresentation: ${presentation.summary()}\nVoice V3: ${voiceV3Summary()}\nAuditions: ${voiceAuditionSummary()}\nAvatar: ${AvatarAsset.status}; state=${AvatarStateResolver.resolve(s)}\nUI transition: ${prefs.getString("last-ui-transition","none")}\nCurrent RAM total: ${s.totalBytes}; available: ${s.availableBytes}\nCurrent thermal: ${s.thermal} ${ThermalPolicy.label(s.thermal)}; sampled elapsedRealtime=${s.thermalAt}\nPhone capability: ${runCatching{capability().summary()}.getOrDefault("unavailable")}\n${thermal.describe()}\nTask: ${s.id} ${s.kind}; stage: ${s.stage}; PID: ${s.pid}; last PID: ${s.lastPid}\nLast native stage: ${s.lastStage}; last sampling: ${s.lastStep}/${s.lastTotal}\nBackend: ${s.backend}\nElapsed: ${s.elapsedMs} ms\nWork pacing: ${s.workHint}\n$chatMetrics\nInput: $speechMetrics\nOutput: $playbackMetrics\n$liveMetrics\n${learner.snapshot().summary()}\n${onlineVoiceSettings.summary()}\n${studioVoiceSummary()}\n${models.diagnostic()}\nError: ${s.error}\nGPU compute check:\n$probeLog\nNative log tail:\n${s.logTail}\n${journal.describe()}\n${if(includeExits)CrashJournal.describe(context) else ""}\nSamsung output acceptance: candidate; not established by CI\n${if(prior.isBlank())"" else "Previous recorded diagnostics:\n$prior"}"
     }
 }

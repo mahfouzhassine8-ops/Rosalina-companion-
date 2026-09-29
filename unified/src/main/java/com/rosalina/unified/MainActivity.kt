@@ -280,7 +280,8 @@ class MainActivity:AppCompatActivity() {
         body.addView(text("Settings",28f));body.addView(text("Chat + Live Focus. Photo and video engines stay preserved but inactive so conversation gets the phone.",12f,muted))
         body.addView(text("APP SETTINGS",11f,accent).apply{setPadding(0,dp(18),0,dp(4))})
         body.addView(button("Chat, Live Voice & avatar preferences"){settingsDialog()})
-        body.addView(button("Voice comparison · baseline / local / online"){voiceV3Dialog()})
+        body.addView(button("Voice comparison · phone / Studio / online"){voiceV3Dialog()})
+        body.addView(button("Studio Voice · optional Mac connection"){studioVoiceDialog()})
         body.addView(button("Optional online-HD voice · off until enabled"){onlineVoiceDialog()})
         body.addView(button("Diagnostics\nDevice, audio route, model and runtime details"){diagnosticsDialog()})
         body.addView(text("CHAT & LISTENING",11f,accent).apply{setPadding(0,dp(18),0,dp(4))})
@@ -331,7 +332,7 @@ class MainActivity:AppCompatActivity() {
     private fun update(s:TaskState) {
         status.change(s.stage+if(s.voiceStage.isNotBlank())"\n${s.voiceStage}" else "")
         avatar?.bind(s,session.presentation.snapshot)
-        thermal.change((if(session.onlineVoiceSettings.enabled())"Optional online speech enabled" else "Private · on-device")+if(s.busy)" · ${s.elapsedMs/1000}s elapsed" else "")
+        thermal.change((if(session.studioVoiceSettings.preferred())"Studio Voice · ${session.studioVoiceStatus()}" else if(session.onlineVoiceSettings.enabled())"Optional online speech enabled" else "Private · on-device")+if(s.busy)" · ${s.elapsedMs/1000}s elapsed" else "")
         stop.visibility=if(s.busy)View.VISIBLE else View.GONE;stop.isEnabled=!s.stopping
         progress.visibility=if(s.busy && s.kind !in listOf(TaskKind.CHAT,TaskKind.VOICE))View.VISIBLE else View.GONE
         if(progress.isIndeterminate!=(s.percent==null))progress.isIndeterminate=s.percent==null
@@ -417,6 +418,7 @@ class MainActivity:AppCompatActivity() {
         val delivery=Spinner(this).apply{adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,arrayOf("Natural","Gentle","Teasing (companion style)","Small chuckle test","Sigh test","Whisper capability test"))};body.addView(delivery)
         body.addView(text("Identical words and selected delivery are used for every audition. A capability test is not a claim that the engine supports it.",11f,muted))
         body.addView(row(button("Hear baseline"){if(!session.state.value.busy){ensureNotifications();session.testVoiceText(phrases[phrase.selectedItemPosition],deliveryRequests[delivery.selectedItemPosition])}},button("Hear local candidate"){if(!session.state.value.busy){ensureNotifications();session.auditionVoiceV3(phrases[phrase.selectedItemPosition],deliveryRequests[delivery.selectedItemPosition])}}))
+        body.addView(button("Hear configured Studio voice"){if(!session.state.value.busy && session.studioVoiceSettings.enabled()){ensureNotifications();session.auditionStudioVoice(phrases[phrase.selectedItemPosition],deliveryRequests[delivery.selectedItemPosition])}else Toast.makeText(this,"Configure and enable Studio Voice first.",Toast.LENGTH_LONG).show()})
         body.addView(button("Hear configured online voice"){if(!session.state.value.busy && session.onlineVoiceSettings.enabled()){ensureNotifications();session.auditionOnlineVoice(phrases[phrase.selectedItemPosition],deliveryRequests[delivery.selectedItemPosition])}else Toast.makeText(this,"Configure and explicitly enable online voice first.",Toast.LENGTH_LONG).show()})
         body.addView(text("Compare the same phrase. Then test 10–15 minutes, repeated replies, Stop and background/return. A different voice alone does not establish improved quality. Controlled whisper, sigh and laughter are still unverified.",12f,muted))
         body.addView(button("Use candidate after my phone acceptance"){
@@ -434,6 +436,44 @@ class MainActivity:AppCompatActivity() {
         })
         body.addView(button("Use protected compatibility voice"){if(!session.state.value.busy)session.setVoiceV3Approved(false)})
         AlertDialog.Builder(this).setTitle("Voice comparison").setView(ScrollView(this).apply{addView(body)}).setPositiveButton("Close",null).show()
+    }
+    private fun studioVoiceDialog() {
+        if(session.state.value.busy){Toast.makeText(this,"End the active session before changing Studio settings.",Toast.LENGTH_LONG).show();return}
+        val settings=session.studioVoiceSettings
+        val body=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(10),dp(16),dp(12))}
+        body.addView(text("Studio Voice runs speech on your Mac. Only the current Rosalina reply clause and selected style are sent; never the microphone, history or system prompt. Use a local engine in VoiceStudio: a Mac server could itself be configured for cloud processing. A private network is not automatically encrypted; this connection requires trusted HTTPS.",13f))
+        val address=EditText(this).apply{hint="https://your-mac.your-tailnet.ts.net";setText(settings.endpoint());inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI;setTextColor(ink)};body.addView(address)
+        val model=EditText(this).apply{hint="Installed engine ID (tts-1 = active engine)";setText(settings.model());setTextColor(ink)};body.addView(model)
+        val voice=EditText(this).apply{hint="Voice profile ID or default";setText(settings.voice());setTextColor(ink)};body.addView(voice)
+        val style=Spinner(this).apply{adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,StudioStyleMode.entries.map{it.label});setSelection(settings.style().ordinal)};body.addView(style)
+        body.addView(text("Style support depends on the Mac engine. OmniVoice accepts design tags, not arbitrary emotional prose. Start with no instructions, then audition the same phrases. Blank secrets retain existing values only at the same address; remove credentials to clear a saved PIN.",11f,muted))
+        val key=EditText(this).apply{hint="Studio API key (kept encrypted)";inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD;setTextColor(ink);importantForAutofill=View.IMPORTANT_FOR_AUTOFILL_NO;isSaveEnabled=false};body.addView(key)
+        val pin=EditText(this).apply{hint="Sharing PIN, when enabled on Mac";inputType=android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD;setTextColor(ink);importantForAutofill=View.IMPORTANT_FOR_AUTOFILL_NO;isSaveEnabled=false};body.addView(pin)
+        val consent=Switch(this).apply{text="Allow reply text to this configured Studio";setTextColor(ink);isChecked=settings.enabled()};body.addView(consent)
+        val prefer=Switch(this).apply{text="Prefer Studio for Chat / Live when available";setTextColor(ink);isChecked=settings.preferred()};body.addView(prefer)
+        body.addView(text("When preferred Studio fails, the phone voice is used; cloud voice is not enabled as a fallback. Stop closes playback and the stream. A partially spoken clause is not replayed from the beginning.",11f,muted))
+        val status=text(session.studioVoiceSummary(),11f,muted);body.addView(status)
+        val results=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};body.addView(results)
+        val discovery=StudioVoiceDiscovery(this,{label,url->results.addView(button("Use $label"){address.setText(url);consent.isChecked=false;prefer.isChecked=false;status.text="Untrusted discovery suggestion. Verify the address before saving; nothing connected."})},{label->status.text=label})
+        body.addView(button("Find advertised Mac Studio"){results.removeAllViews();discovery.start()})
+        body.addView(text("Discovery uses the optional Mac advertisement helper. A normal VoiceStudio install may not advertise; manual address always remains available.",11f,muted))
+        var probe:kotlinx.coroutines.Job?=null
+        fun save():Boolean {
+            if(session.state.value.busy)return false
+            return runCatching{settings.save(address.text.toString(),model.text.toString().trim(),voice.text.toString().trim(),StudioStyleMode.entries[style.selectedItemPosition],key.text.toString(),pin.text.toString(),consent.isChecked,prefer.isChecked);key.text.clear();pin.text.clear()}
+                .onFailure{status.text=it.message ?:"Could not save Studio settings"}.isSuccess
+        }
+        body.addView(button("Save and check connection (no speech)"){
+            if(probe?.isActive!=true && save() && settings.enabled())probe=lifecycleScope.launch {
+                status.text="Checking saved Studio connection…"
+                try{status.text=session.checkStudioConnection()}catch(e:kotlinx.coroutines.CancellationException){throw e}catch(_:Throwable){status.text="Studio check failed. Check HTTPS, API key/PIN and whether your Mac is awake."}
+            }
+        })
+        body.addView(button("Disable and remove Studio credentials"){probe?.cancel();session.disableStudioVoice();settings.clear();key.text.clear();pin.text.clear();consent.isChecked=false;prefer.isChecked=false;status.text="Studio disabled; credentials removed"})
+        val dialog=AlertDialog.Builder(this).setTitle("Studio Voice · Local Mac").setView(ScrollView(this).apply{addView(body)}).setNegativeButton("Close",null).setPositiveButton("Save",null).create()
+        dialog.setOnShowListener{dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE);dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener{if(save())dialog.dismiss()}}
+        dialog.setOnDismissListener{probe?.cancel();discovery.stop();key.text.clear();pin.text.clear()}
+        dialog.show()
     }
     private fun onlineVoiceDialog() {
         if(session.state.value.busy){Toast.makeText(this,"End the current task before changing provider settings.",Toast.LENGTH_LONG).show();return}
