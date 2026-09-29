@@ -408,11 +408,12 @@ internal class Session private constructor(private val context:Context) {
                             }
                         }
                         previousOutput=snapshot.lastOrNull{it.first=="Rosalina"}?.second.orEmpty()
-                        responseDone.set(true)
+                        responseDone.set(true);interruptWatch?.cancelAndJoin()
                         update(r.id){it.copy(stage="Listening · speak or tap Stop to finish",answer="",voiceStage="")}
-                        pending=next.await();recorded.set(null)
+                        pending=next?.await() ?: input.capture(::manual,::finished,{true}){}
+                        recorded.set(null)
                     } finally {
-                        withContext(NonCancellable){response.cancelAndJoin();next.cancelAndJoin();recorded.getAndSet(null)?.file?.delete()}
+                        withContext(NonCancellable){response.cancelAndJoin();next?.cancelAndJoin();interruptWatch?.cancelAndJoin();recorded.getAndSet(null)?.file?.delete()}
                     }
                 }
                 if(pending==null)return
