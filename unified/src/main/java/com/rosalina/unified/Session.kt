@@ -116,6 +116,7 @@ internal class Session private constructor(private val context:Context) {
     fun notice(text:String){mutable.update{if(it.busy)it else it.copy(stage=text)}}
     fun liveLearningSummary()=learner.snapshot().summary()
     fun resetLiveLearning(){learner.reset();notice("Adaptive Live learning reset")}
+    fun testVoice(){if(!state.value.busy)begin(TaskRequest(kind=TaskKind.CHAT,modelKey="voice-test",prompt="Rosalina speaker test. If you can hear this, local text to speech is working."))}
     fun refreshResources(){val r=thermal.read();mutable.update{it.copy(thermal=r.thermal,thermalAt=r.measuredAt,availableBytes=r.available,totalBytes=r.total)}}
     @Synchronized fun begin(r:TaskRequest):Boolean {
         if(r.kind in listOf(TaskKind.CREATE,TaskKind.EDIT,TaskKind.ANIMATE)){notice("Photo and video tools are inactive in Chat + Live Focus");return false}
@@ -177,7 +178,7 @@ internal class Session private constructor(private val context:Context) {
                 historyReady.await()
                 coroutineScope { when(r.kind) {
                     TaskKind.IMPORT->{chat.shutdown();warmSystem=null;listen.shutdown();speech.shutdown();models.import(ModelKey.valueOf(r.modelKey),Uri.parse(r.uri)){text,p->update(r.id){it.copy(stage=text,percent=p)}}}
-                    TaskKind.CHAT->if(r.modelKey=="prepare")warmChat(r)else performChat(r,r.prompt,prefs.getBoolean("spoken-replies",false))
+                    TaskKind.CHAT->when(r.modelKey){"prepare"->warmChat(r);"voice-test"->performVoiceTest(r);else->performChat(r,r.prompt,prefs.getBoolean("spoken-replies",false))}
                     TaskKind.VOICE->performVoice(r)
                     else->render(r)
                 } }
@@ -240,6 +241,28 @@ internal class Session private constructor(private val context:Context) {
         putFloat("pace",expression.pace)
         putFloat("voiceIntensity",expression.intensity)
     }
+    private suspend fun performVoiceTest(r:TaskRequest) {
+        models.requirePath(ModelKey.TTS)
+        setTaskMode(r,playback=true)
+        val text=r.prompt.ifBlank{"Rosalina speaker test. If you can hear this, local text to speech is working."}
+        val expression=voiceExpression("",text)
+        update(r.id){it.copy(stage="Testing Rosalina speaker",voiceStage="Preparing speech")}
+        val result=speech.call(Bundle().apply{
+            putString("operation","speak");putString("text",text);putInt("speaker",prefs.getInt("speaker",3));putBoolean("conversation",false);putExpression(expression)
+        }){event->
+            when(event.getString("type")){
+                "stage"->update(r.id){it.copy(voiceStage=event.getString("text").orEmpty())}
+                "playback"->{
+                    val playing=event.getString("text")=="start";val route=event.getInt("route",-1)
+                    if(playing)playbackMetrics="Speaker test route=${event.getString("routeLabel") ?: AudioRoutePolicy.label(route)}($route); preferred=${event.getString("preferredRouteLabel")}; preferred applied=${event.getBoolean("preferredApplied")}"
+                    update(r.id){it.copy(voiceStage=if(playing)"Speaking test" else "",avatarEnergy=if(playing)it.avatarEnergy else 0f)}
+                }
+                "avatar"->update(r.id){it.copy(avatarEnergy=event.getFloat("energy",0f).coerceIn(0f,1f))}
+            }
+        }
+        playbackMetrics="Speaker test; first audio=${result.getLong("firstAudioMs")} ms; generated=${result.getLong("audioMs")} ms; route=${result.getString("routeLabel")}(${result.getInt("route",-1)}); encoding=${result.getString("encoding")}; usage=${result.getString("usage")}; audio mode=${result.getInt("audioMode",-1)}"
+        update(r.id){it.copy(stage="Speaker test completed",voiceStage="",avatarEnergy=0f)}
+    }
     private suspend fun performChat(r:TaskRequest,prompt:String,readAloud:Boolean)=coroutineScope {
         require(prompt.isNotBlank() && prompt.length<=8000){"Use a prompt between 1 and 8,000 characters"}
         setTaskMode(r,readAloud)
@@ -277,7 +300,7 @@ internal class Session private constructor(private val context:Context) {
                             }
                         }
                         val wasInterrupted=result.getBoolean("interrupted")
-                        playbackMetrics="Kokoro Voice V2; ${result.getString("voiceProfile")}; pitch path=${if(result.getBoolean("pitchApplied"))"Android pitch-preserving playback" else "neutral fallback"}; first audio ${result.getLong("firstAudioMs")} ms; audio ${result.getLong("audioMs")} ms; elapsed ${result.getLong("elapsedMs")} ms; interrupted=$wasInterrupted; restart attempts=${attempt-1}; route=${result.getString("routeLabel")}(${result.getInt("route",-1)}); preferred=${result.getString("preferredRouteLabel")}(${result.getInt("preferredRoute",-1)}); preferred applied=${result.getBoolean("preferredApplied")}; audio mode=${result.getInt("audioMode",-1)}"
+                        playbackMetrics="Kokoro Voice V2; ${result.getString("voiceProfile")}; pitch path=${if(result.getBoolean("pitchApplied"))"Android pitch-preserving playback" else "neutral fallback"}; first audio ${result.getLong("firstAudioMs")} ms; audio ${result.getLong("audioMs")} ms; elapsed ${result.getLong("elapsedMs")} ms; interrupted=$wasInterrupted; restart attempts=${attempt-1}; route=${result.getString("routeLabel")}(${result.getInt("route",-1)}); preferred=${result.getString("preferredRouteLabel")}(${result.getInt("preferredRoute",-1)}); preferred applied=${result.getBoolean("preferredApplied")}; encoding=${result.getString("encoding")}; usage=${result.getString("usage")}; audio mode=${result.getInt("audioMode",-1)}"
                         if(wasInterrupted){unavailable=true;update(r.id){it.copy(voiceStage="",avatarEnergy=0f)}}
                         completed=true
                     }catch(e:CancellationException){throw e}
