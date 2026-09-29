@@ -17,7 +17,7 @@ class SpeechService:NativeRpcService() {
     private var tts:OfflineTts?=null
     private var ttsRoot=""
     @Volatile private var track:AudioTrack?=null
-    private var focus:AudioFocusRequest?=null
+    @Volatile private var focus:AudioFocusRequest?=null
     private val cancelled=AtomicBoolean(false)
     override fun interrupt(){cancelled.set(true);runCatching{track?.pause();track?.flush()};focus?.let{getSystemService(AudioManager::class.java).abandonAudioFocusRequest(it)}}
     override suspend fun execute(values:Bundle,emit:(String,String,Bundle?)->Unit):Bundle {
@@ -77,9 +77,10 @@ class SpeechService:NativeRpcService() {
         val attributes=AudioAttributes.Builder().setUsage(if(values.getBoolean("conversation"))AudioAttributes.USAGE_VOICE_COMMUNICATION else AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
         val am=getSystemService(AudioManager::class.java)
         val request=AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT).setAudioAttributes(attributes).setOnAudioFocusChangeListener{loss->if(loss<0)interrupt()}.build()
-        focus=request;require(am.requestAudioFocus(request)==AudioManager.AUDIOFOCUS_REQUEST_GRANTED){"Audio focus was not granted"}
+        focus=request
         var audio:AudioTrack?=null
         try {
+            require(am.requestAudioFocus(request)==AudioManager.AUDIOFOCUS_REQUEST_GRANTED){"Audio focus was not granted"}
             val out=AudioTrack.Builder().setAudioAttributes(attributes).setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT).setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build()).setBufferSizeInBytes(maxOf(rate,AudioTrack.getMinBufferSize(rate,AudioFormat.CHANNEL_OUT_MONO,AudioFormat.ENCODING_PCM_FLOAT))).setTransferMode(AudioTrack.MODE_STREAM).build()
             audio=out;track=out
             val dsp=VoiceDspProcessor(rate,expression)
@@ -90,7 +91,7 @@ class SpeechService:NativeRpcService() {
             }.getOrDefault(false)
             out.play()
             val started=SystemClock.elapsedRealtime();var first=0L;var total=0L;var announced=false;var clipped=0;var lastAvatarEmit=0L
-            emit("stage","Rosalina is speaking · "+expression.name,null)
+            emit("stage","Preparing speech · "+expression.name,null)
             engine.generateWithCallback(text,sid,expression.pace){samples->
                 if(cancelled.get())return@generateWithCallback 0
                 val shaped=dsp.process(samples)
@@ -100,35 +101,36 @@ class SpeechService:NativeRpcService() {
                     energySum+=value.toDouble()*value.toDouble()
                     if(abs(value)>=.999f){clipped++;if(clipped>rate/20)error("Voice produced clipped audio; stopped")}else clipped=0
                 }
-                val avatarNow=SystemClock.elapsedRealtime()
-                if(shaped.isNotEmpty() && avatarNow-lastAvatarEmit>=70L){
-                    val rms=sqrt(energySum/shaped.size).toFloat()
-                    emit("avatar","energy",Bundle().apply{putFloat("energy",(rms*4.5f).coerceIn(0f,1f))})
-                    lastAvatarEmit=avatarNow
-                }
-                if(!announced){announced=true;emit("playback","start",Bundle().apply{putInt("route",out.routedDevice?.type ?: -1);putString("profile",expression.summary());putBoolean("pitchApplied",pitchApplied)})}
                 var offset=0
                 while(offset<shaped.size && !cancelled.get()) {
                     val n=out.write(shaped,offset,minOf(2048,shaped.size-offset),AudioTrack.WRITE_BLOCKING)
+                    if(n<=0 && cancelled.get())break
                     check(n>0){"Audio output stopped accepting samples: $n"}
                     if(first==0L)first=SystemClock.elapsedRealtime()-started
                     offset+=n;total+=n
+                    if(!announced){announced=true;emit("playback","start",Bundle().apply{putInt("route",out.routedDevice?.type ?: -1);putString("profile",expression.summary());putBoolean("pitchApplied",pitchApplied)})}
                 }
-                emit("playback","start",Bundle().apply{putInt("route",out.routedDevice?.type ?: -1)})
+                val avatarNow=SystemClock.elapsedRealtime()
+                if(offset>0 && !cancelled.get() && avatarNow-lastAvatarEmit>=70L){
+                    val rms=sqrt(energySum/shaped.size).toFloat()
+                    emit("avatar","energy",Bundle().apply{putFloat("energy",(rms*4.5f).coerceIn(0f,1f))})
+                    emit("playback","start",Bundle().apply{putInt("route",out.routedDevice?.type ?: -1)})
+                    lastAvatarEmit=avatarNow
+                }
                 if(cancelled.get())0 else 1
             }
             val deadline=SystemClock.elapsedRealtime()+maxOf(5000L,total*1000/rate+3000L)
-            while(!cancelled.get() && out.playbackHeadPosition.toLong()<total){currentCoroutineContext().ensureActive();check(SystemClock.elapsedRealtime()<deadline){"Audio output did not finish"};kotlinx.coroutines.delay(20)}
+            while(!cancelled.get() && (out.playbackHeadPosition.toLong() and 0xffffffffL)<total){currentCoroutineContext().ensureActive();check(SystemClock.elapsedRealtime()<deadline){"Audio output did not finish"};kotlinx.coroutines.delay(20)}
             val interrupted=cancelled.get()
             return Bundle().apply{
                 putLong("firstAudioMs",first)
                 putLong("elapsedMs",SystemClock.elapsedRealtime()-started)
-                putLong("audioMs",(total*1000L/rate/expression.pace).toLong())
+                putLong("audioMs",total*1000L/rate)
                 putString("voice","Kokoro82M/speaker-$sid")
                 putString("voiceProfile",expression.summary())
                 putBoolean("pitchApplied",pitchApplied)
                 putBoolean("interrupted",interrupted)
             }
-        }finally{emit("avatar","energy",Bundle().apply{putFloat("energy",0f)});emit("playback","stop",null);runCatching{audio?.pause();audio?.flush();audio?.release()};track=null;am.abandonAudioFocusRequest(request);focus=null}
+        }finally{emit("avatar","energy",Bundle().apply{putFloat("energy",0f)});emit("playback","stop",null);runCatching{audio?.pause();audio?.flush();audio?.release()};track=null;runCatching{am.abandonAudioFocusRequest(request)};focus=null}
     }
 }

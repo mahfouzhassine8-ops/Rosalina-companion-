@@ -32,7 +32,7 @@ internal class ModelStore(private val context:Context) {
     private val registryFile=File(root,"registry.json")
     private var registry=runCatching{JSONObject(registryFile.readText())}.getOrDefault(JSONObject())
     @Synchronized fun receipt(key:ModelKey):JSONObject? = registry.optJSONObject(key.name)?.let{JSONObject(it.toString())}
-    @Synchronized private fun register(key:ModelKey,value:JSONObject) { registry.put(key.name,value);atomicText(registryFile,registry.toString(2)) }
+    @Synchronized private fun register(key:ModelKey,value:JSONObject) { val next=JSONObject(registry.toString()).put(key.name,value);atomicText(registryFile,next.toString(2));registry=next }
     fun path(key:ModelKey):File? = receipt(key)?.optString("path")?.takeIf{it.isNotBlank()}?.let(::File)?.takeIf{it.exists()}
     fun requirePath(key:ModelKey)=path(key) ?: error("Import the ${key.label.lowercase()} model in Models first")
     fun summary(key:ModelKey):String {
