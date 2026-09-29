@@ -56,6 +56,7 @@ internal class Session private constructor(private val context:Context) {
     @Volatile private var chatNeedsReset=false
     @Volatile private var warmSystem:String?=null
     private var speechMetrics=""
+    private var playbackMetrics=""
     @Volatile private var liveMetrics=""
     @Volatile private var liveWarmMetrics=""
     @Volatile private var voiceStartJob:Job?=null
@@ -267,14 +268,16 @@ internal class Session private constructor(private val context:Context) {
                                 "stage"->update(r.id){it.copy(voiceStage=event.getString("text").orEmpty())}
                                 "playback"->{
                                     val playing=event.getString("text")=="start"
-                                    capture?.outputRoute=event.getInt("route",-1);capture?.outputActive=playing
+                                    val route=event.getInt("route",-1)
+                                    capture?.outputRoute=route;capture?.outputActive=playing
+                                    if(playing)playbackMetrics="Rosalina output route=${event.getString("routeLabel") ?: AudioRoutePolicy.label(route)}($route); preferred=${event.getString("preferredRouteLabel") ?: AudioRoutePolicy.label(event.getInt("preferredRoute",-1))}(${event.getInt("preferredRoute",-1)}); preferred applied=${event.getBoolean("preferredApplied")}"
                                     update(r.id){it.copy(voiceStage=if(playing)"Speaking · ${expression.name}" else "",avatarEnergy=if(playing)it.avatarEnergy else 0f)}
                                 }
                                 "avatar"->update(r.id){it.copy(avatarEnergy=event.getFloat("energy",0f).coerceIn(0f,1f))}
                             }
                         }
                         val wasInterrupted=result.getBoolean("interrupted")
-                        speechMetrics="Kokoro Voice V2; ${result.getString("voiceProfile")}; pitch path=${if(result.getBoolean("pitchApplied"))"Android pitch-preserving playback" else "neutral fallback"}; first audio ${result.getLong("firstAudioMs")} ms; audio ${result.getLong("audioMs")} ms; elapsed ${result.getLong("elapsedMs")} ms; interrupted=$wasInterrupted; restart attempts=${attempt-1}"
+                        playbackMetrics="Kokoro Voice V2; ${result.getString("voiceProfile")}; pitch path=${if(result.getBoolean("pitchApplied"))"Android pitch-preserving playback" else "neutral fallback"}; first audio ${result.getLong("firstAudioMs")} ms; audio ${result.getLong("audioMs")} ms; elapsed ${result.getLong("elapsedMs")} ms; interrupted=$wasInterrupted; restart attempts=${attempt-1}; route=${result.getString("routeLabel")}(${result.getInt("route",-1)}); preferred=${result.getString("preferredRouteLabel")}(${result.getInt("preferredRoute",-1)}); preferred applied=${result.getBoolean("preferredApplied")}; audio mode=${result.getInt("audioMode",-1)}"
                         if(wasInterrupted){unavailable=true;update(r.id){it.copy(voiceStage="",avatarEnergy=0f)}}
                         completed=true
                     }catch(e:CancellationException){throw e}
@@ -283,7 +286,7 @@ internal class Session private constructor(private val context:Context) {
                         if(!currentCoroutineContext().isActive || state.value.stopping)throw CancellationException("Speech stopped").apply{initCause(t)}
                         val processExit=t.message?.contains("SpeechService process exited")==true
                         if(liveSpeech && processExit && attempt<2) {
-                            speechMetrics="Speech process exited · restarting once"
+                            playbackMetrics="Speech process exited · restarting once"
                             update(r.id){it.copy(voiceStage="Restarting Rosalina voice")}
                             speech.shutdown()
                             delay(80)
@@ -622,6 +625,6 @@ internal class Session private constructor(private val context:Context) {
     }
     fun diagnostics(s:TaskState=state.value,includeExits:Boolean=false):String {
         val prior=if(s.id.isBlank())runCatching{File(context.filesDir,"last-diagnostics.txt").readText().takeLast(50000)}.getOrDefault("")else ""
-        return "ROSALINA UNIFIED CANDIDATE\nVersion: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\nPackage: ${context.packageName}\n$deviceFacts\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}\nAndroid: ${Build.VERSION.SDK_INT}; ABI: ${Build.SUPPORTED_ABIS.joinToString()}\nAvatar: ${AvatarAsset.status}; state=${AvatarStateResolver.resolve(s)}\nUI transition: ${prefs.getString("last-ui-transition","none")}\nCurrent RAM total: ${s.totalBytes}; available: ${s.availableBytes}\nCurrent thermal: ${s.thermal} ${ThermalPolicy.label(s.thermal)}; sampled elapsedRealtime=${s.thermalAt}\n${thermal.describe()}\nTask: ${s.id} ${s.kind}; stage: ${s.stage}; PID: ${s.pid}; last PID: ${s.lastPid}\nLast native stage: ${s.lastStage}; last sampling: ${s.lastStep}/${s.lastTotal}\nBackend: ${s.backend}\nElapsed: ${s.elapsedMs} ms\nWork pacing: ${s.workHint}\n$chatMetrics\n$speechMetrics\n$liveMetrics\n${learner.snapshot().summary()}\n${OnlineEnhancements.state(context,prefs).summary()}\n${models.diagnostic()}\nError: ${s.error}\nGPU compute check:\n$probeLog\nNative log tail:\n${s.logTail}\n${journal.describe()}\n${if(includeExits)CrashJournal.describe(context) else ""}\nSamsung output acceptance: candidate; not established by CI\n${if(prior.isBlank())"" else "Previous recorded diagnostics:\n$prior"}"
+        return "ROSALINA UNIFIED CANDIDATE\nVersion: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\nPackage: ${context.packageName}\n$deviceFacts\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}\nAndroid: ${Build.VERSION.SDK_INT}; ABI: ${Build.SUPPORTED_ABIS.joinToString()}\nAvatar: ${AvatarAsset.status}; state=${AvatarStateResolver.resolve(s)}\nUI transition: ${prefs.getString("last-ui-transition","none")}\nCurrent RAM total: ${s.totalBytes}; available: ${s.availableBytes}\nCurrent thermal: ${s.thermal} ${ThermalPolicy.label(s.thermal)}; sampled elapsedRealtime=${s.thermalAt}\n${thermal.describe()}\nTask: ${s.id} ${s.kind}; stage: ${s.stage}; PID: ${s.pid}; last PID: ${s.lastPid}\nLast native stage: ${s.lastStage}; last sampling: ${s.lastStep}/${s.lastTotal}\nBackend: ${s.backend}\nElapsed: ${s.elapsedMs} ms\nWork pacing: ${s.workHint}\n$chatMetrics\nInput: $speechMetrics\nOutput: $playbackMetrics\n$liveMetrics\n${learner.snapshot().summary()}\n${OnlineEnhancements.state(context,prefs).summary()}\n${models.diagnostic()}\nError: ${s.error}\nGPU compute check:\n$probeLog\nNative log tail:\n${s.logTail}\n${journal.describe()}\n${if(includeExits)CrashJournal.describe(context) else ""}\nSamsung output acceptance: candidate; not established by CI\n${if(prior.isBlank())"" else "Previous recorded diagnostics:\n$prior"}"
     }
 }
