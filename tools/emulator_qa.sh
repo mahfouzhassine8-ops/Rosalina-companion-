@@ -19,7 +19,7 @@ adb exec-out screencap -p > qa/unified-emulator.png
 adb uninstall com.rosalina.unified || true
 gradle :unified:assembleDebug -PunifiedEmulatorQa=true -PunifiedVersionCode=10012 --max-workers=2
 adb install unified/build/outputs/apk/debug/unified-debug.apk
-adb shell "run-as com.rosalina.unified sh -c 'echo preserved > files/update-marker.txt'"
+adb shell "run-as com.rosalina.unified sh -c 'mkdir -p files && echo preserved > files/update-marker.txt'"
 gradle :unified:assembleDebug -PunifiedEmulatorQa=true -PunifiedVersionCode=10013 --max-workers=2
 adb install -r unified/build/outputs/apk/debug/unified-debug.apk
 adb shell run-as com.rosalina.unified cat files/update-marker.txt | grep preserved
