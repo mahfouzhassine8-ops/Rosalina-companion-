@@ -426,7 +426,7 @@ internal class Session private constructor(private val context:Context) {
 
     private suspend fun prepareLiveVoice(r:TaskRequest)=coroutineScope {
         val res=thermal.read();val phone=capability(res)
-        require(!res.low && res.available>=3_500_000_000L){"Live Voice needs more free RAM. Close other large apps or use text Chat."}
+        require(PhoneCapabilityPolicy.canStartLive(res)){"Android reports critical memory pressure for Live. Close another large app and retry."}
         val system=prefs.getString("system",DEFAULT_SYSTEM) ?:DEFAULT_SYSTEM
         val model=models.requirePath(ModelKey.CHAT)
         val started=SystemClock.elapsedRealtime()
