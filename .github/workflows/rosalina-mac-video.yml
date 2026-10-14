@@ -1,9 +1,9 @@
-name: Rosalina Mac Photo-to-Video Test
+name: Rosalina Mac Photo-to-Video Recovery RC1
 
 on:
   push:
     branches:
-      - work/rosalina-mac-image-to-video-prototype
+      - work/rosalina-mac-recovery-rc1
     paths:
       - mac/**
       - .github/workflows/rosalina-mac-video.yml
@@ -42,12 +42,26 @@ jobs:
             -O \
             -target arm64-apple-macosx14.0 \
             -sdk "$(xcrun --sdk macosx --show-sdk-path)" \
-            mac/RosalinaVideo.swift \
+            mac/RosalinaVideo.swift mac/RosalinaStorage.swift \
             -o "$APP/Contents/MacOS/RosalinaVideo"
           file "$APP/Contents/MacOS/RosalinaVideo" | tee build/binary-info.txt
           file "$APP/Contents/MacOS/RosalinaVideo" | grep -q arm64
           codesign --force --sign - "$APP"
           codesign --verify --strict --verbose=2 "$APP"
+
+      - name: Test crash recovery and black-frame diagnosis
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            brew install ffmpeg
+          fi
+          xcrun swiftc -parse-as-library \
+            -target arm64-apple-macosx14.0 \
+            -sdk "$(xcrun --sdk macosx --show-sdk-path)" \
+            mac/RosalinaStorage.swift mac/Tests/RosalinaRecoveryTests.swift \
+            -o build/RosalinaRecoveryTests
+          ./build/RosalinaRecoveryTests
 
       - name: Package downloadable test version
         shell: bash
@@ -55,17 +69,17 @@ jobs:
           set -euxo pipefail
           cp mac/README.md dist/READ-ME-FIRST.md
           ditto -c -k --sequesterRsrc --keepParent \
-            "build/Rosalina Video.app" "dist/Rosalina-Photo-to-Video-Mac-Test.zip"
-          unzip -l dist/Rosalina-Photo-to-Video-Mac-Test.zip | \
+            "build/Rosalina Video.app" "dist/Rosalina-Mac-Recovery-RC1.zip"
+          unzip -l dist/Rosalina-Mac-Recovery-RC1.zip | \
             grep -q 'Rosalina Video.app/Contents/MacOS/RosalinaVideo'
-          shasum -a 256 dist/Rosalina-Photo-to-Video-Mac-Test.zip | tee dist/SHA256.txt
+          shasum -a 256 dist/Rosalina-Mac-Recovery-RC1.zip | tee dist/SHA256.txt
 
       - name: Upload Mac download
         uses: actions/upload-artifact@v4
         with:
-          name: Rosalina-Mac-Photo-to-Video-Test
+          name: Rosalina-Mac-Recovery-RC1
           path: |
-            dist/Rosalina-Photo-to-Video-Mac-Test.zip
+            dist/Rosalina-Mac-Recovery-RC1.zip
             dist/READ-ME-FIRST.md
             dist/SHA256.txt
           if-no-files-found: error
