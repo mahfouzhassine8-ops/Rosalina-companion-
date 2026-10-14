@@ -38,6 +38,7 @@ jobs:
           cp mac/Info.plist "$APP/Contents/Info.plist"
           install -m 755 mac/InstallEngine.command "$APP/Contents/Resources/InstallEngine.command"
           xcrun swiftc \
+            -parse-as-library \
             -O \
             -target arm64-apple-macosx14.0 \
             -sdk "$(xcrun --sdk macosx --show-sdk-path)" \
