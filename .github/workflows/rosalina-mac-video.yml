@@ -1,0 +1,71 @@
+name: Rosalina Mac Photo-to-Video Test
+
+on:
+  push:
+    branches:
+      - work/rosalina-mac-image-to-video-prototype
+    paths:
+      - mac/**
+      - .github/workflows/rosalina-mac-video.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-mac:
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout isolated Mac prototype
+        uses: actions/checkout@v4
+
+      - name: Check app metadata and setup script
+        shell: bash
+        run: |
+          plutil -lint mac/Info.plist
+          zsh -n mac/InstallEngine.command
+          xcodebuild -version
+          swift --version
+
+      - name: Compile native Apple Silicon app
+        shell: bash
+        run: |
+          set -euxo pipefail
+          APP="build/Rosalina Video.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" dist
+          cp mac/Info.plist "$APP/Contents/Info.plist"
+          install -m 755 mac/InstallEngine.command "$APP/Contents/Resources/InstallEngine.command"
+          xcrun swiftc \
+            -O \
+            -target arm64-apple-macosx14.0 \
+            -sdk "$(xcrun --sdk macosx --show-sdk-path)" \
+            mac/RosalinaVideo.swift \
+            -o "$APP/Contents/MacOS/RosalinaVideo"
+          file "$APP/Contents/MacOS/RosalinaVideo" | tee build/binary-info.txt
+          file "$APP/Contents/MacOS/RosalinaVideo" | grep -q arm64
+          codesign --force --sign - "$APP"
+          codesign --verify --strict --verbose=2 "$APP"
+
+      - name: Package downloadable test version
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cp mac/README.md dist/READ-ME-FIRST.md
+          ditto -c -k --sequesterRsrc --keepParent \
+            "build/Rosalina Video.app" "dist/Rosalina-Photo-to-Video-Mac-Test.zip"
+          unzip -l dist/Rosalina-Photo-to-Video-Mac-Test.zip | \
+            grep -q 'Rosalina Video.app/Contents/MacOS/RosalinaVideo'
+          shasum -a 256 dist/Rosalina-Photo-to-Video-Mac-Test.zip | tee dist/SHA256.txt
+
+      - name: Upload Mac download
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rosalina-Mac-Photo-to-Video-Test
+          path: |
+            dist/Rosalina-Photo-to-Video-Mac-Test.zip
+            dist/READ-ME-FIRST.md
+            dist/SHA256.txt
+          if-no-files-found: error
+          retention-days: 30
