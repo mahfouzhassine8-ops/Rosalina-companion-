@@ -1,56 +1,64 @@
-# Rosalina — Photo to Video (Mac Test v0.1)
+# Rosalina — Mac Photo-to-Video Recovery RC1 (v0.1.1)
 
-This is a **separate experimental macOS app**. It does not change or replace Rosalina Android or the existing Mac voice app. Requires Apple Silicon with **at least 24 GB unified memory** and macOS 14 or newer.
+**This is an isolated replacement for the experimental Mac test app.** It does not change Rosalina Android or other projects. The previous Apple Silicon Mac v0.1 is preserved on branch work/rosalina-mac-image-to-video-prototype.
 
-## Download and open
+## Why this candidate exists
 
-1. Open the successful **Rosalina Mac Photo-to-Video Test** workflow run for branch work/rosalina-mac-image-to-video-prototype on GitHub.
-2. Under Artifacts, download **Rosalina-Mac-Photo-to-Video-Test**. Unzip it, then unzip **Rosalina-Photo-to-Video-Mac-Test.zip**.
-3. Move **Rosalina Video.app** to Applications (optional). This is an ad-hoc signed test app, NOT Apple notarized. On first launch, Control-click the app and choose Open; if necessary, use System Settings > Privacy & Security > Open Anyway after you verify it came from your own GitHub build. Never disable Gatekeeper globally.
-4. Open Rosalina Video.app.
+On the user's 24 GB M5 Mac, both Rapid-MLX jobs generated an MP4 but showed black frames. The first 768×512/49-frame render took 445.5s, the second 512×768/97-frame render took 232.1s. Peak engine memory reported 28.94 GB and the macOS app crashed around job completion. Uploaded reference images were good. The *cause of the black frames remains unproven*: reduced video workload and memory controls are protective experiments, not a confirmed model fix.
 
-## First-time engine setup
+## Install this Mac RC1
 
-1. Press **1 · Install Engine**. It opens a Terminal setup script. If this button fails, open Contents/Resources/InstallEngine.command inside the app via Finder.
-2. The installer requires Homebrew from https://brew.sh. If Homebrew is missing, install it from its official site and repeat step 1.
-3. The installer uses Homebrew to install Python 3.12 and ffmpeg. It creates an isolated Python virtual environment at ~/Library/Application Support/Rosalina Video/venv and installs rapid-mlx[video]==0.16.1.
-4. Return to the app and press **2 · Start Local Engine**. On the first start, Rapid-MLX downloads the **LTX-2.3 MLX Q4 model (~22.8 GB)**. Leave at least 35 GB free for download and cache. The model is NOT bundled in the app.
-5. The app says **Engine ready** once the locally served video API responds. If launch fails, click Engine Log. First model download may take time.
+1. Download the latest successful GitHub Actions artifact, **Rosalina-Mac-Recovery-RC1**. Unzip the artifact and then unzip **Rosalina-Mac-Recovery-RC1.zip**.
+2. **Quit the old Rosalina Video.app UI** (but preserve its engine temporary files and model cache). Move the extracted **Rosalina Video.app** into Applications, replacing the previous experimental Mac test app if you want. You may also keep it in a separate directory.
+3. This native Apple Silicon test app is **ad-hoc signed, not notarized**. Control-click → Open after checking the origin. If needed, use macOS Settings → Privacy & Security → Open Anyway. Do not globally disable Gatekeeper.
+4. Open Rosalina. It immediately attempts to copy existing finished engine videos into **~/Movies/Rosalina Videos/** without restarting AI or modifying the original files. Click **Recover Videos** to retry recovery; click **Saved Videos Folder** to open the results.
 
-## Your first picture-to-video test
+**Important:** Do NOT delete or reinstall the existing 22.8 GB model. Do NOT click Install Engine unless Rapid-MLX is genuinely missing. All previous Hugging Face cache data, local models and videos remain untouched.
 
-1. Choose a JPG or PNG photograph (HEIC also accepted).
-2. Describe one subtle movement: "The person blinks twice and smiles naturally. The camera stays still."
-3. Keep **Preserve the original appearance** checked, and reference strength near **0.85**.
-4. Choose **1 second**, **512×512** for the first test.
-5. Click **Generate Video**. Rosalina sends the photo ONLY to the engine on your own Mac, polls the render, previews the local MP4 and offers Save MP4.
-6. Compare face, body, clothing and background to the original photo. Once verified, increase to 2 or 4 seconds.
+## Recover first, render second
 
-## Honest limitations
+1. Press **Recover Videos** and then **Saved Videos Folder**. Existing completed files at *~/.../T/rapid-mlx-videos-*/video_*/output.mp4* are copied into a stable location, named after each video ID. If the temporary files have been removed by a restart/cleanup, they may no longer be recoverable.
+2. For any new render, Rosalina writes a persistent **video-jobs.json** to ~/Library/Application Support/Rosalina Video. That file includes the job ID and known output path. The app can retry completed jobs after UI crashes, provided the engine still retains the job and the original exists.
+3. Render output is **copied and verified on disk BEFORE any video playback**. A black or invalid result is not silently thrown away. Preview is manual in the Mac's external player via **Open MP4** (no embedded AVPlayer during heavy GPU work).
+4. The app checks small samples of saved MP4 frames using the already-installed FFmpeg. If nearly all sampled pixels are black, Rosalina shows a prominent warning. This is an output diagnostic; it does not repair a broken model.
 
-- Offline rendering after installing dependencies and downloading model weights. No API key or cloud inference is required.
-- The photo provides a conditioning reference, not a pixel-perfect lock. Faces, hands, clothing and backgrounds can drift.
-- LTX-2.3 returns silent video-only MP4, not synchronized audio.
-- The first frame and video content cannot be guaranteed to match the original image exactly.
-- Local rendering can take minutes for a single second of generated video. M5 speed is NOT yet measured.
-- 24 GB is the documented minimum; close other memory-heavy apps for first tests.
-- One video job at a time.
-- Stop Render terminates the engine when Rosalina started it; if another application launched the server, Rosalina only stops monitoring the job.
-- The macOS GitHub compile is not equivalent to a real rendering test on your MacBook.
-- Another process listening on port 8000 can prevent engine startup.
+## Memory-safer first test
 
-## Diagnostics
+1. Recover your old videos before starting or stopping an engine.
+2. If the app says Engine offline, click **2 · Start Local Engine**. This launch uses **--gpu-memory-utilization 0.75 --cache-memory-percent 0.05** to limit new allocations. The flags may cause an honest out-of-memory/HTTP 503 instead of a dangerous workload on a 24 GB Mac. There is no guarantee of a successful render. If you connect to an engine already running, these startup flags cannot be retroactively applied.
+3. Choose a photo. Rosalina defaults to portrait **320×512**, landscape **512×320**, or square **384×384**, **1 second (25 frames at 24 fps)**. Your original test used higher resolutions and 49/97 frames.
+4. Use a small, simple motion description, such as "Blink once and gently smile; keep the camera still." Keep appearance preservation checked.
+5. Click **Generate Video** once; wait for the status. The first viable clip may take minutes. Do not start a second render concurrently.
+6. If the result is black again, do not repeatedly rerun with the same settings. Save the engine log and one recovered MP4. A different inference engine or upstream numeric/render bug investigation may be required.
 
-- Use the **Engine Log** button or open ~/Library/Application Support/Rosalina Video/engine.log.
-- If a model download fails, check network and disk, then restart the local engine; the model cache should reuse existing downloaded files.
-- If out of memory, restart with 1 second at 512×512 and quit other GPU apps.
-- If the photo changes significantly, try simpler motion and reference strength 0.9–1.0.
+Selecting **2 or 4 seconds** or an HD size on Macs with under 32 GB RAM is gated behind an explicit higher-memory override. It remains experimental.
 
-## Source and engine
+## Known constraints
 
-- Native macOS app implemented with SwiftUI, AppKit, AVKit and Foundation.
-- Engine: Rapid-MLX using model ltx-2.3-mlx-q4.
-- Engine documentation: https://rapidmlx.com/docs/models/families/ltx
-- Source: mac/RosalinaVideo.swift, mac/Info.plist, mac/InstallEngine.command.
-- Build workflow: .github/workflows/rosalina-mac-video.yml.
-- All changes are isolated on feature branch work/rosalina-mac-image-to-video-prototype. Android files are untouched.
+- Tested in GitHub Actions for native arm64 **compilation and isolated fixture tests**, not a real-model run on the user's M5. Device verification is still necessary.
+- The existing LTX-2.3 checkpoint is ~22.8 GB on disk, and its first-run Gemma 3 encoder cache may occupy additional storage.
+- Video-only silent MP4, no synchronized audio.
+- Preserve original photo as a conditioning reference as closely as possible; identity consistency is not pixel-perfect.
+- 24 GB RAM is the published minimum for this checkpoint, and even a small render may exceed the configured Metal budget, fail, or generate black. This release aims to avoid losing successful outputs and expose failures clearly.
+- The local server is only on 127.0.0.1:8000; no cloud inference or API key.
+- The job journal survives **application UI crashes** but cannot recover an unsaved render when the engine's job data and temporary MP4 have both disappeared.
+- If the engine server is already running, Restarting Rosalina.app alone does not change its memory flags. Recover everything first; then stop the old engine if necessary before starting the RC1-managed engine.
+- **Never delete ~/Library/Application Support/Rosalina Video or ~/.cache/huggingface** to troubleshoot black output: that would remove the installed runtime, logs, job journal, or model weights.
+
+## Files
+
+- New persistent exports: **~/Movies/Rosalina Videos/**
+- Existing legacy exports (if any): **~/Library/Application Support/Rosalina Video/Exports/**
+- Recoverable Rapid-MLX originals: **$TMPDIR/rapid-mlx-videos-*/video_*/output.mp4**
+- Durable journal: **~/Library/Application Support/Rosalina Video/video-jobs.json**
+- Engine log (now appended rather than truncated): **~/Library/Application Support/Rosalina Video/engine.log**
+- Native app: mac/RosalinaVideo.swift
+- Resilience code: mac/RosalinaStorage.swift
+- Tests: mac/Tests/RosalinaRecoveryTests.swift
+- Mac CI: .github/workflows/rosalina-mac-video.yml
+
+## If recovery returns no files
+
+The engine may have already cleared its temporary folder. Manually check ~/Movies/Rosalina Recovered from your previous terminal recovery attempt. If the video exists there, RC1 does not delete it. Only use a new render if you have verified the previous output cannot be recovered.
+
+**Test status:** a green GitHub build means the code compiled and fixture tests passed. It is not proof that LTX generates visible frames on this hardware. Report the result of one *low-memory* real-device test before making further inference changes.
