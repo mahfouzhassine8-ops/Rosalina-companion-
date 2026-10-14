@@ -1,16 +1,12 @@
 import SwiftUI
 import AppKit
-import AVKit
 import UniformTypeIdentifiers
 
 private enum Config {
     static let model = "ltx-2.3-mlx-q4"
     static let baseURL = URL(string: "http://127.0.0.1:8000")!
     static let modelDownloadGB = "22.8 GB"
-    static let applicationDirectory: URL = {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("Rosalina Video", isDirectory: true)
-    }()
+    static let applicationDirectory = RosalinaStorage.appDirectory
     static let engineBinary: URL = applicationDirectory
         .appendingPathComponent("venv/bin/rapid-mlx")
 }
@@ -24,7 +20,7 @@ struct RosalinaVideoApp: App {
             VideoScreen()
                 .environmentObject(model)
                 .frame(minWidth: 1000, minHeight: 700)
-                .onAppear { model.checkConnection() }
+                .onAppear { model.bootstrap() }
         }
         .windowStyle(.titleBar)
         .commands {
@@ -38,7 +34,7 @@ final class VideoViewModel: ObservableObject {
     @Published var inputImage: NSImage?
     @Published var inputName = "No photo selected"
     @Published var instruction = ""
-    @Published var duration = 2
+    @Published var duration = 1
     @Published var frameSize = "512x512"
     @Published var fidelity = 0.85
     @Published var preserveAppearance = true
@@ -48,6 +44,9 @@ final class VideoViewModel: ObservableObject {
     @Published var status = "Engine not checked"
     @Published var jobStatus = ""
     @Published var outputURL: URL?
+    @Published var recoveredCount = 0
+    @Published var qualityWarning: String?
+    @Published var advancedAllowed = false
     @Published var errorText: String?
     @Published var engineLogURL: URL?
 
@@ -57,9 +56,14 @@ final class VideoViewModel: ObservableObject {
     private var engineWatchTask: Task<Void, Never>?
     private var currentJobID: String?
 
+    var needsMemoryOverride: Bool {
+        guard ProcessInfo.processInfo.physicalMemory < 32_000_000_000 else { return false }
+        return duration > 1 || !["384x384", "512x320", "320x512"].contains(frameSize)
+    }
+
     var canGenerate: Bool {
         inputImage != nil && !instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && isConnected && !isGenerating
+            && isConnected && !isGenerating && (!needsMemoryOverride || advancedAllowed)
     }
 
     var engineIsInstalled: Bool {
@@ -87,7 +91,9 @@ final class VideoViewModel: ObservableObject {
         outputURL = nil
         errorText = nil
         let aspect = image.size.width / image.size.height
-        frameSize = aspect > 1.18 ? "768x512" : (aspect < 0.85 ? "512x768" : "512x512")
+        frameSize = aspect > 1.18 ? "512x320" : (aspect < 0.85 ? "320x512" : "384x384")
+        duration = 1
+        advancedAllowed = false
     }
 
     func installEngine() {
@@ -103,8 +109,85 @@ final class VideoViewModel: ObservableObject {
         Task { await refreshConnection() }
     }
 
+    func bootstrap() {
+        // Recovery is deliberately before connecting to the engine; no new
+        // inference, download, or model startup is needed to restore MP4s.
+        recoverPreviousVideos()
+        checkConnection()
+    }
+
+    func showSavedVideos() {
+        do {
+            try FileManager.default.createDirectory(
+                at: RosalinaStorage.exportDirectory, withIntermediateDirectories: true)
+            NSWorkspace.shared.open(RosalinaStorage.exportDirectory)
+        } catch {
+            errorText = "Cannot open the saved-videos folder: \(error.localizedDescription)"
+        }
+    }
+
+    func previewInExternalPlayer() {
+        guard let outputURL else { return }
+        // Deliberately avoid an embedded AVPlayer while 24 GB unified memory
+        // may still be under extreme pressure after inference.
+        NSWorkspace.shared.open(outputURL)
+    }
+
+    func recoverPreviousVideos() {
+        Task {
+            let saved = await Task.detached(priority: .utility) {
+                RosalinaStorage.recoverCachedVideos()
+            }.value
+            let jobs = RosalinaStorage.loadJobs()
+            recoveredCount = saved.count
+            if let latest = saved.last {
+                outputURL = latest
+                status = "Recovered \(saved.count) engine video(s). They are in Movies → Rosalina Videos."
+            } else if let existing = jobs.compactMap({ $0.savedPath }).reversed()
+                .map({ URL(fileURLWithPath: $0) }).first(where: { RosalinaStorage.validMP4($0) }) {
+                outputURL = existing
+                status = "Previously saved video found in Movies → Rosalina Videos."
+            }
+            // Saved server job IDs also survive UI crashes. Query them only if
+            // engine is actually running; lack of connectivity is not an error.
+            guard await engineAvailable() else { return }
+            for job in jobs where job.savedPath == nil && job.state != "failed" {
+                do {
+                    let statusURL = Config.baseURL.appendingPathComponent("/v1/videos/\(job.id)")
+                    var request = URLRequest(url: statusURL)
+                    request.timeoutInterval = 8
+                    let (data, response) = try await URLSession.shared.data(for: request)
+                    try Self.checkResponse(response, data)
+                    let json = try Self.json(data)
+                    if (json["status"] as? String)?.lowercased() == "completed" {
+                        try await downloadVideo(id: job.id)
+                        recoveredCount += 1
+                        status = "Recovered completed video \(job.id) without regenerating."
+                    }
+                } catch {
+                    // The local cache may have expired; keep the job ID in the
+                    // persistent journal so it remains visible for diagnostics.
+                    continue
+                }
+            }
+        }
+    }
+
+    private func engineAvailable() async -> Bool {
+        var request = URLRequest(url: Config.baseURL.appendingPathComponent("/v1/videos/capabilities"))
+        request.timeoutInterval = 3
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            return (response as? HTTPURLResponse)?.statusCode == 200
+        } catch { return false }
+    }
+
     func startEngine() {
         errorText = nil
+        if isConnected {
+            status = "Local engine is already connected. No second process started."
+            return
+        }
         if engineProcess?.isRunning == true {
             status = "Rosalina started an engine already."
             checkConnection()
@@ -122,10 +205,18 @@ final class VideoViewModel: ObservableObject {
                 FileManager.default.createFile(atPath: log.path, contents: nil)
             }
             let handle = try FileHandle(forWritingTo: log)
-            try handle.truncate(atOffset: 0)
+            _ = try handle.seekToEnd()
+            try handle.write(contentsOf: Data("\n--- Rosalina engine session: \(Date()) ---\n".utf8))
             let process = Process()
             process.executableURL = Config.engineBinary
-            process.arguments = ["serve", Config.model]
+            // Restrict new GPU allocations and text-cache overhead. If the
+            // 24 GB Mac cannot fit the render, fail cleanly instead of
+            // attempting the prior ~29 GB peak. This is not a quality fix.
+            process.arguments = [
+                "serve", Config.model,
+                "--gpu-memory-utilization", "0.75",
+                "--cache-memory-percent", "0.05"
+            ]
             process.currentDirectoryURL = Config.applicationDirectory
             var env = ProcessInfo.processInfo.environment
             env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -137,7 +228,7 @@ final class VideoViewModel: ObservableObject {
             engineProcess = process
             engineLogHandle = handle
             engineLogURL = log
-            status = "Starting LTX-2.3. First launch downloads the \(Config.modelDownloadGB) model; check the log."
+            status = "Starting safer-memory LTX-2.3 using your existing model cache. Open Engine Log if needed."
             isStartingEngine = true
             engineWatchTask?.cancel()
             engineWatchTask = Task {
@@ -226,6 +317,7 @@ final class VideoViewModel: ObservableObject {
     private func generateImageVideo() async {
         isGenerating = true
         outputURL = nil
+        qualityWarning = nil
         errorText = nil
         jobStatus = "Preparing reference picture"
         defer {
@@ -251,6 +343,8 @@ final class VideoViewModel: ObservableObject {
                 ("model", Config.model),
                 ("prompt", fullPrompt),
                 ("seconds", String(duration)),
+                ("frames", String(duration * 24 + 1)),
+                ("fps", "24"),
                 ("size", frameSize),
                 ("conditioning_strength", String(format: "%.2f", fidelity))
             ], imagePNG: png)
@@ -263,7 +357,8 @@ final class VideoViewModel: ObservableObject {
                 throw VideoError.message("The engine returned no video job ID: \(String(decoding: data.prefix(400), as: UTF8.self))")
             }
             currentJobID = jobID
-            jobStatus = "Queued"
+            try? RosalinaStorage.updateJob(id: jobID, state: "submitted")
+            jobStatus = "Job \(jobID) queued · saved for recovery"
             for _ in 0..<7200 {
                 try Task.checkCancellation()
                 let safeID = jobID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? jobID
@@ -275,14 +370,17 @@ final class VideoViewModel: ObservableObject {
                 let info = try Self.json(statusData)
                 let state = (info["status"] as? String ?? "in_progress").lowercased()
                 let progress = info["progress"].map { " · \($0)" } ?? ""
-                jobStatus = "Video job: \(state)\(progress)"
+                jobStatus = "Video job: \(state)\(progress) · recovery ID: \(jobID)"
                 if state == "completed" {
                     try await downloadVideo(id: safeID)
-                    jobStatus = "Video ready · saved locally"
+                    jobStatus = qualityWarning == nil ?
+                        "Saved successfully in Movies → Rosalina Videos" :
+                        "Saved, but output failed its visual check. See warning."
                     return
                 }
                 if state == "failed" || state == "cancelled" || state == "canceled" {
                     let details = Self.describeError(info)
+                    try? RosalinaStorage.updateJob(id: jobID, state: state)
                     throw VideoError.message("Generation \(state): \(details)")
                 }
                 try await Task.sleep(for: .seconds(3))
@@ -297,18 +395,43 @@ final class VideoViewModel: ObservableObject {
     }
 
     private func downloadVideo(id: String) async throws {
-        let url = Config.baseURL.appendingPathComponent("/v1/videos/\(id)/content")
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 180
-        let (temporary, response) = try await URLSession.shared.download(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw VideoError.message("Could not download the completed MP4.")
+        // First, recover from Rapid-MLX's own finished job folder when
+        // possible. This avoids transferring the MP4 in a memory-starved Mac.
+        let original: URL
+        if let cached = RosalinaStorage.originalMP4(id: id) {
+            original = cached
+        } else {
+            let endpoint = Config.baseURL.appendingPathComponent("/v1/videos/\(id)/content")
+            var request = URLRequest(url: endpoint)
+            request.timeoutInterval = 180
+            let (temporary, response) = try await URLSession.shared.download(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+                throw VideoError.message("Completed job \(id) could not be downloaded. Recover its ID later.")
+            }
+            original = temporary
         }
-        let exports = Config.applicationDirectory.appendingPathComponent("Exports", isDirectory: true)
-        try FileManager.default.createDirectory(at: exports, withIntermediateDirectories: true)
-        let destination = exports.appendingPathComponent("Rosalina-\(UUID().uuidString.prefix(8)).mp4")
-        try FileManager.default.moveItem(at: temporary, to: destination)
-        outputURL = destination
+
+        // The file is copied atomically BEFORE any UI preview or frame decode.
+        // Never remove the source MP4 or a previously saved good export.
+        let archived = try RosalinaStorage.archive(original, id: id)
+        try? RosalinaStorage.updateJob(id: id, state: "saved", savedPath: archived.path)
+        outputURL = archived
+
+        jobStatus = "MP4 safely saved · checking frames"
+        let isBlack = await Task.detached(priority: .utility) {
+            RosalinaStorage.isLikelyBlack(archived)
+        }.value
+        if isBlack == true {
+            qualityWarning = "WARNING: The saved video appears almost entirely black. " +
+                "Do not spend time regenerating with the same settings. " +
+                "Your MP4 is preserved for diagnosis."
+            try? RosalinaStorage.updateJob(id: id, state: "black_output", savedPath: archived.path)
+        } else if isBlack == nil {
+            qualityWarning = "Frame validation could not run. MP4 was saved; inspect it before judging quality."
+        } else {
+            qualityWarning = nil
+            try? RosalinaStorage.updateJob(id: id, state: "frames_visible", savedPath: archived.path)
+        }
     }
 
     func saveVideo() {
@@ -411,7 +534,6 @@ private enum VideoError: LocalizedError {
 
 struct VideoScreen: View {
     @EnvironmentObject private var model: VideoViewModel
-    @State private var videoPlayer = AVPlayer()
 
     var body: some View {
         ScrollView {
@@ -429,10 +551,6 @@ struct VideoScreen: View {
             .padding(22)
         }
         .background(Color(nsColor: .windowBackgroundColor))
-        .onChange(of: model.outputURL) { _, url in
-            videoPlayer.pause()
-            videoPlayer.replaceCurrentItem(with: url.map { AVPlayerItem(url: $0) })
-        }
     }
 
     private var header: some View {
@@ -461,10 +579,16 @@ struct VideoScreen: View {
                     Button("Stop Engine", role: .destructive) { model.stopEngine() }
                 }
                 Button("Engine Log") { model.openLog() }
+                Button("Recover Videos") { model.recoverPreviousVideos() }
+                Button("Saved Videos Folder") { model.showSavedVideos() }
                 Spacer()
             }
             Text(model.status).font(.caption).foregroundStyle(.secondary)
                 .textSelection(.enabled)
+            if ProcessInfo.processInfo.physicalMemory < 32_000_000_000 {
+                Text("24 GB memory safety: starting engine capped to 75% Metal budget; low-memory render preset is selected. Models are NOT re-downloaded.")
+                    .font(.caption).foregroundStyle(.orange)
+            }
         }
     }
 
@@ -514,20 +638,28 @@ struct VideoScreen: View {
                 Toggle("Preserve the original appearance", isOn: $model.preserveAppearance)
                 HStack(spacing: 18) {
                     Picker("Length", selection: $model.duration) {
-                        Text("1 sec").tag(1)
-                        Text("2 sec").tag(2)
-                        Text("4 sec").tag(4)
-                    }.frame(maxWidth: 165)
+                        Text("1 sec · 25 frames").tag(1)
+                        Text("2 sec · 49 frames").tag(2)
+                        Text("4 sec · 97 frames").tag(4)
+                    }.frame(maxWidth: 205)
                     Picker("Frame", selection: $model.frameSize) {
-                        Text("Square · 512").tag("512x512")
-                        Text("Wide · 768×512").tag("768x512")
-                        Text("Tall · 512×768").tag("512x768")
-                    }.frame(maxWidth: 215)
+                        Text("Square · 384").tag("384x384")
+                        Text("Wide · 512×320").tag("512x320")
+                        Text("Tall · 320×512").tag("320x512")
+                        Text("Wide HD · 768×512").tag("768x512")
+                        Text("Tall HD · 512×768").tag("512x768")
+                    }.frame(maxWidth: 230)
                 }
                 HStack {
                     Text("Reference strength")
                     Slider(value: $model.fidelity, in: 0.5...1.0, step: 0.05)
                     Text(String(format: "%.2f", model.fidelity)).monospacedDigit()
+                }
+                Text("Low-memory first test: 1 second, 25 frames, 320×512 portrait (or 512×320 wide). Even this is NOT guaranteed to fit a 24 GB Mac.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if model.needsMemoryOverride {
+                    Toggle("Allow higher-memory experiment (not recommended on 24 GB)", isOn: $model.advancedAllowed)
+                        .foregroundStyle(.orange)
                 }
                 Text("Higher strength asks the model to follow your reference more closely. It does not guarantee unchanged details.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -548,6 +680,10 @@ struct VideoScreen: View {
                 Text(model.jobStatus)
                     .font(.caption).foregroundStyle(.secondary)
                     .textSelection(.enabled)
+                if let warning = model.qualityWarning {
+                    Text(warning).foregroundStyle(.orange).font(.caption)
+                        .textSelection(.enabled)
+                }
                 if let error = model.errorText {
                     Text(error).foregroundStyle(.red).font(.caption)
                         .textSelection(.enabled)
@@ -562,9 +698,18 @@ struct VideoScreen: View {
         GroupBox("Generated video") {
             HStack(alignment: .center, spacing: 16) {
                 if model.outputURL != nil {
-                    VideoPlayer(player: videoPlayer)
-                        .frame(width: 400, height: 225)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color(nsColor: .controlBackgroundColor))
+                        .overlay {
+                            VStack(spacing: 10) {
+                                Image(systemName: "checkmark.doc")
+                                    .font(.system(size: 34))
+                                Text("Video saved — open in external player")
+                                    .font(.caption)
+                            }
+                            .foregroundStyle(.secondary)
+                        }
+                        .frame(width: 400, height: 180)
                 } else {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Color(nsColor: .controlBackgroundColor))
@@ -584,12 +729,16 @@ struct VideoScreen: View {
                     Text("Compare the face, body, clothing and background with the original photo. Try gentle movements before complex ones.")
                         .foregroundStyle(.secondary)
                     HStack {
-                        Button("Save MP4…") { model.saveVideo() }
+                        Button("Open MP4") { model.previewInExternalPlayer() }
+                            .disabled(model.outputURL == nil)
+                        Button("Save As…") { model.saveVideo() }
                             .disabled(model.outputURL == nil)
                         Button("Show in Finder") { model.revealVideo() }
                             .disabled(model.outputURL == nil)
                     }
-                    Text("First generation downloads ~\(Config.modelDownloadGB) of model weights. Processing can take several minutes per second of video.")
+                    Text("Automatic stable save: ~/Movies/Rosalina Videos/")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("Previously downloaded LTX weights are reused. Generated files are preserved even when visual validation fails.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
