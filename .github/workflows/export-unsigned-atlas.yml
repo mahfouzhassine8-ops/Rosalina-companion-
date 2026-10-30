@@ -1,0 +1,53 @@
+name: Export Atlas v6.2 unsigned APK and signer tools
+on:
+  push:
+    branches:
+      - build/atlas-unified-english-v6-20261029
+    paths:
+      - .github/workflows/export-unsigned-atlas.yml
+      - app/build.gradle
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Locate Android SDK
+        shell: bash
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          MANAGER=$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager | head -1)
+          test -n "$MANAGER"
+          "$MANAGER" --sdk_root="$SDK_ROOT" "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Compile release APK using Android Gradle Plugin
+        run: gradle --no-daemon :app:assembleRelease
+      - name: Zipalign unsigned APK and stage signing tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
+          mkdir -p unsigned-artifact
+          find app/build/outputs/apk/release -maxdepth 1 -type f -print
+          test -s app/build/outputs/apk/release/app-release-unsigned.apk
+          "$SDK_TOOLS/zipalign" -f -v 4 app/build/outputs/apk/release/app-release-unsigned.apk unsigned-artifact/Atlas_v6_2_unsigned_aligned.apk
+          "$SDK_TOOLS/zipalign" -c -v 4 unsigned-artifact/Atlas_v6_2_unsigned_aligned.apk
+          cp "$SDK_TOOLS/lib/apksigner.jar" unsigned-artifact/apksigner.jar
+          test -s unsigned-artifact/apksigner.jar
+          "$SDK_TOOLS/aapt" dump badging unsigned-artifact/Atlas_v6_2_unsigned_aligned.apk | head -4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Atlas-v6.2-private-signing-input
+          path: unsigned-artifact/*
+          if-no-files-found: error
