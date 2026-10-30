@@ -9,6 +9,9 @@ android {
   versionCode 7
   versionName '6.0'
  }
- buildTypes { debug { minifyEnabled false } release { minifyEnabled false } }
+ buildTypes {
+  debug { minifyEnabled false }
+  release { minifyEnabled false }
+ }
  compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }
