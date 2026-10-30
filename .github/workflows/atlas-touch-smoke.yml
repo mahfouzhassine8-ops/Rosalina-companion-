@@ -1,0 +1,86 @@
+name: Atlas v6.1 Android Touch Smoke Test
+on:
+  push:
+    branches:
+      - build/atlas-unified-english-v6-20261029
+    paths:
+      - .github/workflows/atlas-touch-smoke.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  emulator-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get successfully compiled v6.1 APK
+        uses: actions/download-artifact@v4
+        with:
+          name: Atlas-Unified-English-v6-APK
+          run-id: 40984554423
+          github-token: ${{ github.token }}
+          path: apk
+      - name: Inspect APK
+        run: |
+          ls -lah apk/
+          test -s apk/app-debug.apk
+      - name: Launch Android emulator and inspect navigation
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-options: -no-window -no-audio -no-snapshot -gpu swiftshader_indirect
+          disable-animations: true
+          script: |
+            adb install -r apk/app-debug.apk
+            adb shell am start -n com.atlasunified.english/.AtlasActivity
+            sleep 8
+            adb logcat -d -s AtlasNavigation:I | tee atlas-nav-home.log
+            adb shell screencap -p /sdcard/atlas-home.png
+            adb pull /sdcard/atlas-home.png atlas-home.png
+            adb shell uiautomator dump /sdcard/window.xml || true
+            adb pull /sdcard/window.xml atlas-home.xml || true
+            python3 - <<'PY'
+            import re,xml.etree.ElementTree as ET,subprocess,time,os
+            path='atlas-home.xml'
+            if not os.path.exists(path):
+                print('No UI accessibility XML available')
+            else:
+                root=ET.parse(path).getroot()
+                hits=[]
+                for n in root.iter('node'):
+                    d=n.attrib
+                    if 'Costume' in d.get('text','') or 'Costume' in d.get('content-desc',''):
+                        hits.append(d)
+                print('Costume accessibility nodes:',hits[:8])
+                target=next((n for n in hits if re.search('Costume Atlas',n.get('text','')+' '+n.get('content-desc',''),re.I) and n.get('clickable')=='true'),None)
+                if target is None:
+                    target=next((n for n in hits if n.get('clickable')=='true'),None)
+                if target:
+                    bounds=target.get('bounds','')
+                    points=re.findall(r'\[(\d+),(\d+)\]',bounds)
+                    if len(points)==2:
+                        x=(int(points[0][0])+int(points[1][0]))//2
+                        y=(int(points[0][1])+int(points[1][1]))//2
+                        subprocess.run(['adb','shell','input','tap',str(x),str(y)],check=True)
+                        time.sleep(5)
+                        subprocess.run(['adb','shell','screencap','-p','/sdcard/atlas-after-costume.png'],check=True)
+                        subprocess.run(['adb','pull','/sdcard/atlas-after-costume.png','atlas-after-costume.png'],check=True)
+                        subprocess.run(['adb','logcat','-d','-s','AtlasNavigation:I'],check=True)
+            PY
+            adb logcat -d -s AndroidRuntime:E | tee atlas-crash-check.log
+            if grep -q 'FATAL EXCEPTION.*com.atlasunified.english' atlas-crash-check.log; then exit 1; fi
+      - name: Upload Android screenshots and navigation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Atlas-v6.1-Android-UI-evidence
+          path: |
+            atlas-*.png
+            atlas-*.xml
+            atlas-*.log
+          if-no-files-found: warn
