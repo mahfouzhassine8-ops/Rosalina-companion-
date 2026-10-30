@@ -5,6 +5,11 @@ import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.Insets;
+import android.os.Build;
+import android.view.WindowInsets;
+import android.widget.FrameLayout;
+import android.util.Log;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
@@ -51,8 +56,53 @@ public class AtlasActivity extends Activity {
 
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
-        setContentView(makeWebView());
+        getWindow().setStatusBarColor(Color.rgb(17,18,29));
+        getWindow().setNavigationBarColor(Color.rgb(17,18,29));
+        setContentView(makeRootView());
         web.loadUrl(HOME);
+    }
+    // Android 15+ enforces edge-to-edge. The WebView must be inset below the
+    // system status bar or gallery tabs are clipped and receive no taps.
+    private FrameLayout makeRootView(){
+        final FrameLayout root=new FrameLayout(this);
+        root.setBackgroundColor(Color.rgb(17,18,29));
+        root.setClipToPadding(true);
+        root.addView(makeWebView(),new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT));
+        root.setOnApplyWindowInsetsListener((view,insets)->{
+            int top,bottom;
+            if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.R){
+                Insets safe=insets.getInsets(WindowInsets.Type.statusBars()
+                    |WindowInsets.Type.navigationBars()
+                    |WindowInsets.Type.displayCutout());
+                top=safe.top;
+                bottom=safe.bottom;
+            }else{
+                top=insets.getSystemWindowInsetTop();
+                bottom=insets.getSystemWindowInsetBottom();
+            }
+            if(view.getPaddingTop()!=top||view.getPaddingBottom()!=bottom){
+                view.setPadding(0,top,0,bottom);
+            }
+            return insets;
+        });
+        return root;
+    }
+    private void openSection(String section){
+        final String file;
+        switch(section){
+            case "dance": file="Dance_Atlas_English.html";break;
+            case "poses": file="POSE_Atlas_English.html";break;
+            case "costumes": file="Costume_Atlas_English.html";break;
+            case "home": file="index.html";break;
+            default: return;
+        }
+        ui.post(()->{
+            if(web!=null&&!isFinishing()&&!isDestroyed()){
+                Log.i("AtlasNavigation","Opening "+section);
+                web.loadUrl("https://"+HOST+"/assets/"+file);
+            }
+        });
     }
     private WebView makeWebView(){
         WebView w=new WebView(this);
@@ -93,6 +143,7 @@ public class AtlasActivity extends Activity {
     }
     private class GalleryBridge{
         @JavascriptInterface public void saveImage(String url,String name){AtlasActivity.this.saveImage(url,name);}
+        @JavascriptInterface public void openSection(String section){AtlasActivity.this.openSection(section);}
     }
     private static boolean approved(String source){
         try{
@@ -176,6 +227,10 @@ public class AtlasActivity extends Activity {
         }
         @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){return navigation(r.getUrl().toString());}
         @Override public boolean shouldOverrideUrlLoading(WebView v,String url){return navigation(url);}
+        @Override public void onPageFinished(WebView view,String url){
+            super.onPageFinished(view,url);
+            Log.i("AtlasNavigation","Loaded "+url);
+        }
         @Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest request){
             Uri uri=request.getUrl();
             if(!"https".equals(uri.getScheme())||!HOST.equals(uri.getHost()))return null;
@@ -194,7 +249,7 @@ public class AtlasActivity extends Activity {
             try{
                 if(view.getParent() instanceof ViewGroup)((ViewGroup)view.getParent()).removeView(view);
                 view.destroy();
-                if(rendererRecovery++<1){setContentView(makeWebView());web.loadUrl(HOME);}
+                if(rendererRecovery++<1){setContentView(makeRootView());web.loadUrl(HOME);}
                 else{
                     TextView fallback=new TextView(AtlasActivity.this);
                     fallback.setText("3D renderer stopped. Close and reopen Atlas to return to the gallery chooser.");

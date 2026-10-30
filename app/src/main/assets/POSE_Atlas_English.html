@@ -414,5 +414,27 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom))!important}
 })();
 
 </script>
+<script>
+/* Gallery navigation uses a whitelisted Android bridge when available.
+   Ordinary links continue working when previewed in a browser. */
+document.addEventListener('click',function(event){
+  const link=event.target&&event.target.closest?event.target.closest('a[href]'):null;
+  if(!link||event.defaultPrevented||event.ctrlKey||event.metaKey)return;
+  const bridge=window.AtlasNative;
+  if(!bridge||typeof bridge.openSection!=='function')return;
+  let destination;
+  try{destination=new URL(link.href,location.href);}catch(e){return;}
+  if(destination.origin!==location.origin||!destination.pathname.startsWith('/assets/'))return;
+  const route={
+    'Dance_Atlas_English.html':'dance',
+    'POSE_Atlas_English.html':'poses',
+    'Costume_Atlas_English.html':'costumes',
+    'index.html':'home'
+  }[destination.pathname.split('/').pop()];
+  if(!route)return;
+  event.preventDefault();
+  bridge.openSection(route);
+},true);
+</script>
 </body>
 </html>
