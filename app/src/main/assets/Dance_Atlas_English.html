@@ -1,0 +1,816 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark"><meta name="theme-color" content="#10101c">
+<title>Dance Atlas 3D • English Motion Studio</title>
+<meta name="description" content="Offline animated 3D dance studies with movement breakdowns and copy-ready AI video generation prompts.">
+<style>:root{color-scheme:dark;--bg:#10101c;--panel:#191a29;--panel2:#232438;--border:#36364e;--muted:#b0b1c8;--white:#f7f2ff;--pink:#ff7db4;--lilac:#b4a0ff;--mint:#66e6cb}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(950px 650px at 16% 0,#28203b88,transparent 62%),var(--bg);color:var(--white);font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif}button,textarea,input,select{font:inherit}button{cursor:pointer;color:inherit}a{color:inherit;text-decoration:none}button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid #ffb0d6;outline-offset:3px}.top{background:#141421e8;border-bottom:1px solid #303044}.topInner{max-width:1400px;padding:13px 24px;margin:auto;display:flex;align-items:center;justify-content:space-between;gap:12px}.brand{display:flex;align-items:center;gap:11px}.brandMark{background:linear-gradient(145deg,#fb79ac,#7768e9);width:41px;height:41px;border-radius:13px;display:grid;place-items:center;font-size:27px;box-shadow:0 6px 22px #fb79ac25}.brand strong{font-size:18px;letter-spacing:-.5px}.brand strong span{color:#ff90c3}.brand strong small{color:#c2adff;font-size:11px;vertical-align:top;letter-spacing:.7px}.brandSub{display:block;font-size:9px;color:#9f9cbb;letter-spacing:2px;font-weight:800;margin-top:2px}.topActions{display:flex;gap:9px;align-items:center}.offline{display:flex;align-items:center;gap:6px;color:#afeade;font-size:11px}.offlineDot,.pulse{width:7px;height:7px;border-radius:99px;background:var(--mint);box-shadow:0 0 10px var(--mint)}.poseButton{border:1px solid #5a4d73;padding:9px 12px;border-radius:9px;background:#29253d;color:#e6d5ff;font-weight:750;font-size:12px}.page{width:min(1350px,calc(100% - 40px));margin:auto}.welcome{display:flex;align-items:end;justify-content:space-between;gap:16px;padding:23px 2px}.eyebrow{color:#fca2ca;font-size:10px;font-weight:850;letter-spacing:1.5px}.welcome h1{font-size:clamp(27px,3vw,38px);line-height:1.13;letter-spacing:-1px;margin:8px 0}.welcome h1 em{font-style:normal;background:linear-gradient(90deg,#ff90c4,#c1b2ff);color:transparent;background-clip:text}.welcome p{color:#bdbaD0;margin:0;max-width:640px;font-size:13px}.counts{display:flex;align-items:baseline;gap:8px;white-space:nowrap;flex-wrap:wrap;color:var(--muted);font-size:11px}.counts strong{font-size:26px;color:var(--white)}.workbench{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(340px,.75fr);gap:17px;align-items:start}.playerColumn{display:grid;gap:12px;min-width:0}.playerBox{position:relative;isolation:isolate;height:min(540px,55vw);min-height:390px;background:radial-gradient(ellipse at 53% 72%,#30254a 0%,#171629 39%,#0c1022 82%);border:1px solid #49425c;border-radius:20px;overflow:hidden;box-shadow:0 20px 60px #0005}.playerTop,.stageBottom{position:absolute;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:10px;left:16px;right:16px}.playerTop{top:15px}.stageBottom{bottom:13px;color:#d0cce8;font-size:11px;letter-spacing:.4px}.live3d{font-size:10px;font-weight:850;color:#d6fff4;background:#185d5355;border:1px solid #73ddc966;display:flex;align-items:center;gap:7px;padding:6px 9px;border-radius:20px;letter-spacing:.9px}.loopLabel{font-size:10px;color:#a7a2c1}.playerBox .sourceVideo{position:absolute;inset:0;width:100%;height:100%;background:#0b0b10;object-fit:contain;z-index:1}.sourceVideo[hidden]{display:none!important}.sourceButton{white-space:nowrap;border-color:#9b6e94;background:#443049;color:#ffe1f0}.scrubLabel{display:flex;justify-content:space-between;gap:10px;font-size:11px;margin-top:14px;color:#d7c4ec;font-weight:700}.details input[type=range]{width:100%;accent-color:#ff90c4}.playerBox canvas{width:100%;height:100%;display:block;touch-action:none;cursor:grab}.playerBox canvas:active{cursor:grabbing}.stageInstructions{position:absolute;left:50%;transform:translateX(-50%);z-index:2;bottom:39px;white-space:nowrap;color:#afabc9;font-size:10px;text-align:center;pointer-events:none}.transport{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding:12px;border-radius:14px;border:1px solid var(--border);background:var(--panel)}.action{color:#eee9fc;background:#27293e;border:1px solid #50506c;border-radius:10px;height:38px;padding:0 10px;font-weight:750}.iconAction{min-width:39px;font-size:19px}.transportLabel{font-weight:750;color:#d5d2e6;margin-right:auto}.compactLabel{color:#aca9c0;font-weight:650;font-size:10px}.cameraRow{display:flex;align-items:center;gap:10px;background:#191a29;border:1px solid var(--border);border-radius:13px;padding:11px 13px}.cameraLabel{letter-spacing:1px;font-size:10px;font-weight:850;color:#c4bed5}.cameraButtons{display:flex;gap:3px;flex:1}.cameraButton{border:1px solid transparent;background:#2b2b40;border-radius:8px;padding:7px 10px;color:#c3bed6;font-size:11px;font-weight:700}.cameraButton.selected,.format.selected{border-color:#f0b6d8;background:#f9d5e9;color:#29152c}.cameraRow input{min-width:70px;max-width:100px;accent-color:#fa85b6}.details,.promptBox{border:1px solid var(--border);border-radius:16px;background:var(--panel);padding:19px}.detailTop{display:flex;justify-content:space-between;align-items:center;gap:11px}.categoryTag{font-size:10px;font-weight:850;letter-spacing:1.1px;color:#cfb7ff}.detailTop h2{font-size:23px;margin:5px 0;line-height:1.22;letter-spacing:-.4px}.favorite{border:1px solid #8d6179;color:#ffb2d6;border-radius:11px;background:#382536;padding:10px 13px;font-size:12px;font-weight:760;white-space:nowrap}.favorite.saved{background:#ffdeeb;color:#6c204d}.mainDescription{font-size:14px;color:#dbd7ec;line-height:1.6;margin:10px 0}.metas{display:flex;gap:7px;flex-wrap:wrap;margin:13px 0}.metas span{font-size:10px;border:1px solid #48435d;color:#beb9d3;border-radius:7px;padding:5px 8px}.details h3{font-size:14px;margin:16px 0 7px}.steps{padding-left:21px;margin:0;color:#cbc9dc;font-size:12px;line-height:1.8}.steps li::marker{color:var(--pink)}.steps li{border-radius:9px;transition:background .12s}.steps li.active{background:#f67cb625;box-shadow:inset 3px 0 #f29ac9}.countJump{font:inherit;color:inherit;text-align:left;background:none;border:0;width:100%;padding:6px 8px;cursor:pointer;line-height:1.55;border-radius:9px}.countJump:hover,.countJump:focus-visible{background:#fab4d32e;color:white}.steps li.active .countJump{color:#ffe4f0;font-weight:650}.promptBox{background:linear-gradient(160deg,#251b31,#1a1a28 53%)}.promptTitle{display:flex;justify-content:space-between;align-items:center;gap:12px}.promptTitle h3{font-size:17px;margin:3px 0}.copyBtn{font-size:12px;font-weight:800;color:#1e1227;background:linear-gradient(120deg,#ffa4cc,#c4b1ff);padding:11px 14px;border-radius:10px;border:0;white-space:nowrap}.promptFormats{display:flex;gap:6px;margin:12px 0}.format{font-size:11px;font-weight:700;background:#292439;border:1px solid #53435c;border-radius:9px;padding:8px 11px;color:#cfc0db}.promptBox textarea{width:100%;display:block;resize:vertical;min-height:165px;max-height:340px;border:1px solid #4b405b;border-radius:12px;background:#0d0e1b;color:#ece4f9;line-height:1.6;padding:13px;font-size:12px}.copyStatus{color:#aba5c4;font-size:11px;margin-top:9px;min-height:17px}.catalog{min-width:0;border:1px solid var(--border);border-radius:17px;background:#191a29;padding:14px;position:sticky;top:10px;max-height:calc(100vh - 26px);display:flex;flex-direction:column}.libraryTop{display:flex;justify-content:space-between;align-items:center}.libraryTop h2{font-size:19px;letter-spacing:-.4px;margin:2px 0}.libraryTop p{font-size:11px;color:var(--muted);margin:1px 0 8px}.catalogCount{font-size:14px;font-weight:800;color:#e9d5ff;padding:5px 10px;border-radius:9px;border:1px solid #544362}.searchWrap{position:relative;margin:6px 0 12px}.searchWrap span{position:absolute;top:7px;left:12px;font-size:22px;color:#a7a1be;pointer-events:none}.searchWrap input{color:var(--white);background:#101120;padding:12px 12px 12px 35px;border:1px solid #4b4863;border-radius:10px;width:100%;outline:none;font-size:12px}.filterList{display:flex;gap:6px;overflow-x:auto;padding-bottom:10px;scrollbar-width:thin;flex:0 0 auto}.chip{font-size:10px;white-space:nowrap;padding:8px 10px;border-radius:99px;background:#2b2b41;border:1px solid #4a4762;color:#c6c0d8;font-weight:800}.chip.active{background:#f8d6e7;color:#2f172e;border-color:#ffc7e6}.smallInfo{border-left:2px solid #c88dbf;background:#38283b55;padding:9px 10px;margin:4px 0 12px;color:#b9adcb;font-size:10px;line-height:1.55}.smallInfo strong{color:#e4cfe8}.danceList{overflow:auto;scrollbar-width:thin;flex:1;min-height:130px;padding-right:3px;display:grid;gap:8px;align-content:start}.danceItem{display:grid;grid-template-columns:52px minmax(0,1fr) 24px;gap:11px;text-align:left;align-items:center;border:1px solid #39374e;border-radius:12px;padding:9px;background:#222237;width:100%;min-height:72px;color:#f2eaff}.danceItem:hover,.danceItem:focus-visible{background:#332942;border-color:#84658e}.danceItem.active{border-color:#ff99cb;background:#3e2944;box-shadow:0 0 0 1px #f390cb40 inset}.danceIcon{width:49px;height:49px;display:grid;place-items:center;font-size:24px;background:linear-gradient(135deg,#57416e,#3e315e);border-radius:10px}.danceItem[data-kind=spicy] .danceIcon{background:linear-gradient(135deg,#a14b68,#683356)}.danceItem[data-kind=street] .danceIcon{background:linear-gradient(135deg,#4678a0,#36365d)}.danceItem strong{font-size:12px;display:block;line-height:1.25}.danceItem small{font-size:10px;color:#bcb5d0;display:block;margin-top:5px}.danceItem .chev{color:#d3b7e5;font-size:20px}.empty{color:#bdb6cf;text-align:center;padding:30px 9px;font-size:13px}.disclaimer{font-size:11px;color:#9997ad;padding:22px 0 32px;max-width:1000px;line-height:1.6}@media(max-width:920px){.workbench{grid-template-columns:1fr}.catalog{position:static;max-height:none}.danceList{grid-template-columns:repeat(2,minmax(0,1fr));overflow:visible}.playerBox{height:500px}}@media(max-width:580px){.page{width:calc(100% - 24px)}.topInner{padding:11px 13px}.brand strong{font-size:16px}.brandSub{font-size:8px;letter-spacing:1.3px}.offline{display:none}.poseButton{font-size:11px;padding:7px 9px}.welcome{padding:19px 2px 15px;align-items:start}.welcome h1{font-size:26px}.welcome p{font-size:12px}.counts{display:none}.playerBox{height:410px;min-height:410px;border-radius:15px}.stageInstructions{font-size:9px;bottom:38px;max-width:95%;white-space:normal}.transport{gap:7px;padding:9px}.transportLabel{display:none}.action{height:36px;padding:0 8px}.cameraRow{flex-wrap:wrap;gap:8px;padding:10px}.cameraButtons{order:2;flex-basis:100%}.cameraButton{flex:1}.cameraLabel{flex:1}.cameraRow input{max-width:115px}.details,.promptBox{padding:14px}.detailTop h2{font-size:20px}.mainDescription{font-size:13px}.steps{font-size:12px}.danceList{grid-template-columns:1fr}.danceItem{min-height:62px;padding:6px;grid-template-columns:44px minmax(0,1fr) 20px}.danceIcon{width:43px;height:43px}.catalog{padding:12px}.promptTitle h3{font-size:15px}.copyBtn{font-size:11px;padding:9px 10px}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+</style>
+</head><body>
+<header class="top"><div class="topInner"><div class="brand"><div class="brandMark">✦</div><div><strong>DANCE <span>ATLAS</span> <small>3D</small></strong><small class="brandSub">MOTION REFERENCE STUDIO</small></div></div><div class="topActions"><span class="offline"><span class="offlineDot"></span>Offline 3D</span><a class="poseButton" href="POSE_Atlas_English.html">◎ Pose Atlas</a><a class="poseButton" href="Costume_Atlas_English.html">✧ Costume Atlas</a></div></div></header>
+<main class="page">
+ <div class="welcome"><div><div class="eyebrow">ANIMATED REFERENCES, NOT VIDEO LINKS</div><h1>Pick the dance. <em>Watch her perform.</em></h1><p>Select the routine from your supplied 10-second video, or explore the other 45 dances. Open Costume Atlas to pair choreography with outfit reference images. Watch a moving 3D character, inspect each choreographed phase and copy a video-generation prompt.</p></div><div class="counts"><strong id="totalCount">44</strong><span>original dance studies</span></div></div>
+ <div class="workbench">
+  <section class="playerColumn" aria-label="3D dance studio">
+   <div class="playerBox">
+    <div class="playerTop"><span class="live3d"><span class="pulse"></span>LAVENDER MUSE • LIVE 3D</span><span class="loopLabel">Selected dance = selected motion</span></div>
+    <canvas id="stage" aria-label="Rotatable 3D dancer performing selected dance" role="img"></canvas>
+    <video id="sourceVideo" class="sourceVideo"  controls playsinline loop preload="metadata" aria-label="Original uploaded dance clip for optional comparison" hidden></video>
+    <div class="stageInstructions" id="stageNotice">Tap a dance below • Drag to rotate • Tap any count to jump</div>
+    <div class="stageBottom"><span id="stageCategory">Anime & MMD</span><span id="beatReadout">BEAT 1 / 8</span></div>
+   </div>
+   <div class="transport"><button id="sourceToggle" class="action sourceButton" type="button">▶ Import & compare your clip</button><button id="playPause" class="action iconAction" aria-label="Pause dance" title="Pause dance">Ⅱ</button><button id="restart" class="action iconAction" aria-label="Restart dance" title="Restart dance">↺</button><div class="transportLabel">Playback</div><label class="compactLabel" for="speed">Speed</label><select id="speed" class="action"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select><label class="compactLabel" for="model">Look</label><select id="model" class="action"><option value="idol">Lavender Muse</option><option value="studio">Studio</option><option value="neutral">Mannequin</option></select></div>
+   <div class="cameraRow"><span class="cameraLabel">CAMERA</span><div class="cameraButtons"><button data-angle="0" class="cameraButton selected">Front</button><button data-angle="0.72" class="cameraButton">¾ view</button><button data-angle="1.57079632679" class="cameraButton">Side</button><button data-angle="3.14159265359" class="cameraButton">Back</button></div><label for="zoom" class="compactLabel">Zoom</label><input id="zoom" aria-label="3D zoom" type="range" min="3.4" max="7" value="4.7" step="0.1" /></div>
+   <div class="details">
+    <div class="detailTop"><div><div id="typeLabel" class="categoryTag">ANIME & MMD</div><h2 id="selectedTitle">Idol Heart Pop</h2></div><button id="favoriteBtn" class="favorite" aria-label="Save dance to favorites">♡ Save</button></div>
+    <p id="description" class="mainDescription"></p>
+    <div class="metas"><span id="tempoTag">128 BPM</span><span id="levelTag">8-count loop</span><span>Dance-specific 3D animation</span></div>
+    <h3 id="stepHeading">Live movement breakdown • tap a count</h3><ol id="steps" class="steps"></ol><label id="scrubLabel" class="scrubLabel" for="scrub" hidden>Scrub the source-timed movement <span id="scrubTime">0.0 / 10.1s</span></label><input id="scrub" type="range" min="0" max="10.112" step="0.05" value="0" hidden aria-label="Scrub dance to exact timestamp">
+   </div>
+   <div class="promptBox"><div class="promptTitle"><div><div class="eyebrow">VIDEO GENERATOR READY</div><h3>Copy this dance description</h3></div><button id="copyPrompt" class="copyBtn">⧉ Copy prompt</button></div>
+    <div class="promptFormats" role="group" aria-label="Video style"><button data-format="Anime 3D" class="format selected">Anime 3D</button><button data-format="Photorealistic" class="format">Realistic</button><button data-format="Cinematic" class="format">Cinematic</button></div>
+    <textarea id="videoPrompt" readonly aria-label="Copyable text-to-video dance prompt"></textarea>
+    <div id="copyStatus" class="copyStatus" aria-live="polite">Includes 8-count choreography, camera direction and looping instructions.</div>
+   </div>
+  </section>
+  <aside class="catalog" aria-label="Dance library"><div class="libraryTop"><div><h2>Dance library</h2><p>Each choice loads its own choreography</p></div><div class="catalogCount" id="resultsCount">44</div></div>
+   <div class="searchWrap"><span>⌕</span><input id="search" type="search" placeholder="Search moves, styles, actions…" aria-label="Search dances" autocomplete="off"></div>
+   <div class="filterList" id="filters" role="group" aria-label="Dance categories"></div>
+   <div class="smallInfo">The uploaded reference uses a dedicated 10.1-second movement sequence; other dances have their own 8-count studies. Your reference clip can be imported from your phone for comparison; the 3D recreation is manually keyed, not motion-captured.</div>
+   <div class="danceList" id="danceList"></div>
+   <div id="empty" class="empty" hidden>No dances found. Try another style or phrase.</div>
+  </aside>
+ </div>
+ <p class="disclaimer">Built-in, animated 3D previews and English movement descriptions run locally. This app does not use YouTube embeds, stream dance videos or require an account. Spicy references are non-explicit adult dance styles. Import your reference clip from your device to compare it against the manually keyed 3D recreation. Original source pose images, in the separate Pose Atlas, remain remotely hosted.</p>
+</main>
+<script>'use strict';
+// Original animated dance studies. These are stylized approximations, NOT copied choreography.
+const CATALOG = [
+// Supplied video reference by @OrekeyNya. The rendered dance is manually keyed from visible frames.
+// 10.112 s reference, not an inferred licensed mocap track.
+['clip-20516','Spicy / 18+','Your Clip • Anime Hip-Sway & Squat',96,'reference20516',
+ 'A manually reconstructed 10.1-second anime dance from your supplied clip: wide stance, hands behind head and alternating hip accents; pivot to a rear three-quarter pose; turn forward to a deep hand-on-thigh bend; lower into a compact squat; extend an arm to point; rotate through low hip pulses; then stand and return the hands behind the head.',
+ ['0.0–1.6s: Face forward, feet wide, elbows out and both hands behind the head; sway and pulse the hips.',
+  '1.6–2.8s: Release one arm and pivot into a rear three-quarter pose; glance back over the shoulder.',
+  '2.8–3.9s: Turn toward the camera, bend forward and brace both palms on the thighs.',
+  '3.9–5.0s: Continue the forward bend with controlled hip accents and weight shifts.',
+  '5.0–5.9s: Lower into a deep squat, knees wide and hands near the knees.',
+  '5.9–7.1s: Stay low, rotate slightly to the side and point one arm outward.',
+  '7.1–8.25s: Rotate to a rear three-quarter squat, pulse the hips and begin rising.',
+  '8.25–10.1s: Return upright, hands behind the head, with a final wide-stance hip sway.'],
+ 10.112,[0,1.6,2.8,3.9,5.0,5.9,7.1,8.25]],
+// id, category, title, bpm, motif, description, eight-count breakdown
+['idol-heart','Anime & MMD','Idol Heart Pop',128,'idol','Kawaii idol bounce with a heart-shaped gesture, lively side steps, and a confident finishing point.',['1–2: Step right with both hands framing a heart at the chest.','3–4: Step left and open both arms toward the audience.','5–6: Bounce twice while waving the right hand beside the face.','7–8: Point upward and settle into the starting pose.']],
+['para-para','Anime & MMD','Para Para Side Sweep',140,'parapara','Classic anime-club inspired para para: economical footwork and crisp synchronized arm sweeps.',['1–2: Step outward while sweeping both arms horizontally.','3–4: Cross forearms, then sweep to the opposite side.','5–6: Point right and raise the left hand overhead.','7–8: Reverse the sweep and reset feet together.']],
+['vocaloid-wave','Anime & MMD','Vocaloid Electric Wave',136,'electro','Fluid electronic arm waves combined with angular wrist hits and a bouncing pop rhythm.',['1–2: Roll the arms from left to right.','3–4: Alternate sharp forward hand pushes.','5–6: Raise both hands and ripple them downward.','7–8: Pivot and hit an asymmetrical end pose.']],
+['kawaii-peace','Anime & MMD','Kawaii Peace-Step',124,'cute','Bouncy side-to-side steps with playful peace-sign framing near the face.',['1–2: Double bounce to the right; hands rise beside the cheeks.','3–4: Repeat to the left with a small head tilt.','5–6: Extend both arms diagonally into a cheerful V.','7–8: Quick two-count shoulder shimmy and reset.']],
+['anime-opening','Anime & MMD','Anime Opening Sprint',154,'march','Energetic anime-opening inspired marching, pumping arms, and a high-energy finishing stretch.',['1–2: March on the spot with alternating knee lifts.','3–4: Pump arms while traveling slightly to one side.','5–6: Open arms into a big heroic pose.','7–8: Quick march back to center and reset.']],
+['magical-twirl','Anime & MMD','Magical-Girl Twirl',120,'twirl','Graceful spinning transformation-style turn with rising arms, a flourish, and soft landing.',['1–2: Lift both arms in a rising V.','3–4: Begin a smooth full-body turn.','5–6: Continue the turn with arms extended.','7–8: Face forward and finish with one hand high.']],
+['vtuber-bounce','Anime & MMD','VTuber Cozy Bounce',116,'vtuber','Friendly streamer-avatar bounce with alternating waves, shoulder pops, and tiny steps.',['1–2: Sway left and give a small hand wave.','3–4: Sway right and lift the other hand.','5–6: Double shoulder pop with a smile-like head tilt.','7–8: Bring hands together and reset.']],
+['mmd-sway','Anime & MMD','MMD Hip-Sway Loop',108,'hips','Smooth stylized hip sway, delicate arm poses and controlled head tilts.',['1–2: Shift weight right with a slow hip sway.','3–4: Shift weight left and bring one hand to the waist.','5–6: Trace a gentle hip circle with the upper body counterbalancing.','7–8: Complete the circle and return to center.']],
+['jpop-point','Anime & MMD','J-Pop Spotlight Point',134,'jpop','Crisp finger-point inspired choreography with diagonal arm lines and light traveling steps.',['1–2: Step right and point diagonally upward.','3–4: Switch sides, pointing across the frame.','5–6: Both hands rise overhead in sync with a bounce.','7–8: Drop one hand to the hip and hold the spotlight pose.']],
+['anime-cheer','Anime & MMD','Cheerful Anime Chorus',145,'cheer','Cheerleader-like anime dance with big overhead V shapes and hopping foot switches.',['1–2: Bounce with arms overhead in a wide V.','3–4: Travel right with lively arm swings.','5–6: Travel left and clap in front.','7–8: Finish with a high-energy wave.']],
+['cyber-idol','Anime & MMD','Cyber Idol Glitch',132,'glitch','Sharp robotic hits layered over cute idol steps, with staccato pauses and sudden direction changes.',['1–2: Hit two robotic arm angles with small steps.','3–4: Pause and shift shoulders in opposite directions.','5–6: Wave both arms diagonally across the torso.','7–8: Hit a frozen asymmetrical final pose.']],
+['chibi-hop','Anime & MMD','Chibi Hop & Wave',150,'hop','Quick playful hops with compact arm waves and springy knees.',['1–2: Two tiny hops while waving right.','3–4: Two tiny hops while waving left.','5–6: Swing both arms out and take a wider step.','7–8: Small bounce and cute hands-near-face finish.']],
+['kpop-chorus','K-Pop & J-Pop','K-Pop Chorus Groove',122,'kpop','Precise pop choreography with clean hip accents, chest hits, and quick arm framing.',['1–2: Step outward and cross forearms at chest height.','3–4: Open both arms as the hips shift.','5–6: Two crisp chest hits with a diagonal arm line.','7–8: Turn slightly and reset on the beat.']],
+['kpop-wave','K-Pop & J-Pop','K-Pop Body Wave',104,'bodywave','Continuous upper-body wave flowing from chest through hips, contrasted by precise hand gestures.',['1–2: Raise chest, then roll it smoothly downward.','3–4: Let the wave pass through the hips.','5–6: Trace a diagonal hand line while shifting weight.','7–8: Repeat the wave and return upright.']],
+['kpop-point','K-Pop & J-Pop','K-Pop Point Dance',126,'point','Memorable repeated hook gesture with coordinated foot taps and diagonal pointing.',['1–2: Tap to the right and point at the audience.','3–4: Switch to the left with a matching point.','5–6: Draw both arms upward on a double bounce.','7–8: Hold the hook gesture and reset.']],
+['girlgroup','K-Pop & J-Pop','Girl-Group Signature Step',118,'strut','Confident synchronized pop steps, a sharp hip switch and elegant arm framing.',['1–2: Walk forward in two small counts.','3–4: Frame face with a curved arm and shift hips.','5–6: Pivot toward the side while sweeping a hand.','7–8: Return to front with a precise shoulder hit.']],
+['jpop-idol','K-Pop & J-Pop','J-Pop Sparkle Routine',140,'jpopidol','Upbeat idol choreography blending cute bouncing footwork with a big chorus arm flourish.',['1–2: Two side steps and a heart-like hand pose.','3–4: Open arms and turn lightly.','5–6: Two high bounces with wrists lifted.','7–8: Finish with a bright upward point.']],
+['two-step','Hip-Hop & Street','Hip-Hop Two-Step',100,'twostep','Relaxed, grounded side-to-side groove with alternating arm swings and shoulder bounce.',['1–2: Step right, bring left foot in, let shoulders ride the beat.','3–4: Step left, bring right foot in, swing arms opposite hips.','5–6: Add a small forward chest accent.','7–8: Repeat the side groove and reset.']],
+['running-man','Hip-Hop & Street','Running Man Shuffle',132,'running','Sliding running-man inspired footwork with alternated knee lifts and rhythmic arm pumps.',['1–2: Lift one knee as the other foot slides back.','3–4: Switch legs and pump opposite arms.','5–6: Repeat with a stronger grounded bounce.','7–8: Two faster alternating knee steps to reset.']],
+['moonwalk','Hip-Hop & Street','Moonwalk Glide',108,'moonwalk','Smooth backward illusion glide with quiet upper body, alternating heel-toe transitions and subtle arm motion.',['1–2: Transfer weight onto a raised heel and slide the other foot back.','3–4: Change the supporting heel and continue the glide.','5–6: Repeat smoothly with minimal upper-body movement.','7–8: Settle into a controlled pose and reset.']],
+['robot-pop','Hip-Hop & Street','Robot Pop & Lock',110,'robot','Angular mechanical arm hits, deliberate pauses, sharp chest pops and stiff isolated joints.',['1–2: Freeze one elbow at a right angle; hit the opposite wrist.','3–4: Pivot torso in two sharp increments.','5–6: Lock both arms and pop the chest.','7–8: Snap into a static robotic finish.']],
+['house-jack','Hip-Hop & Street','House Jack Groove',124,'house','Springy knee action, a rolling spine and fast light foot switches from house dance.',['1–2: Dip the knees while opening and closing the chest.','3–4: Step right then left with rhythmic torso ripples.','5–6: Quick feet with floating arms.','7–8: Larger jack bounce returning to center.']],
+['toprock','Hip-Hop & Street','Breakdance Toprock',110,'toprock','Standing breakdance-inspired cross steps and wide arm sweeps with strong rhythmic accents.',['1–2: Cross one foot forward with a broad arm sweep.','3–4: Step back to center and cross the other side.','5–6: Open arms wide with a grounded bounce.','7–8: Turn slightly, cross-step and reset.']],
+['disco','Retro & Game','Disco Finger Point',118,'disco','Disco arm points alternating diagonally with bouncing knees and open hip movement.',['1–2: Point high right and shift weight to the right.','3–4: Point low left and shift weight left.','5–6: Repeat high and low with a bigger shoulder roll.','7–8: Finish in an exaggerated disco pose.']],
+['game-emote','Retro & Game','Victory Emote Groove',138,'emote','Playful game-emote-inspired celebration combining arm pumps, side shuffles and a triumphant final pose.',['1–2: Pump arms overhead with bouncing feet.','3–4: Side shuffle to the right.','5–6: Side shuffle left while pointing outward.','7–8: Strike a victory pose, then loop.']],
+['pixel','Retro & Game','8-Bit NPC Dance',120,'pixel','Deliberately stiff, repeating 8-bit game character movements and abrupt rhythmic turns.',['1–2: Step right with a ninety-degree elbow angle.','3–4: Step left using a mirrored arm angle.','5–6: Turn torso in two discrete robotic ticks.','7–8: Freeze and return to the initial pattern.']],
+['salsa','Latin & World','Salsa Basic Step',104,'salsa','Alternating forward-and-back salsa timing with rhythmic hips, arm styling and balanced steps.',['1–2: Step forward left, shift weight, then back.','3–4: Collect feet and open the right arm.','5–6: Step back right, shift weight and return.','7–8: Close with a graceful arm flourish.']],
+['bachata','Latin & World','Bachata Side Basic',116,'bachata','Four-count side travel with light hip taps and soft arm sway, mirrored in the next four counts.',['1–2: Side step right and draw the left foot inward.','3–4: Step right again and tap the left foot with a hip lift.','5–6: Travel left in the same pattern.','7–8: Finish with a tap and playful shoulder tilt.']],
+['afrobeats','Latin & World','Afrobeats Bounce',112,'afro','Relaxed syncopated knees, rolling shoulders and buoyant torso accents over stepping feet.',['1–2: Bounce into alternating side steps with relaxed arms.','3–4: Roll shoulders forward in counter-rhythm.','5–6: Shift hips while sweeping one arm forward.','7–8: Double bounce and reset.']],
+['belly-dance','Latin & World','Belly Dance Figure Eight',98,'belly','Fluid waist figure-eights, controlled torso isolation and elegant curved arms.',['1–2: Begin a smooth sideways figure-eight hip path.','3–4: Continue the hip path as one arm rises.','5–6: Trace a horizontal waist circle with arms softly framing.','7–8: Return to the figure eight and reset.']],
+['flamenco','Latin & World','Flamenco Arm Flourish',112,'flamenco','Elegant flamenco-inspired wrists and overhead arcs with assertive rhythmic steps.',['1–2: Sweep one arm overhead, wrist curling as feet mark time.','3–4: Draw arms across the torso and shift weight.','5–6: Raise opposite arm in a rounded flamenco line.','7–8: Firm step and proud upright finishing posture.']],
+['samba','Latin & World','Samba Bounce',124,'samba','Bouncy fast alternating steps, continuous hip rhythm and expressive floating arms.',['1–2: Small alternating steps with pulsing knees.','3–4: Increase hip bounce while arms open.','5–6: Continue fast foot alternation with an upper-body lift.','7–8: Strong double bounce and reset.']],
+['heels','Spicy / 18+','Heels Runway Strut',100,'heels','Confident sensual runway steps, subtle hip accents, controlled shoulder roll and an elegant turn.',['1–2: Take two deliberate crossing runway steps toward the camera.','3–4: Shift the hip and rotate one shoulder backward.','5–6: Pivot to a three-quarter angle with a relaxed arm sweep.','7–8: Return to front and hold a confident pose.']],
+['slow-body-roll','Spicy / 18+','Sensual Slow Body Roll',88,'slowroll','Smooth deliberate chest-to-hip body waves with flowing wrists and grounded weight transfers.',['1–2: Lift the chest and start a slow upper-body ripple.','3–4: Carry the ripple down through the waist and hips.','5–6: Sweep one hand outward while shifting weight.','7–8: Repeat a smaller roll and return upright.']],
+['chair-dance','Spicy / 18+','Chair Dance Silhouette',96,'chair','Theatrical cabaret-inspired movement around a chair: grounded steps, a hand-on-chair accent and a slow turn.',['1–2: Walk in a curved path around a stationary chair.','3–4: Turn toward the chair with a deliberate hip shift.','5–6: Extend one arm along the chair back while leaning softly.','7–8: Rise into a confident front-facing stance.']],
+['pole-inspired','Spicy / 18+','Pole-Inspired Walk & Turn',90,'pole','Performance-style walk around a stationary pole with graceful arm extension and a gentle supported pivot.',['1–2: Take two controlled steps in an arc around the pole.','3–4: Lift one arm toward the pole and turn the shoulders.','5–6: Execute a light pivot while extending the free arm.','7–8: Place feet together and finish in an elegant pose.']],
+['burlesque','Spicy / 18+','Burlesque Spotlight Tease',92,'burlesque','Playful theatrical burlesque-style silhouette with shoulder reveals, small steps and cheeky pauses.',['1–2: Take a slow side step with a deliberate shoulder accent.','3–4: Sweep one arm above the head and hold a beat.','5–6: Turn into a playful profile and return to front.','7–8: Finish with a confident cheeky pose.']],
+['twerk','Spicy / 18+','Hip-Pop Twerk Groove',108,'twerk','Low grounded knee bend with quick repeating pelvic accents, steady torso and rhythmic steps.',['1–2: Bend knees and settle into a grounded stance.','3–4: Execute two distinct quick hip accents.','5–6: Continue repeated hip pulses while feet mark the beat.','7–8: Rise slightly and return to the starting stance.']],
+['dancehall','Spicy / 18+','Dancehall Waist Wine',104,'wine','Circular dancehall-inspired waist and hip isolations over grounded steps, with relaxed arms.',['1–2: Begin a smooth hip circle over bent knees.','3–4: Continue through the back and side, arms floating freely.','5–6: Shift feet while reversing the hip circle.','7–8: Finish with a double rhythmic waist accent.']],
+['slow-sway','Spicy / 18+','Sultry Spotlight Sway',86,'sultry','Slow weight-shifts, expressive arm lines, relaxed shoulders and a deliberate camera-facing pause.',['1–2: Shift slowly to one leg with a gentle hip curve.','3–4: Sweep a hand across the air beside the shoulder.','5–6: Reverse the sway with a soft torso turn.','7–8: Pause, then reset with a lifted chin.']],
+['chair-pop','Spicy / 18+','Cabaret Chair-Side Pop',102,'chairpop','Upbeat chair-side performance with sharp arm accents, graceful stepping and a quick turn.',['1–2: Step beside the chair and extend both arms outward.','3–4: Snap one hand to the chair back, then release.','5–6: Execute two rhythmic side hip accents.','7–8: Pivot toward the viewer and finish.']],
+['ballet','Contemporary','Ballet Port de Bras',96,'ballet','Elegant flowing ballet arm pathways, gentle rise onto toes and a controlled side turn.',['1–2: Raise both arms softly from low to rounded first position.','3–4: Open arms into second position while lifting through the body.','5–6: Turn softly with rounded overhead arms.','7–8: Lower the arms and return to neutral.']],
+['contemporary','Contemporary','Contemporary Flow',92,'contemporary','Sweeping expressive contemporary movement with asymmetrical reaches, torso arches and traveling weight.',['1–2: Reach diagonally through one arm and lean into the movement.','3–4: Shift weight and draw the other arm across the chest.','5–6: Extend both arms wide with a gentle backward arch.','7–8: Spiral back to center and finish in stillness.']],
+['waltz','Contemporary','Waltz Floating Turn',90,'waltz','Smooth three-beat-inspired rise and fall, rounded ballroom arm frame and slow pivot.',['1–2: Step forward with a soft rising motion.','3–4: Close feet and start a gentle turning glide.','5–6: Continue the floating pivot while holding ballroom arms.','7–8: Lower softly and reset.']],
+['stretch-dance','Contemporary','Dreamy Ribbon Flow',80,'ribbon','Slow graceful flowing arms, gentle waist movement and airy changes of direction.',['1–2: Raise one arm into a long overhead arc.','3–4: Open the opposite arm and lean sideways.','5–6: Sweep both arms across the body in a ribbon-like trail.','7–8: Recover into a soft center pose.']],
+];
+</script>
+<script>'use strict';
+/* Pose Atlas 3D. Original procedural 3D dance motion studies; pure WebGL 1.0, no network deps. */
+(function(){
+const canvas = document.getElementById('stage');
+const gl = canvas.getContext('webgl',{alpha:false,antialias:true,premultipliedAlpha:false}) || canvas.getContext('experimental-webgl');
+if(!gl){document.getElementById('stageNotice').textContent='3D rendering is unavailable: enable WebGL on this device.'; return;}
+const vs=`attribute vec3 aPos;attribute vec3 aNorm;uniform mat4 uMVP;uniform mat3 uNMat;varying vec3 vNorm;varying vec3 vPoint;void main(){gl_Position=uMVP*vec4(aPos,1.0);vNorm=normalize(uNMat*aNorm);vPoint=aPos;}`;
+const fs=`precision mediump float;uniform vec4 uColor;uniform vec3 uLight;uniform float uUnlit;varying vec3 vNorm;varying vec3 vPoint;void main(){vec3 n=normalize(vNorm);float d=max(0.0,dot(n,normalize(uLight)));float rim=pow(1.0-max(0.0,dot(n,vec3(0.0,0.3,0.95))),2.0);float light=mix(0.68+0.30*d+0.10*rim,1.0,uUnlit);vec3 c=uColor.rgb*light;gl_FragColor=vec4(c,uColor.a);}`;
+function shader(type,source){const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s}
+const prog=gl.createProgram();gl.attachShader(prog,shader(gl.VERTEX_SHADER,vs));gl.attachShader(prog,shader(gl.FRAGMENT_SHADER,fs));gl.linkProgram(prog);if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(prog));gl.useProgram(prog);
+const L={p:gl.getAttribLocation(prog,'aPos'),n:gl.getAttribLocation(prog,'aNorm'),m:gl.getUniformLocation(prog,'uMVP'),norm:gl.getUniformLocation(prog,'uNMat'),col:gl.getUniformLocation(prog,'uColor'),light:gl.getUniformLocation(prog,'uLight'),unlit:gl.getUniformLocation(prog,'uUnlit')};gl.uniform3fv(L.light,new Float32Array([-0.45,0.90,0.92]));gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.clearColor(0.050,0.052,0.099,1);
+function mesh(v,n,ind){const vb=gl.createBuffer(),nb=gl.createBuffer(),ib=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vb);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(v),gl.STATIC_DRAW);gl.bindBuffer(gl.ARRAY_BUFFER,nb);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(n),gl.STATIC_DRAW);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(ind),gl.STATIC_DRAW);return {vb,nb,ib,count:ind.length};}
+function makeSphere(segments=17,rings=12){let v=[],n=[],idx=[];for(let i=0;i<=rings;i++){let t=Math.PI*i/rings;for(let j=0;j<=segments;j++){let p=2*Math.PI*j/segments,x=Math.sin(t)*Math.cos(p),y=Math.cos(t),z=Math.sin(t)*Math.sin(p);v.push(x,y,z);n.push(x,y,z)}}for(let i=0;i<rings;i++)for(let j=0;j<segments;j++){const k=i*(segments+1)+j;idx.push(k,k+segments+1,k+1,k+1,k+segments+1,k+segments+2)}return mesh(v,n,idx)}
+function makeCone(){let v=[],n=[],idx=[];let s=24;for(let ring=0;ring<=1;ring++){let y=ring?-.5:.5,rad=ring?.40:.22;for(let i=0;i<=s;i++){let a=i*Math.PI*2/s,c=Math.cos(a),sn=Math.sin(a);v.push(rad*c,y,rad*sn);n.push(c,.22,sn)}}for(let i=0;i<s;i++){idx.push(i,i+1,s+1+i,i+1,s+2+i,s+1+i)}return mesh(v,n,idx)}
+function makePlane(){return mesh([-5,0,-5,5,0,-5,5,0,5,-5,0,5],[0,1,0,0,1,0,0,1,0,0,1,0],[0,2,1,0,3,2]);}
+function makeCylinder(){let v=[],n=[],idx=[];let s=14;for(let ring=0;ring<=1;ring++){let y=ring?-.5:.5;for(let i=0;i<=s;i++){let a=i*Math.PI*2/s,c=Math.cos(a),sn=Math.sin(a);v.push(c,y,sn);n.push(c,0,sn)}}for(let i=0;i<s;i++){idx.push(i,s+1+i,i+1,i+1,s+1+i,s+2+i)}return mesh(v,n,idx)}
+const sphere=makeSphere(),smallSphere=makeSphere(11,8),cone=makeCone(),plane=makePlane(),cylinder=makeCylinder();
+function norm(v){let l=Math.hypot(...v)||1;return v.map(x=>x/l)}
+function cross(a,b){return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]}
+function sub(a,b){return a.map((x,i)=>x-b[i])}
+function add(a,b){return a.map((x,i)=>x+b[i])}
+function mul(a,b){let out=new Float32Array(16);for(let c=0;c<4;c++)for(let r=0;r<4;r++)for(let k=0;k<4;k++)out[c*4+r]+=a[k*4+r]*b[c*4+k];return out}
+function matPers(fov,aspect,near,far){let f=1/Math.tan(fov/2),m=new Float32Array(16);m[0]=f/aspect;m[5]=f;m[10]=(far+near)/(near-far);m[11]=-1;m[14]=2*far*near/(near-far);return m}
+function matView(eye,target){let z=norm(sub(eye,target)),x=norm(cross([0,1,0],z)),y=cross(z,x),m=new Float32Array(16);for(let i=0;i<3;i++){m[4*i]=x[i];m[4*i+1]=y[i];m[4*i+2]=z[i]}m[12]=-x.reduce((s,v,i)=>s+v*eye[i],0);m[13]=-y.reduce((s,v,i)=>s+v*eye[i],0);m[14]=-z.reduce((s,v,i)=>s+v*eye[i],0);m[15]=1;return m}
+// Matrix storage is column-major; basis axes are columns.
+function modelMatrix(pos,scale,axes){const m=new Float32Array(16);for(let c=0;c<3;c++)for(let r=0;r<3;r++)m[c*4+r]=axes[c][r]*scale[c];m[12]=pos[0];m[13]=pos[1];m[14]=pos[2];m[15]=1;return m}
+const basis0=[[1,0,0],[0,1,0],[0,0,1]];
+function rotAxes(a){let c=Math.cos(a),s=Math.sin(a);return [[c,0,-s],[0,1,0],[s,0,c]]}
+function pitchedAxes(yaw,pitch){let y=rotAxes(yaw),c=Math.cos(pitch),s=Math.sin(pitch);
+ return [y[0],[y[1][0]*c+y[2][0]*s,y[1][1]*c+y[2][1]*s,y[1][2]*c+y[2][2]*s],
+ [y[2][0]*c-y[1][0]*s,y[2][1]*c-y[1][1]*s,y[2][2]*c-y[1][2]*s]];}
+function axial(a,b){let y=norm(sub(b,a)),guide=Math.abs(y[2])<.95?[0,0,1]:[1,0,0],x=norm(cross(y,guide)),z=norm(cross(x,y));return [x,y,z]}
+function center(a,b){return a.map((x,i)=>(x+b[i])/2)}
+function len(a,b){return Math.hypot(...sub(a,b))}
+let viewProj;
+function draw(meshObj,pos,scale,color,axes=basis0,unlit=0){if(!viewProj)return;const model=modelMatrix(pos,scale,axes),mvp=mul(viewProj,model),nMat=new Float32Array(9);for(let c=0;c<3;c++)for(let r=0;r<3;r++)nMat[c*3+r]=axes[c][r]/Math.max(.0001,scale[c]);gl.uniformMatrix4fv(L.m,false,mvp);gl.uniformMatrix3fv(L.norm,false,nMat);gl.uniform4fv(L.col,new Float32Array(color));gl.uniform1f(L.unlit,unlit);gl.bindBuffer(gl.ARRAY_BUFFER,meshObj.vb);gl.vertexAttribPointer(L.p,3,gl.FLOAT,false,0,0);gl.enableVertexAttribArray(L.p);gl.bindBuffer(gl.ARRAY_BUFFER,meshObj.nb);gl.vertexAttribPointer(L.n,3,gl.FLOAT,false,0,0);gl.enableVertexAttribArray(L.n);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,meshObj.ib);gl.drawElements(gl.TRIANGLES,meshObj.count,gl.UNSIGNED_SHORT,0)}
+function orb(p,r,col){draw(sphere,p,[r,r,r],col)}
+function ell(p,r,col,axes=basis0){draw(sphere,p,r,col,axes)}
+function capsule(a,b,r,col){const d=len(a,b);draw(sphere,center(a,b),[r,Math.max(.001,d/2+r*.2),r],col,axial(a,b))}
+const COLORS={
+ skin:[1.0,.79,.72,1],hair:[.55,.39,.79,1],hair2:[.76,.61,.93,1],eyes:[.43,.28,.68,1],mouth:[.81,.38,.52,1],blush:[.99,.57,.72,.72],
+ idol:[.98,.45,.69,1],idol2:[1,.78,.87,1],studio:[.42,.43,.79,1],studio2:[.77,.82,1,1],neutral:[.67,.77,.84,1],neutral2:[.85,.92,.96,1],shoes:[.90,.90,.99,1],dark:[.13,.10,.25,1],metal:[.75,.83,.93,1],floor:[.065,.07,.13,1],grid:[.20,.16,.29,1]
+};
+const ARMS={
+ headBehind:[[-.29,2.31,-.10],[.29,2.31,-.10]],
+ oneHead:[[-.29,2.29,-.08],[.62,2.26,.20]],
+ turnWaist:[[-.36,1.38,.03],[.34,1.12,-.08]],
+ braceThigh:[[-.34,.96,.55],[.34,.96,.55]],
+ braceDeep:[[-.32,.67,.61],[.32,.67,.61]],
+ squatGrip:[[-.28,.50,.46],[.28,.50,.46]],
+ lowPoint:[[-.26,.53,.48],[1.15,1.28,-.12]],
+ sideBrace:[[-.33,.65,.50],[.36,.62,.35]],
+ playfulRelease:[[-.67,1.93,.18],[.63,1.92,.24]],
+ down:[[-.43,1.27,.12],[.43,1.27,.12]],
+ waist:[[-.29,1.43,.31],[.29,1.43,.31]],
+ oneHip:[[-.29,1.43,.30],[.67,2.33,.16]],
+ heart:[[-.13,1.91,.43],[.13,1.91,.43]],
+ cheek:[[-.27,2.20,.29],[.27,2.20,.29]],
+ open:[[-.94,1.93,.11],[.94,1.93,.11]],
+ highV:[[-.78,2.65,.15],[.78,2.65,.15]],
+ waveR:[[-.32,1.47,.26],[.68,2.50,.18]],
+ waveL:[[-.69,2.50,.18],[.32,1.47,.26]],
+ pointR:[[-.29,1.37,.24],[1.03,2.35,.17]],
+ pointL:[[-1.03,2.35,.17],[.29,1.37,.24]],
+ cross:[[-.32,1.79,.46],[.32,1.79,.46]],
+ clap:[[-.1,2.05,.43],[.1,2.05,.43]],
+ diagonal:[[-.86,1.32,.15],[.78,2.66,.06]],
+ revDiagonal:[[-.78,2.65,.08],[.85,1.30,.19]],
+ overhead:[[ -.19,2.67,.06],[.20,2.67,.06]],
+ sweepL:[[-.98,1.74,.19],[.31,1.91,.39]],
+ sweepR:[[-.31,1.91,.39],[.98,1.74,.19]],
+ robot1:[[-.67,2.14,.3],[.54,1.64,.50]],
+ robot2:[[-.60,1.60,.49],[.69,2.19,.26]],
+ push:[[ -.46,1.83,.75],[.46,1.83,.75]],
+ framed:[[-.48,2.06,.34],[.48,2.08,.34]],
+ graceful:[[-.64,2.47,.0],[.72,1.85,.24]],
+ graceOpp:[[-.75,1.78,.26],[.62,2.45,.06]],
+ behind:[[-.42,1.44,-.16],[.42,1.44,-.16]],
+ ballroom:[[-.64,1.91,.31],[.64,1.91,.31]],
+ stretch:[[ -.87,2.38,.13],[.84,2.39,.13]],
+ leftpole:[[-.22,2.48,.47],[.68,1.47,.26]],
+ rightpole:[[-.70,1.48,.23],[.23,2.46,.46]],
+};
+const FEET={
+ center:[[-.20,0,0],[.20,0,0]],
+ wide:[[-.40,0,0],[.40,0,0]],
+ right:[[-.20,0,0],[.48,0,.12]],
+ left:[[-.48,0,.12],[.20,0,0]],
+ crossR:[[-.08,0,.13],[.15,0,-.13]],
+ crossL:[[-.16,0,-.13],[.08,0,.13]],
+ hop:[[-.23,.10,0],[.23,.10,0]],
+ marchL:[[-.20,.26,.40],[.20,0,-.20]],
+ marchR:[[-.20,0,-.20],[.20,.26,.40]],
+ glideL:[[-.22,0,-.28],[.20,.025,.20]],
+ glideR:[[-.22,.025,.20],[.20,0,-.28]],
+ backL:[[-.20,0,-.28],[.20,0,.14]],
+ backR:[[-.20,0,.14],[.20,0,-.28]],
+ frontL:[[-.20,0,.35],[.20,0,0]],
+ frontR:[[-.20,0,0],[.20,0,.35]],
+ toe:[[-.20,.07,.02],[.20,.07,.02]],
+ squat:[[-.34,0,.15],[.34,0,.15]],
+ pivot:[[-.11,0,.08],[.23,0,-.03]],
+};
+function f(a,foot,h=0,yaw=0,lean=0,bounce=0,rx=0,rz=0){return {a,foot,h,yaw,lean,bounce,rx,rz}}
+const P={
+ idol:[f('heart','center',0,0,0,.12),f('open','right',.18,-.17,-.04,.1),f('waveR','left',-.16,.16,.05,.1),f('pointR','hop',.06,0,0,.11)],
+ jpopidol:[f('heart','right',.07,0,0,.08,.09,0),f('open','left',-.09,.34,.02,.07,-.09,.03),f('highV','hop',.10,-.12,0,.18,0,0),f('pointR','pivot',-.04,.04,0,.02,0,0)],
+ parapara:[f('sweepL','right',-.08,-.13,0,.04),f('cross','center',.02,.03,0,.08),f('sweepR','left',.10,.16,0,.04),f('diagonal','pivot',0,0,0,.08)],
+ electro:[f('waveL','wide',0,-.14,.05,.06),f('push','right',.1,.12,-.08,.04),f('overhead','left',-.1,-.12,.09,.09),f('robot2','center',0,.22,0,0)],
+ cute:[f('cheek','hop',.04,-.14,.06,.13),f('cheek','left',-.1,.17,-.06,.11),f('highV','wide',.06,0,.04,.14),f('clap','center',0,0,0,.09)],
+ march:[f('waveL','marchL',0,-.1,.08,.08),f('waveR','marchR',.09,.1,-.06,.09),f('highV','wide',-.06,0,.07,.07),f('push','marchL',0,0,0,.1)],
+ twirl:[f('graceful','toe',0,0,-.07,.04),f('overhead','pivot',.03,1.57,.05,.02),f('open','toe',0,3.14,-.04,.02),f('waveR','center',-.03,4.71,.06,.04)],
+ vtuber:[f('waveR','right',.12,-.1,.02,.09),f('waveL','left',-.12,.1,-.04,.11),f('framed','center',.08,0,0,.1),f('heart','hop',0,0,0,.10)],
+ hips:[f('waist','wide',.22,-.12,.07,.01),f('graceful','right',0,.05,0,.01),f('waist','left',-.22,.1,-.07,.01),f('graceOpp','wide',0,0,.05,.01)],
+ jpop:[f('pointR','right',.12,-.08,.04,.08),f('pointL','left',-.12,.08,-.04,.08),f('highV','hop',0,0,0,.11),f('oneHip','center',0,.12,0,.05)],
+ cheer:[f('highV','hop',0,0,-.04,.18),f('open','right',.07,-.13,.05,.11),f('clap','left',-.08,.12,0,.14),f('waveR','hop',0,0,0,.15)],
+ glitch:[f('robot1','center',0,-.20,0,.02),f('robot2','right',.07,.17,.07,.0),f('push','left',-.08,-.12,-.1,.01),f('diagonal','center',0,.16,0,.0)],
+ hop:[f('waveR','hop',.03,-.05,0,.18),f('waveL','hop',-.04,.04,0,.18),f('open','wide',0,0,0,.18),f('cheek','center',0,.08,0,.16)],
+ kpop:[f('cross','wide',-.1,0,-.04,.09),f('open','right',.18,-.15,.06,.07),f('diagonal','left',-.17,.12,-.09,.11),f('framed','pivot',0,.2,0,.04)],
+ bodywave:[f('framed','center',0,0,-.16,.04),f('push','right',.10,.10,.23,.03),f('graceful','left',-.12,-.12,-.16,.07),f('waist','center',0,0,.10,.03)],
+ point:[f('push','right',.07,-.12,0,.09),f('pointL','left',-.11,.15,0,.06),f('overhead','hop',0,0,0,.11),f('pointR','center',.08,0,0,.06)],
+ strut:[f('waist','frontL',.07,-.05,0,.03),f('framed','frontR',-.10,.09,-.06,.01),f('graceful','crossR',.18,.65,.03,.02),f('oneHip','pivot',-.09,-.20,0,0)],
+ twostep:[f('down','right',.10,-.10,.02,.09),f('open','center',-.08,.08,-.05,.08),f('down','left',-.12,.12,.02,.09),f('framed','center',.08,-.08,0,.07)],
+ running:[f('waveR','marchL',0,-.08,.08,.04),f('waveL','marchR',0,.08,-.09,.04),f('push','marchL',0,0,.02,.08),f('cross','marchR',0,.0,-.04,.06)],
+ moonwalk:[f('down','glideL',0,0,0,0,0,0),f('down','glideR',0,0,0,0,0,-.17),f('down','glideL',0,.09,.02,0,0,-.32),f('down','glideR',0,0,0,0,0,-.18)],
+ robot:[f('robot1','wide',0,-.2,0,0),f('robot2','center',0,.25,0,.0),f('cross','right',.08,-.20,0,.0),f('push','center',-.09,.16,0,.0)],
+ house:[f('open','wide',.09,-.1,-.09,.17),f('cross','right',-.06,.11,.11,.12),f('graceOpp','left',.1,-.12,-.06,.17),f('waist','hop',-.09,.12,.05,.15)],
+ toprock:[f('sweepL','crossR',.09,-.3,-.06,.05),f('open','wide',0,.1,.12,.06),f('sweepR','crossL',-.09,.3,-.07,.05),f('open','pivot',0,-.1,0,.06)],
+ disco:[f('diagonal','right',.15,-.19,.04,.13),f('revDiagonal','left',-.17,.15,-.04,.11),f('diagonal','wide',.1,0,.03,.13),f('revDiagonal','center',-.08,.0,0,.11)],
+ emote:[f('highV','hop',.02,-.1,0,.14),f('waveR','right',.08,.15,.02,.14),f('pointL','left',-.08,-.15,0,.16),f('highV','center',.0,.08,-.06,.15)],
+ pixel:[f('robot1','right',0,0,0,0),f('robot2','left',0,.45,0,0),f('robot1','center',0,-.45,0,0),f('robot2','wide',0,0,0,0)],
+ salsa:[f('ballroom','frontL',.07,-.08,.05,.03,0,.16),f('graceful','center',.13,.08,.02,.02,0,0),f('ballroom','backR',-.08,-.08,-.03,.03,0,-.17),f('graceOpp','center',-.1,.08,0,.02,0,0)],
+ bachata:[f('graceful','right',.15,-.07,.05,.03,.15,0),f('waist','center',.20,0,0,.03,.27,0),f('graceOpp','left',-.15,.07,-.04,.03,-.15,0),f('waist','center',-.20,0,0,.03,-.27,0)],
+ afro:[f('down','wide',.18,-.18,.08,.14),f('sweepR','right',-.11,.12,-.04,.15),f('sweepL','left',.16,-.13,.06,.14),f('framed','center',-.12,.1,-.03,.15)],
+ belly:[f('graceful','wide',.20,-.07,.08,.01),f('graceful','center',0,0,-.04,.01),f('graceOpp','wide',-.20,.08,.05,.01),f('overhead','center',0,0,-.03,.01)],
+ flamenco:[f('overhead','center',0,-.08,-.03,.03),f('graceful','right',.08,.13,.04,.04),f('overhead','left',-.09,-.1,-.05,.03),f('graceOpp','center',0,.04,0,.02)],
+ samba:[f('graceful','marchL',.11,-.12,.03,.15),f('graceOpp','marchR',-.13,.10,-.04,.15),f('open','wide',.13,-.10,.05,.17),f('waist','hop',-.1,.11,0,.18)],
+ heels:[f('waist','frontL',.10,-.1,-.05,.025,0,.18),f('graceful','frontR',-.1,.12,.04,.025,0,.3),f('oneHip','crossR',.15,.68,-.05,.02,.07,.22),f('framed','pivot',-.1,-.15,0,.01,0,0)],
+ slowroll:[f('graceful','wide',.12,-.04,-.17,.01),f('waist','center',.16,.04,.18,.01),f('graceOpp','left',-.11,-.08,-.15,.01),f('framed','center',0,.08,.07,.01)],
+ chair:[f('down','frontL',.07,.30,0,.03,.17,-.05),f('waist','pivot',.12,.75,-.05,.02,.31,-.10),f('rightpole','center',-.10,.30,.18,.01,.27,-.12),f('framed','frontR',.03,0,0,.01,.13,0)],
+ pole:[f('graceful','frontL',.12,.2,-.03,.02,.12,-.10),f('leftpole','pivot',.1,1.5,.03,.01,.22,-.20),f('open','toe',-.09,3.0,-.06,.01,.07,-.32),f('waist','center',-.06,4.7,.01,.01,-.04,-.17)],
+ burlesque:[f('graceful','right',.14,-.1,.05,.015),f('overhead','center',.19,.12,-.05,.015),f('graceOpp','crossL',-.12,1.05,.03,.0),f('oneHip','center',-.05,-.13,0,.0)],
+ twerk:[f('waist','squat',.07,-.08,.14,-.12),f('framed','squat',-.07,.09,-.12,-.11),f('waist','squat',.1,-.1,.13,-.12),f('framed','wide',-.1,.1,-.08,-.09)],
+ wine:[f('waist','wide',.24,-.10,.03,-.03),f('graceful','center',.0,.08,.12,-.02),f('waist','wide',-.24,.12,-.01,-.03),f('graceOpp','center',0,-.08,-.09,-.02)],
+ sultry:[f('waist','right',.18,-.12,-.06,.0),f('graceful','center',0,.15,.02,.0),f('graceOpp','left',-.17,-.1,.09,.0),f('framed','center',0,0,0,.0)],
+ chairpop:[f('open','right',.07,.20,.0,.055),f('graceful','pivot',-.10,.65,.08,.04),f('waist','left',.10,.10,-.05,.05),f('oneHip','center',0,-.12,0,.0)],
+ ballet:[f('ballroom','toe',0,-.1,-.03,.04),f('open','center',0,.18,.03,.05),f('overhead','toe',.02,1.6,-.03,.045),f('ballroom','center',0,3.15,0,.02)],
+ contemporary:[f('diagonal','frontL',-.18,-.16,-.15,.015),f('cross','left',.08,.16,.18,.01),f('stretch','wide',.12,.0,-.16,.02),f('graceOpp','center',0,.16,.0,0)],
+ waltz:[f('ballroom','frontL',.05,0,.04,.09),f('ballroom','center',0,.5,0,.12),f('ballroom','backR',-.04,1.5,-.04,.07),f('ballroom','center',0,3.14,0,.09)],
+ ribbon:[f('graceful','center',0,-.12,.1,.0),f('stretch','right',.1,.13,-.13,.0),f('graceOpp','left',-.11,-.08,.13,.0),f('ballroom','center',0,0,0,.0)]
+};
+const CLIP_FALLBACK=P.idol;
+// Frame-by-frame manual keying from the user's 10.112 s clip. Angle is unwrapped so
+// body turns rather than snapping from front to back. Crouch and bend are separate.
+function rk(t,arms,feet,yaw,hip,crouch,bend,lean,x=0,z=0){return {t,arms,feet,yaw,hip,crouch,bend,lean,x,z}}
+const REFERENCE_DURATION=10.112;
+const REFERENCE_KEYS=[
+ rk(0.00,'headBehind','wide',0, .05,.10,0,-.03),
+ rk(.36,'headBehind','wide',0, .14,.11,0,-.02),
+ rk(.85,'headBehind','wide',-.06,-.13,.11,0,-.03),
+ rk(1.26,'headBehind','wide',.04, .12,.11,0,-.04),
+ rk(1.60,'oneHead','wide',.15,-.10,.10,0,-.02),
+ rk(1.94,'turnWaist','right',.90,.16,.09,0,0),
+ rk(2.25,'turnWaist','wide',2.20,.15,.08,0,-.03),
+ rk(2.61,'turnWaist','wide',2.65,-.08,.08,0,-.02),
+ rk(2.91,'braceThigh','wide',5.2,.09,.15,.38,.08),
+ rk(3.24,'braceThigh','wide',6.28,.06,.19,.67,.12),
+ rk(3.60,'braceThigh','wide',6.28,-.08,.22,.74,.14),
+ rk(4.14,'braceDeep','wide',6.25,.10,.25,.80,.11),
+ rk(4.62,'braceDeep','wide',6.30,-.06,.27,.77,.12),
+ rk(4.98,'squatGrip','squat',6.28,0,.55,.48,.06),
+ rk(5.38,'squatGrip','squat',6.29,.06,.72,.22,0),
+ rk(5.82,'squatGrip','squat',6.14,-.04,.75,.10,0),
+ rk(6.12,'lowPoint','squat',5.55,.08,.71,.09,-.03),
+ rk(6.58,'lowPoint','squat',5.31,-.08,.71,.08,-.03),
+ rk(6.96,'sideBrace','squat',4.70,.07,.69,.13,-.02),
+ rk(7.35,'sideBrace','squat',3.88,.10,.60,.23,.03),
+ rk(7.73,'sideBrace','squat',3.88,-.04,.45,.48,.11),
+ rk(8.04,'oneHead','wide',5.50,.05,.24,.22,0),
+ rk(8.33,'headBehind','wide',6.28,.13,.10,0,-.04),
+ rk(8.82,'headBehind','wide',6.28,-.13,.11,0,-.02),
+ rk(9.28,'headBehind','wide',6.27,.15,.11,0,-.03),
+ rk(9.73,'playfulRelease','wide',6.28,-.08,.10,0,-.02),
+ rk(10.10,'headBehind','wide',6.28,.05,.10,0,-.03)
+];
+function referencePoseAt(seconds){
+ const t=((seconds%REFERENCE_DURATION)+REFERENCE_DURATION)%REFERENCE_DURATION;
+ let i=0;while(i<REFERENCE_KEYS.length-2 && REFERENCE_KEYS[i+1].t<=t)i++;
+ const a=REFERENCE_KEYS[i],b=REFERENCE_KEYS[i+1],r=Math.min(1,Math.max(0,(t-a.t)/(b.t-a.t))),u=smooth(r);
+ const hands=[0,1].map(n=>li(ARMS[a.arms][n],ARMS[b.arms][n],u));
+ const feet=[0,1].map(n=>li(FEET[a.feet][n],FEET[b.feet][n],u));
+ const val=k=>lerp(a[k],b[k],u);
+ const inLow=t>=5.05 && t<=7.9;
+ const hip=val('hip')+.07*Math.sin(t*(inLow?17.8:18.8));
+ const crouch=val('crouch')+(inLow?.016*Math.sin(t*17.8):.018*Math.sin(t*12.5));
+ const zPulse=inLow?.075*Math.sin(t*17.8):.060*Math.sin(t*18.8+.5);
+ let chapter=0;const times=CATALOG[0][8];while(chapter<7&&t>=times[chapter+1])chapter++;
+ const beat=t/REFERENCE_DURATION*8;
+ return {beat,chapter,seconds:t,hands,feet,yaw:val('yaw'),hip,lean:val('lean'),bounce:0,
+ travelX:val('x'),travelZ:val('z'),zPulse,crouch,shoulders:.07*Math.sin(t*7),headNod:.025*Math.sin(t*5),
+ wristWave:0,tilt:.024*Math.sin(t*4.3),twist:0,bend:val('bend')};
+}
+
+function lerp(a,b,t){return a+(b-a)*t};function li(a,b,t){return a.map((v,i)=>lerp(v,b[i],t))};function smooth(t){return t*t*(3-2*t)}
+let selected=CATALOG[0],paused=false,speed=1,elapsed=0,last=0,camAngle=.23,camRadius=4.20,camElev=1.72,outfit='idol',drag=false,lastX=0,ctxLost=false;
+const rootCanvas=canvas;
+function poseAt(clip,time){
+ if(clip[4]==='reference20516') return referencePoseAt(time);
+ const bpm=clip[3],beat=((time*bpm/60)%8+8)%8,idx=Math.floor(beat/2),phase=(beat%2)/2;
+ const motif=clip[4],frames=P[motif]||CLIP_FALLBACK,k=frames[idx],next=frames[(idx+1)%4];
+ // Robot / pixel movements deliberately snap; other routines blend their named 1-2/3-4/5-6/7-8 poses.
+ let u=['robot','glitch','pixel'].includes(motif)?(phase<.68?0:smooth((phase-.68)/.32)):smooth(phase);
+ let hands=[li(ARMS[k.a][0],ARMS[next.a][0],u),li(ARMS[k.a][1],ARMS[next.a][1],u)];
+ let feet=[li(FEET[k.foot][0],FEET[next.foot][0],u),li(FEET[k.foot][1],FEET[next.foot][1],u)];
+ let yawEnd=next.yaw;if(idx===3&&Math.abs(k.yaw)>4)yawEnd+=Math.PI*2;
+ let yaw=lerp(k.yaw,yawEnd,u),hip=lerp(k.h,next.h,u),lean=lerp(k.lean,next.lean,u),bounce=lerp(k.bounce,next.bounce,u),travelX=lerp(k.rx,next.rx,u),travelZ=lerp(k.rz,next.rz,u);
+ const loop=2*Math.PI*beat/8,beatPhase=2*Math.PI*beat,halfBeat=2*Math.PI*beat/4;
+ let zPulse=0,crouch=0,shoulders=0,headNod=.03*Math.sin(halfBeat),wristWave=0;
+ switch(motif){
+ case 'hips': case 'belly':
+   hip+=.18*Math.sin(loop*2);zPulse=.10*Math.sin(loop*4);shoulders=-.08*Math.sin(loop*2);break;
+ case 'wine':
+   hip+=.19*Math.sin(loop);zPulse=.17*Math.cos(loop);crouch=.08;shoulders=-.07*Math.sin(loop);break;
+ case 'sultry':
+   hip+=.085*Math.sin(loop);zPulse=.055*Math.cos(loop);headNod=.055*Math.sin(loop);break;
+ case 'twerk':
+   crouch=.20+.045*Math.sin(beatPhase);zPulse=.085*Math.sin(beatPhase);lean+=.06;hip+=.055*Math.sin(beatPhase+1.57);break;
+ case 'bodywave':case 'slowroll':
+   lean+=.21*Math.sin(loop*2-.6);zPulse=.11*Math.sin(loop*2);shoulders=.13*Math.sin(loop*2+1.2);break;
+ case 'robot':case 'glitch':case 'pixel':
+   hip*=.35;bounce*=.3;shoulders=.06*(idx%2?1:-1);break;
+ case 'running':case 'march':case 'samba':case 'hop':case 'cheer':
+   bounce+=.045*Math.abs(Math.sin(beatPhase/2));shoulders=.045*Math.sin(beatPhase);break;
+ case 'moonwalk':
+   lean-=.025;bounce=.0;break;
+ case 'chair':case 'chairpop':
+   shoulders=.08*Math.sin(loop*2);break;
+ case 'pole':
+   travelX+=.09*Math.sin(loop);travelZ+=.075*Math.sin(loop+1.4);break;
+ case 'salsa':case 'bachata':
+   hip+=.06*Math.sin(halfBeat);break;
+ case 'ballet':case 'waltz':
+   bounce+=.042*(.5+.5*Math.cos(loop*3));break;
+ case 'kpop':case 'point':case 'jpopidol':
+   shoulders=.04*Math.sin(beatPhase);break;
+ case 'electro':case 'parapara':case 'vtuber':
+   wristWave=.06*Math.sin(beatPhase/2);break;
+ }
+ // The named choreography is explicitly driven by this clip's own keyframes, never a generic reused action.
+ return {beat,hands,feet,yaw,hip,lean,bounce,travelX,travelZ,zPulse,crouch,shoulders,headNod,wristWave,
+         tilt:Math.sin(halfBeat)*.053,twist:Math.sin(loop*2)*.06};
+}
+function character(t){const clip=selected,p=poseAt(clip,t),rY=1.09+p.bounce+.012*Math.sin(p.beat*Math.PI*2);const yaw=p.yaw;
+ const rootX=p.hip*.33+p.travelX,rootZ=p.zPulse*.21+p.travelZ;
+ function transform(q){let c=Math.cos(yaw),s=Math.sin(yaw);return [rootX+c*q[0]+s*q[2],(q[1]-1.09)+rY,rootZ-s*q[0]+c*q[2]]}
+ let clothes=COLORS[outfit]||COLORS.idol,clothes2=COLORS[outfit+'2']||COLORS.idol2,skin=COLORS.skin,hair=COLORS.hair;
+ if(outfit==='neutral'){skin=[.75,.82,.88,1];hair=[.51,.59,.69,1]}
+ const pitch=(p.bend||0)*1.28;
+ function bendPoint(x,y,z){const lift=y-1.12;return [x,1.12+lift*Math.cos(pitch)-p.crouch,z+lift*Math.sin(pitch)];}
+ const hips=transform([0,1.10-p.crouch,0]),waist=transform(bendPoint(p.hip*.12,1.41,p.lean*.15)),sternum=transform(bendPoint(p.hip*.15+p.shoulders*.16,1.69,p.lean*.58)),headLocal=bendPoint(p.hip*.16+p.tilt*.18,2.18+p.headNod*.13,p.lean*.53),headCenter=transform(headLocal);
+ // Foreground floor shadow - every primitive is genuine 3D geometry.
+ ell([rootX,.008,rootZ],[.60,.012,.38],[.08,.07,.16,.45]);
+ // Thin floor plane and circular stage platforms.
+ draw(plane,[0,-.028,0],[.65,1,.65],COLORS.floor);
+ ell([0,-.012,0],[1.50,.017,1.48],[.17,.11,.29,1]);
+ ell([0,-.002,0],[1.41,.014,1.40],[.075,.075,.14,1]);
+ // Optional scene props, kept in world rather than avatar coordinates.
+ if(['chair','chairpop'].includes(clip[4])){
+   let cc=[.87,.49,-.86];ell(cc,[.36,.07,.34],[.44,.30,.53,1]);
+   for(let x of [.62,1.12])for(let z of [-1.08,-.62])capsule([x,.03,z],[x,.46,z],.035,COLORS.metal);
+   capsule([.57,.50,-1.10],[.57,1.18,-1.10],.04,COLORS.metal);
+   capsule([1.17,.50,-1.10],[1.17,1.18,-1.10],.04,COLORS.metal);
+   capsule([.58,1.15,-1.10],[1.16,1.15,-1.10],.046,COLORS.metal);
+ }
+ if(clip[4]==='pole'){capsule([.67,.0,-.37],[.67,2.90,-.37],.036,COLORS.metal);}
+ // Body: legs and flat-soled shoes from proper joint positions.
+ for(let side=0;side<2;side++){
+   const sign=side===0?-1:1,foot=p.feet[side];
+   const hip=transform([sign*.165,1.12-p.crouch,0]),ankle=transform([foot[0],.14+foot[1],foot[2]]);
+   ankle[1]=.14+Math.max(0,foot[1])+Math.max(0,p.bounce);
+   const knee=transform([(sign*.165+foot[0])*.54,.62-p.crouch*(clip[4]==='reference20516'?.16:.43)+foot[1]*.3,foot[2]*.53+.10+(clip[4]==='reference20516'?p.crouch*.39:0)]);
+   capsule(hip,knee,.135,skin);orb(knee,.111,skin);capsule(knee,ankle,.102,skin);
+   let shoe=transform([foot[0],.115+foot[1],foot[2]+.10]);shoe[1]=.12+Math.max(0,foot[1])+Math.max(0,p.bounce);ell(shoe,[.125,.084,.23],COLORS.shoes,rotAxes(yaw));
+ }
+ // Skirt and bodice, following the torso. 3D shape with non-flat highlights.
+ const torsoAxes=pitchedAxes(yaw+p.tilt*.35+p.shoulders*.2,pitch);const skirtAxes=rotAxes(yaw);
+ ell(sternum,[.275,.355,.188],clothes2,torsoAxes);
+ // Lavender muse's flared blush-pink dress: hem, translucent-looking panels and rose waistband.
+ const skirt=transform(bendPoint(p.hip*.13,1.32,p.lean*.14));
+ draw(cone,skirt,[1.07,.61,1.07],clothes,skirtAxes);
+ for(let i=0;i<8;i++){let a=2*Math.PI*i/8 + .055*Math.sin(t*3+p.beat*.6);
+   ell(transform([p.hip*.13+Math.sin(a)*.345,1.08-p.crouch+.02*Math.sin(t*3+i),p.lean*.14+Math.cos(a)*.33]),[.066,.07,.060],[1,.70,.85,1]);}
+ ell(waist,[.258,.060,.203],[1,.81,.93,1],torsoAxes);
+ ell(transform([p.hip*.13,1.50-p.crouch,p.lean*.15+.19]),[.15,.045,.022],[1,.55,.77,1],torsoAxes);
+ // Decorative dress bow, distinct from the hair bow.
+ ell(transform([p.hip*.13-.10,1.47-p.crouch,p.lean*.15+.21]),[.103,.053,.028],[1,.89,.95,1],torsoAxes);
+ ell(transform([p.hip*.13+.10,1.47-p.crouch,p.lean*.15+.21]),[.103,.053,.028],[1,.89,.95,1],torsoAxes);
+ // Neck and flexible arms.
+ capsule(transform(bendPoint(p.hip*.13,1.91,p.lean*.36)),transform(bendPoint(p.hip*.15,2.03,p.lean*.43)),.088,skin);
+ for(let side=0;side<2;side++){
+   const sign=side===0?-1:1,shoulderLocal=bendPoint(sign*.31+p.hip*.15,1.85,p.lean*.28),shoulder=transform(shoulderLocal),h=p.hands[side],special=clip[4]==='reference20516',handLocal=[h[0],h[1]-(special?0:p.crouch*.65),h[2]+p.wristWave*(side?1:-1)],hand=transform(handLocal);
+   const elbow=transform([(shoulderLocal[0]+handLocal[0])*.50+sign*.12,(shoulderLocal[1]+handLocal[1])*.50-.095,(shoulderLocal[2]+handLocal[2])*.50-.10]);
+   orb(shoulder,.155,clothes2);capsule(shoulder,elbow,.092,skin);orb(elbow,.083,skin);capsule(elbow,hand,.079,skin);ell(hand,[.086,.108,.045],skin,torsoAxes);
+ }
+ // Lavender Muse. Long flowing lavender hair, expressive violet eyes, blush-pink flared dress.
+ const hairColor=outfit==='neutral'?[.52,.57,.67,1]:outfit==='studio'?[.47,.36,.69,1]:COLORS.hair;
+ const hairShine=outfit==='neutral'?[.72,.78,.85,1]:COLORS.hair2;
+ const fromHead=(x,y,z)=>transform([headLocal[0]+x,headLocal[1]+y,headLocal[2]+z]);
+ // Back hair is *long*: four distinct floating locks, reaching the middle of her back.
+ ell(fromHead(0,-.28,-.135),[.245,.59,.18],hairColor,torsoAxes);
+ for(let j=0;j<7;j++){
+   let a=j-3,sw=Math.sin(t*2.8+j*.56+p.yaw)*.046;
+   let atTop=fromHead(a*.062,.06,-.115),atEnd=fromHead(a*.085+sw,-.64+.025*Math.cos(t*2+j),-.14+.035*Math.sin(t*2+j));
+   capsule(atTop,atEnd,.058,j%2?hairColor:hairShine);
+ }
+ ell(headCenter,[.212,.256,.196],skin,torsoAxes);
+ ell(fromHead(0,.19,-.08),[.244,.11,.205],hairColor,torsoAxes);
+ // Swept bangs frame her eyes rather than covering them.
+ for(let s of [-1,1]){
+   ell(fromHead(s*.106,.155,.151),[.108,.079,.073],hairShine,torsoAxes);
+   let hairRoot=fromHead(s*.205,.08,-.025),hairTip=fromHead(s*(.255+.02*Math.sin(t*2.3+s)),-.46,-.01+.025*Math.sin(t*3+s));
+   capsule(hairRoot,hairTip,.083,hairColor);
+   capsule(fromHead(s*.24,-.32,-.045),fromHead(s*(.255+.048*Math.sin(t*2+s)),-.70,-.065),.063,hairShine);
+ }
+ // Anime eyes: whites, violet irises, dark pupils, highlights, lashes and blush.
+ for(let s of [-1,1]){
+   ell(fromHead(s*.088,.025,.185),[.065,.058,.020],[.99,.98,1,1],torsoAxes);
+   ell(fromHead(s*.085,.022,.204),[.040,.050,.019],COLORS.eyes,torsoAxes);
+   ell(fromHead(s*.087,.020,.221),[.021,.034,.012],[.15,.11,.28,1],torsoAxes);
+   ell(fromHead(s*.075,.043,.228),[.012,.014,.007],[1,1,1,1],torsoAxes);
+   ell(fromHead(s*.146,-.064,.170),[.050,.020,.009],COLORS.blush,torsoAxes);
+   ell(fromHead(s*.090,.093,.189),[.060,.013,.012],hairColor,torsoAxes);
+ }
+ ell(fromHead(0,-.11,.199),[.046,.017,.009],COLORS.mouth,torsoAxes);
+ // Pink satin ribbon to the right, secured by a central pearl.
+ ell(fromHead(.225,.174,-.03),[.111,.077,.041],[1,.68,.82,1],torsoAxes);
+ ell(fromHead(.332,.170,-.038),[.100,.071,.04],[1,.78,.89,1],torsoAxes);
+ ell(fromHead(.274,.168,.005),[.044,.047,.041],[1,.94,.99,1],torsoAxes);
+}
+function resize(){const dpr=Math.min(1.7,window.devicePixelRatio||1);const w=Math.max(150,canvas.clientWidth),h=Math.max(150,canvas.clientHeight);let rw=Math.round(w*dpr),rh=Math.round(h*dpr);if(canvas.width!==rw||canvas.height!==rh){canvas.width=rw;canvas.height=rh;}gl.viewport(0,0,rw,rh);let eye=[Math.sin(camAngle)*camRadius,camElev,Math.cos(camAngle)*camRadius],p=matPers(.72,w/h,.1,50),v=matView(eye,[0,1.35,0]);viewProj=mul(p,v);}
+function render(ms){if(ctxLost)return;const dt=last?Math.min(.04,Math.max(0,(ms-last)/1000)):0;last=ms;if(!paused)elapsed+=dt*speed;resize();gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);character(elapsed);requestAnimationFrame(render)}
+function setClip(clip){selected=clip;elapsed=0;window.dispatchEvent(new CustomEvent('danceatlas:frame',{detail:{beat:0}}));}
+window.Atlas3D={setClip,setBeat(b){elapsed=selected[4]==='reference20516'?((b%8+8)%8)*REFERENCE_DURATION/8:((b%8+8)%8)*60/selected[3]},setTime(t){elapsed=Math.max(0,t)},samplePose(b){return poseAt(selected,selected[4]==='reference20516'?((b%8+8)%8)*REFERENCE_DURATION/8:((b%8+8)%8)*60/selected[3])},setPlaying(on){paused=!on},isPlaying:()=>!paused,setSpeed(x){speed=x},setStyle(v){outfit=v},setCamera(a){camAngle=a},zoom(v){camRadius=v},reset(){elapsed=0},getClip:()=>selected,frame:()=>({time:elapsed,beat:poseAt(selected,elapsed).beat}),getWebGLVersion:()=>gl.getParameter(gl.VERSION)};
+canvas.addEventListener('pointerdown',e=>{drag=true;lastX=e.clientX;canvas.setPointerCapture?.(e.pointerId)});
+canvas.addEventListener('pointermove',e=>{if(!drag)return;camAngle+=(e.clientX-lastX)*.010;lastX=e.clientX});
+for(let ev of ['pointerup','pointercancel'])canvas.addEventListener(ev,()=>drag=false);
+canvas.addEventListener('wheel',e=>{e.preventDefault();camRadius=Math.max(3.35,Math.min(8,camRadius+e.deltaY*.004))},{passive:false});
+canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();ctxLost=true;document.getElementById('stageNotice').textContent='3D graphics paused. Reopen the app to restore the renderer.'});
+canvas.addEventListener('webglcontextrestored',()=>location.reload());
+requestAnimationFrame(render);
+})();
+</script>
+<script>'use strict';
+// Fallback rendering path for browsers where WebGL is blocked: still a 3D joint model with orbit camera.
+(function(){
+if(window.Atlas3D)return;
+const canvas=document.getElementById('stage'),ctx=canvas.getContext('2d');
+if(!ctx){document.getElementById('stageNotice').textContent='This device does not support the 3D canvas.';return}
+const ARMS={
+ headBehind:[[-.29,2.31,-.10],[.29,2.31,-.10]],
+ oneHead:[[-.29,2.29,-.08],[.62,2.26,.20]],
+ turnWaist:[[-.36,1.38,.03],[.34,1.12,-.08]],
+ braceThigh:[[-.34,.96,.55],[.34,.96,.55]],
+ braceDeep:[[-.32,.67,.61],[.32,.67,.61]],
+ squatGrip:[[-.28,.50,.46],[.28,.50,.46]],
+ lowPoint:[[-.26,.53,.48],[1.15,1.28,-.12]],
+ sideBrace:[[-.33,.65,.50],[.36,.62,.35]],
+ playfulRelease:[[-.67,1.93,.18],[.63,1.92,.24]],
+ down:[[-.43,1.27,.12],[.43,1.27,.12]],
+ waist:[[-.29,1.43,.31],[.29,1.43,.31]],
+ oneHip:[[-.29,1.43,.30],[.67,2.33,.16]],
+ heart:[[-.13,1.91,.43],[.13,1.91,.43]],
+ cheek:[[-.27,2.20,.29],[.27,2.20,.29]],
+ open:[[-.94,1.93,.11],[.94,1.93,.11]],
+ highV:[[-.78,2.65,.15],[.78,2.65,.15]],
+ waveR:[[-.32,1.47,.26],[.68,2.50,.18]],
+ waveL:[[-.69,2.50,.18],[.32,1.47,.26]],
+ pointR:[[-.29,1.37,.24],[1.03,2.35,.17]],
+ pointL:[[-1.03,2.35,.17],[.29,1.37,.24]],
+ cross:[[-.32,1.79,.46],[.32,1.79,.46]],
+ clap:[[-.1,2.05,.43],[.1,2.05,.43]],
+ diagonal:[[-.86,1.32,.15],[.78,2.66,.06]],
+ revDiagonal:[[-.78,2.65,.08],[.85,1.30,.19]],
+ overhead:[[ -.19,2.67,.06],[.20,2.67,.06]],
+ sweepL:[[-.98,1.74,.19],[.31,1.91,.39]],
+ sweepR:[[-.31,1.91,.39],[.98,1.74,.19]],
+ robot1:[[-.67,2.14,.3],[.54,1.64,.50]],
+ robot2:[[-.60,1.60,.49],[.69,2.19,.26]],
+ push:[[ -.46,1.83,.75],[.46,1.83,.75]],
+ framed:[[-.48,2.06,.34],[.48,2.08,.34]],
+ graceful:[[-.64,2.47,.0],[.72,1.85,.24]],
+ graceOpp:[[-.75,1.78,.26],[.62,2.45,.06]],
+ behind:[[-.42,1.44,-.16],[.42,1.44,-.16]],
+ ballroom:[[-.64,1.91,.31],[.64,1.91,.31]],
+ stretch:[[ -.87,2.38,.13],[.84,2.39,.13]],
+ leftpole:[[-.22,2.48,.47],[.68,1.47,.26]],
+ rightpole:[[-.70,1.48,.23],[.23,2.46,.46]],
+};
+const FEET={
+ center:[[-.20,0,0],[.20,0,0]],
+ wide:[[-.40,0,0],[.40,0,0]],
+ right:[[-.20,0,0],[.48,0,.12]],
+ left:[[-.48,0,.12],[.20,0,0]],
+ crossR:[[-.08,0,.13],[.15,0,-.13]],
+ crossL:[[-.16,0,-.13],[.08,0,.13]],
+ hop:[[-.23,.10,0],[.23,.10,0]],
+ marchL:[[-.20,.26,.40],[.20,0,-.20]],
+ marchR:[[-.20,0,-.20],[.20,.26,.40]],
+ glideL:[[-.22,0,-.28],[.20,.025,.20]],
+ glideR:[[-.22,.025,.20],[.20,0,-.28]],
+ backL:[[-.20,0,-.28],[.20,0,.14]],
+ backR:[[-.20,0,.14],[.20,0,-.28]],
+ frontL:[[-.20,0,.35],[.20,0,0]],
+ frontR:[[-.20,0,0],[.20,0,.35]],
+ toe:[[-.20,.07,.02],[.20,.07,.02]],
+ squat:[[-.34,0,.15],[.34,0,.15]],
+ pivot:[[-.11,0,.08],[.23,0,-.03]],
+};
+function f(a,foot,h=0,yaw=0,lean=0,bounce=0,rx=0,rz=0){return {a,foot,h,yaw,lean,bounce,rx,rz}}
+const P={
+ idol:[f('heart','center',0,0,0,.12),f('open','right',.18,-.17,-.04,.1),f('waveR','left',-.16,.16,.05,.1),f('pointR','hop',.06,0,0,.11)],
+ jpopidol:[f('heart','right',.07,0,0,.08,.09,0),f('open','left',-.09,.34,.02,.07,-.09,.03),f('highV','hop',.10,-.12,0,.18,0,0),f('pointR','pivot',-.04,.04,0,.02,0,0)],
+ parapara:[f('sweepL','right',-.08,-.13,0,.04),f('cross','center',.02,.03,0,.08),f('sweepR','left',.10,.16,0,.04),f('diagonal','pivot',0,0,0,.08)],
+ electro:[f('waveL','wide',0,-.14,.05,.06),f('push','right',.1,.12,-.08,.04),f('overhead','left',-.1,-.12,.09,.09),f('robot2','center',0,.22,0,0)],
+ cute:[f('cheek','hop',.04,-.14,.06,.13),f('cheek','left',-.1,.17,-.06,.11),f('highV','wide',.06,0,.04,.14),f('clap','center',0,0,0,.09)],
+ march:[f('waveL','marchL',0,-.1,.08,.08),f('waveR','marchR',.09,.1,-.06,.09),f('highV','wide',-.06,0,.07,.07),f('push','marchL',0,0,0,.1)],
+ twirl:[f('graceful','toe',0,0,-.07,.04),f('overhead','pivot',.03,1.57,.05,.02),f('open','toe',0,3.14,-.04,.02),f('waveR','center',-.03,4.71,.06,.04)],
+ vtuber:[f('waveR','right',.12,-.1,.02,.09),f('waveL','left',-.12,.1,-.04,.11),f('framed','center',.08,0,0,.1),f('heart','hop',0,0,0,.10)],
+ hips:[f('waist','wide',.22,-.12,.07,.01),f('graceful','right',0,.05,0,.01),f('waist','left',-.22,.1,-.07,.01),f('graceOpp','wide',0,0,.05,.01)],
+ jpop:[f('pointR','right',.12,-.08,.04,.08),f('pointL','left',-.12,.08,-.04,.08),f('highV','hop',0,0,0,.11),f('oneHip','center',0,.12,0,.05)],
+ cheer:[f('highV','hop',0,0,-.04,.18),f('open','right',.07,-.13,.05,.11),f('clap','left',-.08,.12,0,.14),f('waveR','hop',0,0,0,.15)],
+ glitch:[f('robot1','center',0,-.20,0,.02),f('robot2','right',.07,.17,.07,.0),f('push','left',-.08,-.12,-.1,.01),f('diagonal','center',0,.16,0,.0)],
+ hop:[f('waveR','hop',.03,-.05,0,.18),f('waveL','hop',-.04,.04,0,.18),f('open','wide',0,0,0,.18),f('cheek','center',0,.08,0,.16)],
+ kpop:[f('cross','wide',-.1,0,-.04,.09),f('open','right',.18,-.15,.06,.07),f('diagonal','left',-.17,.12,-.09,.11),f('framed','pivot',0,.2,0,.04)],
+ bodywave:[f('framed','center',0,0,-.16,.04),f('push','right',.10,.10,.23,.03),f('graceful','left',-.12,-.12,-.16,.07),f('waist','center',0,0,.10,.03)],
+ point:[f('push','right',.07,-.12,0,.09),f('pointL','left',-.11,.15,0,.06),f('overhead','hop',0,0,0,.11),f('pointR','center',.08,0,0,.06)],
+ strut:[f('waist','frontL',.07,-.05,0,.03),f('framed','frontR',-.10,.09,-.06,.01),f('graceful','crossR',.18,.65,.03,.02),f('oneHip','pivot',-.09,-.20,0,0)],
+ twostep:[f('down','right',.10,-.10,.02,.09),f('open','center',-.08,.08,-.05,.08),f('down','left',-.12,.12,.02,.09),f('framed','center',.08,-.08,0,.07)],
+ running:[f('waveR','marchL',0,-.08,.08,.04),f('waveL','marchR',0,.08,-.09,.04),f('push','marchL',0,0,.02,.08),f('cross','marchR',0,.0,-.04,.06)],
+ moonwalk:[f('down','glideL',0,0,0,0,0,0),f('down','glideR',0,0,0,0,0,-.17),f('down','glideL',0,.09,.02,0,0,-.32),f('down','glideR',0,0,0,0,0,-.18)],
+ robot:[f('robot1','wide',0,-.2,0,0),f('robot2','center',0,.25,0,.0),f('cross','right',.08,-.20,0,.0),f('push','center',-.09,.16,0,.0)],
+ house:[f('open','wide',.09,-.1,-.09,.17),f('cross','right',-.06,.11,.11,.12),f('graceOpp','left',.1,-.12,-.06,.17),f('waist','hop',-.09,.12,.05,.15)],
+ toprock:[f('sweepL','crossR',.09,-.3,-.06,.05),f('open','wide',0,.1,.12,.06),f('sweepR','crossL',-.09,.3,-.07,.05),f('open','pivot',0,-.1,0,.06)],
+ disco:[f('diagonal','right',.15,-.19,.04,.13),f('revDiagonal','left',-.17,.15,-.04,.11),f('diagonal','wide',.1,0,.03,.13),f('revDiagonal','center',-.08,.0,0,.11)],
+ emote:[f('highV','hop',.02,-.1,0,.14),f('waveR','right',.08,.15,.02,.14),f('pointL','left',-.08,-.15,0,.16),f('highV','center',.0,.08,-.06,.15)],
+ pixel:[f('robot1','right',0,0,0,0),f('robot2','left',0,.45,0,0),f('robot1','center',0,-.45,0,0),f('robot2','wide',0,0,0,0)],
+ salsa:[f('ballroom','frontL',.07,-.08,.05,.03,0,.16),f('graceful','center',.13,.08,.02,.02,0,0),f('ballroom','backR',-.08,-.08,-.03,.03,0,-.17),f('graceOpp','center',-.1,.08,0,.02,0,0)],
+ bachata:[f('graceful','right',.15,-.07,.05,.03,.15,0),f('waist','center',.20,0,0,.03,.27,0),f('graceOpp','left',-.15,.07,-.04,.03,-.15,0),f('waist','center',-.20,0,0,.03,-.27,0)],
+ afro:[f('down','wide',.18,-.18,.08,.14),f('sweepR','right',-.11,.12,-.04,.15),f('sweepL','left',.16,-.13,.06,.14),f('framed','center',-.12,.1,-.03,.15)],
+ belly:[f('graceful','wide',.20,-.07,.08,.01),f('graceful','center',0,0,-.04,.01),f('graceOpp','wide',-.20,.08,.05,.01),f('overhead','center',0,0,-.03,.01)],
+ flamenco:[f('overhead','center',0,-.08,-.03,.03),f('graceful','right',.08,.13,.04,.04),f('overhead','left',-.09,-.1,-.05,.03),f('graceOpp','center',0,.04,0,.02)],
+ samba:[f('graceful','marchL',.11,-.12,.03,.15),f('graceOpp','marchR',-.13,.10,-.04,.15),f('open','wide',.13,-.10,.05,.17),f('waist','hop',-.1,.11,0,.18)],
+ heels:[f('waist','frontL',.10,-.1,-.05,.025,0,.18),f('graceful','frontR',-.1,.12,.04,.025,0,.3),f('oneHip','crossR',.15,.68,-.05,.02,.07,.22),f('framed','pivot',-.1,-.15,0,.01,0,0)],
+ slowroll:[f('graceful','wide',.12,-.04,-.17,.01),f('waist','center',.16,.04,.18,.01),f('graceOpp','left',-.11,-.08,-.15,.01),f('framed','center',0,.08,.07,.01)],
+ chair:[f('down','frontL',.07,.30,0,.03,.17,-.05),f('waist','pivot',.12,.75,-.05,.02,.31,-.10),f('rightpole','center',-.10,.30,.18,.01,.27,-.12),f('framed','frontR',.03,0,0,.01,.13,0)],
+ pole:[f('graceful','frontL',.12,.2,-.03,.02,.12,-.10),f('leftpole','pivot',.1,1.5,.03,.01,.22,-.20),f('open','toe',-.09,3.0,-.06,.01,.07,-.32),f('waist','center',-.06,4.7,.01,.01,-.04,-.17)],
+ burlesque:[f('graceful','right',.14,-.1,.05,.015),f('overhead','center',.19,.12,-.05,.015),f('graceOpp','crossL',-.12,1.05,.03,.0),f('oneHip','center',-.05,-.13,0,.0)],
+ twerk:[f('waist','squat',.07,-.08,.14,-.12),f('framed','squat',-.07,.09,-.12,-.11),f('waist','squat',.1,-.1,.13,-.12),f('framed','wide',-.1,.1,-.08,-.09)],
+ wine:[f('waist','wide',.24,-.10,.03,-.03),f('graceful','center',.0,.08,.12,-.02),f('waist','wide',-.24,.12,-.01,-.03),f('graceOpp','center',0,-.08,-.09,-.02)],
+ sultry:[f('waist','right',.18,-.12,-.06,.0),f('graceful','center',0,.15,.02,.0),f('graceOpp','left',-.17,-.1,.09,.0),f('framed','center',0,0,0,.0)],
+ chairpop:[f('open','right',.07,.20,.0,.055),f('graceful','pivot',-.10,.65,.08,.04),f('waist','left',.10,.10,-.05,.05),f('oneHip','center',0,-.12,0,.0)],
+ ballet:[f('ballroom','toe',0,-.1,-.03,.04),f('open','center',0,.18,.03,.05),f('overhead','toe',.02,1.6,-.03,.045),f('ballroom','center',0,3.15,0,.02)],
+ contemporary:[f('diagonal','frontL',-.18,-.16,-.15,.015),f('cross','left',.08,.16,.18,.01),f('stretch','wide',.12,.0,-.16,.02),f('graceOpp','center',0,.16,.0,0)],
+ waltz:[f('ballroom','frontL',.05,0,.04,.09),f('ballroom','center',0,.5,0,.12),f('ballroom','backR',-.04,1.5,-.04,.07),f('ballroom','center',0,3.14,0,.09)],
+ ribbon:[f('graceful','center',0,-.12,.1,.0),f('stretch','right',.1,.13,-.13,.0),f('graceOpp','left',-.11,-.08,.13,.0),f('ballroom','center',0,0,0,.0)]
+};
+const CLIP_FALLBACK=P.idol;
+// Frame-by-frame manual keying from the user's 10.112 s clip. Angle is unwrapped so
+// body turns rather than snapping from front to back. Crouch and bend are separate.
+function rk(t,arms,feet,yaw,hip,crouch,bend,lean,x=0,z=0){return {t,arms,feet,yaw,hip,crouch,bend,lean,x,z}}
+const REFERENCE_DURATION=10.112;
+const REFERENCE_KEYS=[
+ rk(0.00,'headBehind','wide',0, .05,.10,0,-.03),
+ rk(.36,'headBehind','wide',0, .14,.11,0,-.02),
+ rk(.85,'headBehind','wide',-.06,-.13,.11,0,-.03),
+ rk(1.26,'headBehind','wide',.04, .12,.11,0,-.04),
+ rk(1.60,'oneHead','wide',.15,-.10,.10,0,-.02),
+ rk(1.94,'turnWaist','right',.90,.16,.09,0,0),
+ rk(2.25,'turnWaist','wide',2.20,.15,.08,0,-.03),
+ rk(2.61,'turnWaist','wide',2.65,-.08,.08,0,-.02),
+ rk(2.91,'braceThigh','wide',5.2,.09,.15,.38,.08),
+ rk(3.24,'braceThigh','wide',6.28,.06,.19,.67,.12),
+ rk(3.60,'braceThigh','wide',6.28,-.08,.22,.74,.14),
+ rk(4.14,'braceDeep','wide',6.25,.10,.25,.80,.11),
+ rk(4.62,'braceDeep','wide',6.30,-.06,.27,.77,.12),
+ rk(4.98,'squatGrip','squat',6.28,0,.55,.48,.06),
+ rk(5.38,'squatGrip','squat',6.29,.06,.72,.22,0),
+ rk(5.82,'squatGrip','squat',6.14,-.04,.75,.10,0),
+ rk(6.12,'lowPoint','squat',5.55,.08,.71,.09,-.03),
+ rk(6.58,'lowPoint','squat',5.31,-.08,.71,.08,-.03),
+ rk(6.96,'sideBrace','squat',4.70,.07,.69,.13,-.02),
+ rk(7.35,'sideBrace','squat',3.88,.10,.60,.23,.03),
+ rk(7.73,'sideBrace','squat',3.88,-.04,.45,.48,.11),
+ rk(8.04,'oneHead','wide',5.50,.05,.24,.22,0),
+ rk(8.33,'headBehind','wide',6.28,.13,.10,0,-.04),
+ rk(8.82,'headBehind','wide',6.28,-.13,.11,0,-.02),
+ rk(9.28,'headBehind','wide',6.27,.15,.11,0,-.03),
+ rk(9.73,'playfulRelease','wide',6.28,-.08,.10,0,-.02),
+ rk(10.10,'headBehind','wide',6.28,.05,.10,0,-.03)
+];
+function referencePoseAt(seconds){
+ const t=((seconds%REFERENCE_DURATION)+REFERENCE_DURATION)%REFERENCE_DURATION;
+ let i=0;while(i<REFERENCE_KEYS.length-2 && REFERENCE_KEYS[i+1].t<=t)i++;
+ const a=REFERENCE_KEYS[i],b=REFERENCE_KEYS[i+1],r=Math.min(1,Math.max(0,(t-a.t)/(b.t-a.t))),u=smooth(r);
+ const hands=[0,1].map(n=>li(ARMS[a.arms][n],ARMS[b.arms][n],u));
+ const feet=[0,1].map(n=>li(FEET[a.feet][n],FEET[b.feet][n],u));
+ const val=k=>lerp(a[k],b[k],u);
+ const inLow=t>=5.05 && t<=7.9;
+ const hip=val('hip')+.07*Math.sin(t*(inLow?17.8:18.8));
+ const crouch=val('crouch')+(inLow?.016*Math.sin(t*17.8):.018*Math.sin(t*12.5));
+ const zPulse=inLow?.075*Math.sin(t*17.8):.060*Math.sin(t*18.8+.5);
+ let chapter=0;const times=CATALOG[0][8];while(chapter<7&&t>=times[chapter+1])chapter++;
+ const beat=t/REFERENCE_DURATION*8;
+ return {beat,chapter,seconds:t,hands,feet,yaw:val('yaw'),hip,lean:val('lean'),bounce:0,
+ travelX:val('x'),travelZ:val('z'),zPulse,crouch,shoulders:.07*Math.sin(t*7),headNod:.025*Math.sin(t*5),
+ wristWave:0,tilt:.024*Math.sin(t*4.3),twist:0,bend:val('bend')};
+}
+
+function lerp(a,b,t){return a+(b-a)*t};function li(a,b,t){return a.map((v,i)=>lerp(v,b[i],t))};function smooth(t){return t*t*(3-2*t)}
+function poseAt(clip,time){
+ if(clip[4]==='reference20516') return referencePoseAt(time);
+ const bpm=clip[3],beat=((time*bpm/60)%8+8)%8,idx=Math.floor(beat/2),phase=(beat%2)/2;
+ const motif=clip[4],frames=P[motif]||CLIP_FALLBACK,k=frames[idx],next=frames[(idx+1)%4];
+ // Robot / pixel movements deliberately snap; other routines blend their named 1-2/3-4/5-6/7-8 poses.
+ let u=['robot','glitch','pixel'].includes(motif)?(phase<.68?0:smooth((phase-.68)/.32)):smooth(phase);
+ let hands=[li(ARMS[k.a][0],ARMS[next.a][0],u),li(ARMS[k.a][1],ARMS[next.a][1],u)];
+ let feet=[li(FEET[k.foot][0],FEET[next.foot][0],u),li(FEET[k.foot][1],FEET[next.foot][1],u)];
+ let yawEnd=next.yaw;if(idx===3&&Math.abs(k.yaw)>4)yawEnd+=Math.PI*2;
+ let yaw=lerp(k.yaw,yawEnd,u),hip=lerp(k.h,next.h,u),lean=lerp(k.lean,next.lean,u),bounce=lerp(k.bounce,next.bounce,u),travelX=lerp(k.rx,next.rx,u),travelZ=lerp(k.rz,next.rz,u);
+ const loop=2*Math.PI*beat/8,beatPhase=2*Math.PI*beat,halfBeat=2*Math.PI*beat/4;
+ let zPulse=0,crouch=0,shoulders=0,headNod=.03*Math.sin(halfBeat),wristWave=0;
+ switch(motif){
+ case 'hips': case 'belly':
+   hip+=.18*Math.sin(loop*2);zPulse=.10*Math.sin(loop*4);shoulders=-.08*Math.sin(loop*2);break;
+ case 'wine':
+   hip+=.19*Math.sin(loop);zPulse=.17*Math.cos(loop);crouch=.08;shoulders=-.07*Math.sin(loop);break;
+ case 'sultry':
+   hip+=.085*Math.sin(loop);zPulse=.055*Math.cos(loop);headNod=.055*Math.sin(loop);break;
+ case 'twerk':
+   crouch=.20+.045*Math.sin(beatPhase);zPulse=.085*Math.sin(beatPhase);lean+=.06;hip+=.055*Math.sin(beatPhase+1.57);break;
+ case 'bodywave':case 'slowroll':
+   lean+=.21*Math.sin(loop*2-.6);zPulse=.11*Math.sin(loop*2);shoulders=.13*Math.sin(loop*2+1.2);break;
+ case 'robot':case 'glitch':case 'pixel':
+   hip*=.35;bounce*=.3;shoulders=.06*(idx%2?1:-1);break;
+ case 'running':case 'march':case 'samba':case 'hop':case 'cheer':
+   bounce+=.045*Math.abs(Math.sin(beatPhase/2));shoulders=.045*Math.sin(beatPhase);break;
+ case 'moonwalk':
+   lean-=.025;bounce=.0;break;
+ case 'chair':case 'chairpop':
+   shoulders=.08*Math.sin(loop*2);break;
+ case 'pole':
+   travelX+=.09*Math.sin(loop);travelZ+=.075*Math.sin(loop+1.4);break;
+ case 'salsa':case 'bachata':
+   hip+=.06*Math.sin(halfBeat);break;
+ case 'ballet':case 'waltz':
+   bounce+=.042*(.5+.5*Math.cos(loop*3));break;
+ case 'kpop':case 'point':case 'jpopidol':
+   shoulders=.04*Math.sin(beatPhase);break;
+ case 'electro':case 'parapara':case 'vtuber':
+   wristWave=.06*Math.sin(beatPhase/2);break;
+ }
+ // The named choreography is explicitly driven by this clip's own keyframes, never a generic reused action.
+ return {beat,hands,feet,yaw,hip,lean,bounce,travelX,travelZ,zPulse,crouch,shoulders,headNod,wristWave,
+         tilt:Math.sin(halfBeat)*.053,twist:Math.sin(loop*2)*.06};
+}
+
+let clip=CATALOG[0],elapsed=0,last=0,paused=false,speed=1,camAngle=.23,camRadius=4.20,camElev=1.72,outfit='idol',drag=false,lastX=0;
+const palette={idol:{top:'#ffe1ed',skirt:'#fb77ae',hair:'#9470c4',hairLight:'#c6a4f1',shoes:'#f9e9ff'},studio:{top:'#c5cefb',skirt:'#777ee5',hair:'#51406a',hairLight:'#866f9d',shoes:'#f2f4ff'},neutral:{top:'#e7edf6',skirt:'#abbac7',hair:'#82909e',hairLight:'#a3adb8',shoes:'#e4edff'}};
+function avg(a,b){return a.map((v,i)=>(v+b[i])/2)};
+function rotateY(a,yaw){let c=Math.cos(yaw),s=Math.sin(yaw);return [a[0]*c+a[2]*s,a[1],-a[0]*s+a[2]*c]}
+function local(a,yaw,offset){let v=rotateY(a,yaw);return [v[0]+offset[0],v[1]+offset[1],v[2]+offset[2]]}
+function distance(a,b){return Math.hypot(a[0]-b[0],a[1]-b[1])}
+function camProject(pt,w,h){let eye=[Math.sin(camAngle)*camRadius,camElev,Math.cos(camAngle)*camRadius],target=[0,1.39,0],fwd=norm3(target.map((x,i)=>x-eye[i])),right=norm3(cross3(fwd,[0,1,0])),up=cross3(right,fwd),p=pt.map((x,i)=>x-eye[i]);let dx=dot3(p,right),dy=dot3(p,up),dep=dot3(p,fwd),s=Math.min(w/3.0,h/3.3)*4.1/Math.max(2.3,dep);return [w/2+dx*s,h*.57-dy*s,s,dep]}
+function dot3(a,b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]}
+function cross3(a,b){return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]}
+function norm3(a){let n=Math.hypot(...a)||1;return a.map(v=>v/n)}
+function fillOrb(pt,r,color,st=.7){let [x,y,s]=camProject(pt,CW,CH);r=Math.max(1,r*s);ctx.save();ctx.shadowColor=color;ctx.shadowBlur=2;let g=ctx.createRadialGradient(x-r*.28,y-r*.35,r*.06,x,y,r*1.22);g.addColorStop(0,'#ffffff');g.addColorStop(st,color);g.addColorStop(1,'#1d193a');ctx.fillStyle=g;ctx.beginPath();ctx.ellipse(x,y,r,r,0,0,Math.PI*2);ctx.fill();ctx.restore()}
+function tube(p1,p2,rad,color,bright=false){let a=camProject(p1,CW,CH),b=camProject(p2,CW,CH),r=rad*((a[2]+b[2])/2),line=ctx.createLinearGradient(a[0],a[1],b[0],b[1]);line.addColorStop(0,bright?'#ffe8f7':color);line.addColorStop(1,color);ctx.save();ctx.lineCap='round';ctx.lineJoin='round';ctx.lineWidth=Math.max(2,r*2);ctx.strokeStyle=line;ctx.shadowColor='#0007';ctx.shadowBlur=2;ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();ctx.restore();}
+function oval(pt,radii,color){const [x,y,s]=camProject(pt,CW,CH),r1=Math.max(2,radii[0]*s),r2=Math.max(2,radii[1]*s);ctx.save();let gradient=ctx.createLinearGradient(x-r1,y-r2,x+r1,y+r2);gradient.addColorStop(0,'#ffffff');gradient.addColorStop(.4,color);gradient.addColorStop(1,'#35304e');ctx.fillStyle=gradient;ctx.beginPath();ctx.ellipse(x,y,r1,r2,0,0,Math.PI*2);ctx.fill();ctx.restore()}
+let CW=300,CH=350;
+function draw(t){const dpr=Math.min(2,devicePixelRatio||1);CW=Math.max(150,canvas.clientWidth);CH=Math.max(180,canvas.clientHeight);let pw=Math.round(CW*dpr),ph=Math.round(CH*dpr);if(canvas.width!==pw||canvas.height!==ph){canvas.width=pw;canvas.height=ph}ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,CW,CH);
+ const bg=ctx.createRadialGradient(CW*.5,CH*.73,6,CW*.5,CH*.65,Math.max(CW,CH)*.69);bg.addColorStop(0,'#302445');bg.addColorStop(.55,'#171729');bg.addColorStop(1,'#0b1022');ctx.fillStyle=bg;ctx.fillRect(0,0,CW,CH);
+ // Perspective circular floor + halo.
+ let floor=camProject([0,.0,0],CW,CH),floors=Math.min(floor[2]*1.35,CW*.55),fog=ctx.createRadialGradient(floor[0],floor[1],2,floor[0],floor[1],floors);fog.addColorStop(0,'#a167b02b');fog.addColorStop(.8,'#7b64e016');fog.addColorStop(1,'#0000');ctx.fillStyle=fog;ctx.beginPath();ctx.ellipse(floor[0],floor[1],floors,floors*.24,0,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#b185ff50';ctx.lineWidth=1.5;ctx.beginPath();ctx.ellipse(floor[0],floor[1],floors*.76,floors*.19,0,0,Math.PI*2);ctx.stroke();
+ const p=poseAt(clip,t),rootY=1.10+p.bounce+.015*Math.sin(p.beat*Math.PI*2),offset=[p.hip*.32+p.travelX,rootY-1.09,p.zPulse*.24+p.travelZ],yaw=p.yaw;
+ const pitch=(p.bend||0)*1.28;
+ const bendPoint=(x,y,z)=>{const d=y-1.12;return [x,1.12+d*Math.cos(pitch)-p.crouch,z+d*Math.sin(pitch)];};
+ const at=q=>local(q,yaw,offset),C=palette[outfit],skin=outfit==='neutral'?'#bfccd9':'#f6c2b0';
+ // Props behind the dancer.
+ if(['chair','chairpop'].includes(clip[4])){const seat=[.91,.50,-.83],lc=[.59,.5,-1.09],rc=[1.22,.5,-1.09];tube([.57,.05,-1.06],[.57,.52,-1.06],.042,'#a9a4d9');tube([1.22,.05,-1.06],[1.22,.52,-1.06],.042,'#a9a4d9');tube([.60,.49,-1.08],[.60,1.20,-1.08],.045,'#d4ceef');tube([1.18,.49,-1.08],[1.18,1.20,-1.08],.045,'#d4ceef');tube([.60,1.2,-1.08],[1.18,1.2,-1.08],.042,'#d4ceef');oval(seat,[.34,.09],'#8b5f9a');}
+ if(clip[4]==='pole')tube([.67,0,-.36],[.67,2.89,-.36],.04,'#b3d0e5',true);
+ // Shoe, legs, lower body.
+ for(let side=0;side<2;side++){
+  const sign=side===0?-1:1,foot=p.feet[side];let hp=at([sign*.17,1.11-p.crouch,0]),knee=at([(sign*.17+foot[0])*.54,.63-p.crouch*(clip[4]==='reference20516'?.16:.43)+foot[1]*.3,foot[2]*.53+.10+(clip[4]==='reference20516'?p.crouch*.39:0)]),ankle=at([foot[0],.13+foot[1],foot[2]]);
+  ankle[1]=.13+Math.max(0,foot[1])+Math.max(0,p.bounce);
+  tube(hp,knee,.122,skin,true);fillOrb(knee,.075,skin);tube(knee,ankle,.091,skin,true);let shoe=at([foot[0],.11+foot[1],foot[2]+.12]);shoe[1]=.12+Math.max(0,foot[1])+Math.max(0,p.bounce);
+  oval(shoe,[.16,.082],C.shoes);
+  oval(at([foot[0],.23+foot[1],foot[2]]),[.102,.081],'#fff2ff');
+ }
+ const bh=bendPoint(p.hip*.16,2.18+p.headNod*.13,p.lean*.50),hY=bh[1],hZ=bh[2];
+ // Flowing back layer of lavender hair: a soft curved silhouette behind the dress.
+ const hp=(x,y,z)=>camProject(at([p.hip*.16+x,hY+y,hZ+z]),CW,CH);
+ const l=hp(-.22,.16,-.15),r=hp(.22,.16,-.15),bl=hp(-.29,-.77,-.19),br=hp(.29,-.77,-.19),sway=Math.sin(t*2.2+p.yaw)*9;
+ ctx.save();ctx.beginPath();ctx.moveTo(l[0],l[1]);ctx.bezierCurveTo(l[0]-17,l[1]+32,bl[0]-16+sway,bl[1]-26,bl[0]+sway,bl[1]);
+ ctx.quadraticCurveTo((bl[0]+br[0])/2+sway,(bl[1]+br[1])/2+18,br[0]+sway,br[1]);
+ ctx.bezierCurveTo(br[0]+18+sway,br[1]-28,r[0]+17,r[1]+33,r[0],r[1]);ctx.closePath();
+ let hg=ctx.createLinearGradient(l[0],l[1],br[0],br[1]);hg.addColorStop(0,'#e4c7ff');hg.addColorStop(.35,C.hairLight);hg.addColorStop(.77,C.hair);hg.addColorStop(1,'#65418f');ctx.fillStyle=hg;ctx.fill();ctx.strokeStyle='#f3ddff55';ctx.lineWidth=2;ctx.stroke();ctx.restore();
+ const waist=at(bendPoint(p.hip*.12,1.41,p.lean*.13)),sternum=at(bendPoint(p.hip*.15,1.72,p.lean*.52)),head=at(bendPoint(p.hip*.16+p.tilt*.18,2.19,p.lean*.50));
+ // Dress with 3D perspective gradient and skirt silhouette.
+ let w=camProject(waist,CW,CH),hips=camProject(at([0,1.08-p.crouch,0]),CW,CH),torso=camProject(sternum,CW,CH),sc=Math.max(hips[2],w[2]);ctx.save();ctx.beginPath();ctx.moveTo(w[0]-sc*.20,w[1]);ctx.lineTo(w[0]+sc*.20,w[1]);ctx.lineTo(hips[0]+sc*.42,hips[1]+sc*.09);ctx.quadraticCurveTo(hips[0],hips[1]+sc*.18,hips[0]-sc*.42,hips[1]+sc*.09);ctx.closePath();let g=ctx.createLinearGradient(w[0]-sc*.35,w[1],w[0]+sc*.3,hips[1]);g.addColorStop(0,'#fff8ff');g.addColorStop(.55,C.skirt);g.addColorStop(1,'#785180');ctx.fillStyle=g;ctx.fill();ctx.strokeStyle='#ffe7f8cc';ctx.lineWidth=2;ctx.stroke();ctx.restore();
+ // Swaying ruffled hem gives the dress a recognizable silhouette during steps and twirls.
+ for(let i=0;i<9;i++){let dx=(i-4)/4*.34,hh=at([p.hip*.10+dx,1.10-p.crouch+.026*Math.sin(t*3.3+i*.6),p.lean*.12+.10]);
+   oval(hh,[.065,.035],i%2?'#ffa5cb':'#ffe6f2');}
+ oval(sternum,[.30,.34],C.top);
+ oval(at([p.hip*.14,1.47-p.crouch,p.lean*.15+.25]),[.20,.06],'#fff0f8');
+ tube(at(bendPoint(0,1.9,p.lean*.29)),at(bendPoint(0,2.02,p.lean*.43)),.075,skin);
+ // Hair trails before the face.
+ const hr=at([p.hip*.16+p.tilt*.18,hY+.05,hZ-.13]);oval(hr,[.248,.25],C.hair);
+ // Two distinct long front locks with swaying tapered ends; the pink bodice remains visible.
+ for(let side of [-1,1]){let a=at([side*.19,hY+.13,hZ-.05]),b=at([side*(.28+.045*Math.sin(t*2+side)),hY-.56,hZ+.015]);tube(a,b,.063,C.hairLight,true)}
+ // Arms dance. Draw behind the head, in front of the body.
+ for(let side=0;side<2;side++){
+  const sign=side===0?-1:1,shoulderLocal=bendPoint(sign*.315+p.hip*.15,1.86,p.lean*.25),sh=at(shoulderLocal),hand=p.hands[side],special=clip[4]==='reference20516',endLocal=[hand[0],hand[1]-(special?0:p.crouch*.65),hand[2]+p.wristWave*(side?1:-1)],end=at(endLocal),elbow=at([(shoulderLocal[0]+endLocal[0])*.5+sign*.11,(shoulderLocal[1]+endLocal[1])*.5-.12,(shoulderLocal[2]+endLocal[2])*.5-.12]);
+  fillOrb(sh,.113,C.top);tube(sh,elbow,.090,skin,true);fillOrb(elbow,.052,skin);tube(elbow,end,.074,skin,true);fillOrb(end,.068,skin);
+ }
+ // Face follows torso yaw; eye visibility changes as user rotates 3D view.
+ oval(head,[.21,.24],skin);
+ oval(at([p.hip*.16+p.tilt*.18,hY+.19,hZ-.05]),[.245,.111],C.hair);
+ for(let side of [-1,1])oval(at([p.hip*.16+side*.11,hY+.15,hZ+.12]),[.098,.078],C.hairLight);
+ let facing=Math.cos(yaw-camAngle)>.12;
+ if(facing){let alpha=Math.max(.25,Math.cos(yaw-camAngle));ctx.globalAlpha=alpha;for(let side of [-1,1]){
+  const eye=camProject(at([p.hip*.16+p.tilt*.18+side*.084,hY+.020,hZ+.194]),CW,CH);
+  const rad=eye[2]*.055,ex=eye[0],ey=eye[1];
+  ctx.save();ctx.beginPath();ctx.ellipse(ex,ey,rad*.83,rad,0,0,2*Math.PI);ctx.fillStyle='#fffaff';ctx.fill();
+  ctx.strokeStyle='#493467';ctx.lineWidth=Math.max(1,rad*.10);ctx.beginPath();ctx.ellipse(ex,ey-.07*rad,rad*.9,rad*.96,0,Math.PI*.97,Math.PI*2.05);ctx.stroke();
+  let iris=ctx.createLinearGradient(ex,ey-rad*.6,ex,ey+rad*.64);iris.addColorStop(0,'#35205c');iris.addColorStop(.5,'#8862c4');iris.addColorStop(1,'#a47de0');
+  ctx.beginPath();ctx.ellipse(ex,ey,rad*.52,rad*.77,0,0,2*Math.PI);ctx.fillStyle=iris;ctx.fill();
+  ctx.beginPath();ctx.ellipse(ex,ey,rad*.25,rad*.53,0,0,2*Math.PI);ctx.fillStyle='#251a3b';ctx.fill();
+  ctx.beginPath();ctx.arc(ex-rad*.18,ey-rad*.26,rad*.18,0,2*Math.PI);ctx.fillStyle='#fff';ctx.fill();
+  ctx.beginPath();ctx.arc(ex+rad*.20,ey+rad*.21,rad*.09,0,2*Math.PI);ctx.fill();ctx.restore();
+  oval(at([p.hip*.16+p.tilt*.18+side*.16,hY-.063,hZ+.14]),[.047,.020],'#f797ad');}
+  oval(at([p.hip*.16+p.tilt*.18,hY-.11,hZ+.197]),[.045,.018],'#b96c8e');ctx.globalAlpha=1;}
+ oval(at([p.hip*.16+p.tilt*.18+.24,hY+.15,hZ-.06]),[.11,.068],'#ffb5d4');oval(at([p.hip*.16+p.tilt*.18+.29,hY+.15,hZ-.045]),[.040,.041],'#fff3fc');
+}
+function tick(ms){let dt=last?Math.min(.045,(ms-last)/1000):0;last=ms;if(!paused)elapsed+=dt*speed;draw(elapsed);requestAnimationFrame(tick)}
+window.Atlas3D={setClip(x){clip=x;elapsed=0},setBeat(b){elapsed=clip[4]==='reference20516'?((b%8+8)%8)*REFERENCE_DURATION/8:((b%8+8)%8)*60/clip[3]},setTime(t){elapsed=Math.max(0,t)},samplePose(b){return poseAt(clip,clip[4]==='reference20516'?((b%8+8)%8)*REFERENCE_DURATION/8:((b%8+8)%8)*60/clip[3])},setPlaying(on){paused=!on},isPlaying:()=>!paused,setSpeed(v){speed=v},setStyle(v){outfit=v},setCamera(v){camAngle=v},zoom(v){camRadius=v},reset(){elapsed=0},getClip:()=>clip,frame:()=>({time:elapsed,beat:poseAt(clip,elapsed).beat}),getWebGLVersion:()=>null};
+canvas.addEventListener('pointerdown',e=>{drag=true;lastX=e.clientX;canvas.setPointerCapture?.(e.pointerId)});
+canvas.addEventListener('pointermove',e=>{if(drag){camAngle+=(e.clientX-lastX)*.01;lastX=e.clientX}});
+for(let ev of ['pointerup','pointercancel'])canvas.addEventListener(ev,()=>drag=false);
+canvas.addEventListener('wheel',e=>{e.preventDefault();camRadius=Math.max(3.4,Math.min(8,camRadius+e.deltaY*.004))},{passive:false});
+document.getElementById('stageNotice').textContent='Drag to rotate • tap any count to preview';
+requestAnimationFrame(tick);
+})();
+</script>
+<script>'use strict';
+(function(){
+const $=id=>document.getElementById(id),files=document.querySelectorAll('[data-angle]');
+const FAVORITES_KEY='dance_atlas_3d_favorites_v1';
+let saved=new Set();try{saved=new Set(JSON.parse(localStorage.getItem(FAVORITES_KEY)||'[]'))}catch(e){}
+let selection=CATALOG[0],selectedCategory='All',style='Anime 3D',playing=true;
+const sourceVideo=$('sourceVideo'),sourceToggle=$('sourceToggle'),scrub=$('scrub');let showingSource=false;
+function showSource(on){showingSource=on&&selection[4]==='reference20516';sourceVideo.hidden=!showingSource;
+ sourceToggle.textContent=showingSource?'◀ Back to animated 3D':'▶ Import & compare your clip';
+ if(showingSource){window.Atlas3D?.setPlaying(false);sourceVideo.currentTime=window.Atlas3D?.frame().time%10.112||0; if(playing)sourceVideo.play().catch(()=>{});}
+ else {if(selection[4]==='reference20516')window.Atlas3D?.setTime(sourceVideo.currentTime||0);sourceVideo.pause();window.Atlas3D?.setPlaying(playing);}}
+sourceToggle.onclick=()=>{
+ if(showingSource){showSource(false);return;}
+ if(sourceVideo.getAttribute('src')){showSource(true);return;}
+ const picker=document.createElement('input');
+ picker.type='file';picker.accept='video/*';
+ picker.onchange=()=>{
+   const chosen=picker.files?.[0];
+   if(!chosen)return;
+   sourceVideo.src=URL.createObjectURL(chosen);
+   sourceVideo.load();
+   sourceVideo.onloadedmetadata=()=>showSource(true);
+   sourceToggle.textContent='▶ Compare selected clip';
+ };
+ picker.click();
+};
+
+const icons={'Anime & MMD':'✧','K-Pop & J-Pop':'♫','Hip-Hop & Street':'♬','Retro & Game':'★','Latin & World':'◈','Spicy / 18+':'♨','Contemporary':'❋'};
+$('totalCount').textContent=CATALOG.length;
+const filters=['All','Anime & MMD','K-Pop & J-Pop','Hip-Hop & Street','Retro & Game','Latin & World','Spicy / 18+','Contemporary','♡ Favorites'];
+function elem(tag,cls,text){let n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=text;return n}
+function list(){let q=$('search').value.trim().toLowerCase();let matches=CATALOG.filter(d=>(selectedCategory==='All'||selectedCategory===d[1]||(selectedCategory==='♡ Favorites'&&saved.has(d[0])))&&[d[1],d[2],d[4],d[5],d[6].join(' ')].join(' ').toLowerCase().includes(q));
+$('resultsCount').textContent=matches.length;$('empty').hidden=matches.length!==0;
+$('danceList').replaceChildren(...matches.map(d=>{let button=elem('button','danceItem'+(selection[0]===d[0]?' active':''));button.type='button';button.dataset.kind=d[1]==='Spicy / 18+'?'spicy':d[1]==='Hip-Hop & Street'?'street':'other';button.setAttribute('aria-pressed',String(d[0]===selection[0]));const icon=elem('span','danceIcon',icons[d[1]]),copy=elem('span','danceCopy'),title=elem('strong','',d[2]),sub=elem('small','',d[1]+' · '+d[3]+' BPM'),chev=elem('span','chev','›');copy.append(title,sub);button.append(icon,copy,chev);button.addEventListener('click',()=>{choose(d);if(window.innerWidth<921)document.querySelector('.playerBox').scrollIntoView({behavior:'smooth',block:'start'});});return button}));
+}
+function renderFilters(){let dest=$('filters');dest.replaceChildren(...filters.map(name=>{let b=elem('button','chip'+(selectedCategory===name?' active':''),name);b.type='button';b.setAttribute('aria-pressed',String(selectedCategory===name));b.onclick=()=>{selectedCategory=name;renderFilters();list()};return b}));}
+function promptFor(d){const mode=style==='Anime 3D'?'A high-quality stylized 3D anime adult dancer with expressive but anatomically plausible movement':style==='Photorealistic'?'A photorealistic adult professional dancer, full body visible, natural anatomy and realistic motion':'A cinematic performance featuring an adult dancer, elegant costume and dramatic yet readable studio lighting';if(d[4]==='reference20516')return mode+' performing the specific 10-second anime dance sequence from a provided reference clip: begin front-facing in a wide stance with both hands behind the head, elbows open, and alternating hip pulses (0–1.6s); turn to rear three-quarter view and glance back over the shoulder (1.6–2.8s); pivot forward, bend deeply at the hips, and brace the palms against the thighs (2.8–5.0s); descend into a compact wide-knee squat with both hands near the knees (5.0–5.9s); remain low, turn into profile, extend the right arm in a clear sideways pointing gesture (5.9–7.1s); rotate through a rear three-quarter squat with rhythmic hip pulses and gradually rise (7.1–8.25s); return to a front-facing, wide stance with hands behind the head, finishing with controlled hip sways (8.25–10.1s). Keep the movements in this exact order with readable leg bends, full-body framing, smooth transitions, and no extra steps or scene cuts. One 10.1-second phrase, anatomically plausible balance, steady reference camera, no captions.';return mode+' performing an original '+d[2]+' routine. '+d[5]+' Choreography over 8 counts: '+d[6].join(' ')+' Tempo approximately '+d[3]+' BPM. Show the ENTIRE body from head to feet in one stable front three-quarter camera shot. Keep footwork, arms, torso and weight transfers clear. Smooth transitions, continuous movement, no jump cuts, realistic balance, complete one eight-count phrase and seamlessly return to the starting pose. Clean background, no captions or text. This is an original '+d[1]+'-inspired dance study, not a recreation of a copyrighted performance.'}
+function choose(d){if(showingSource)showSource(false);selection=d;window.Atlas3D?.setClip(d);$('stageCategory').textContent=d[1];$('typeLabel').textContent=d[1].toUpperCase();$('selectedTitle').textContent=d[2];$('description').textContent=d[5];const ref=d[4]==='reference20516';sourceToggle.hidden=!ref;$('tempoTag').textContent=ref?'10.1s • source-timed':d[3]+' BPM';$('levelTag').textContent=ref?'8 timecoded phases':'8-count loop';$('stepHeading').textContent=ref?'10.1-second movement breakdown • tap a timestamp':'Live movement breakdown • tap a count';scrub.hidden=!ref;$('scrubLabel').hidden=!ref;$('steps').replaceChildren(...d[6].map((t,i)=>{let li=elem('li','movementStep'+(i===0?' active':''));let b=elem('button','countJump',t);b.type='button';b.title=ref?'Jump to '+d[8][i]+' seconds':'Jump to counts '+(i*2+1)+'–'+(i*2+2);b.onclick=()=>ref?window.Atlas3D?.setTime(d[8][i]):window.Atlas3D?.setBeat(i*2);li.append(b);return li}));$('videoPrompt').value=promptFor(d);updateFavorite();list();lastBeat=-1} 
+function updateFavorite(){let s=saved.has(selection[0]);$('favoriteBtn').classList.toggle('saved',s);$('favoriteBtn').textContent=s?'♥ Saved':'♡ Save';$('favoriteBtn').setAttribute('aria-label',s?'Remove '+selection[2]+' from favorites':'Save '+selection[2]+' to favorites')}
+$('favoriteBtn').onclick=()=>{let key=selection[0];if(saved.has(key))saved.delete(key);else saved.add(key);try{localStorage.setItem(FAVORITES_KEY,JSON.stringify([...saved]))}catch(e){}updateFavorite();list()};
+$('playPause').onclick=()=>{playing=!playing;window.Atlas3D?.setPlaying(showingSource?false:playing);if(showingSource){if(playing)sourceVideo.play().catch(()=>{});else sourceVideo.pause();}$('playPause').textContent=playing?'Ⅱ':'▶';$('playPause').title=playing?'Pause dance':'Play dance';$('playPause').setAttribute('aria-label',playing?'Pause dance':'Play dance')};
+$('restart').onclick=()=>{window.Atlas3D?.reset();if(showingSource){sourceVideo.currentTime=0;sourceVideo.play().catch(()=>{});}};
+scrub.oninput=e=>{const v=Number(e.target.value);window.Atlas3D?.setTime(v);if(showingSource)sourceVideo.currentTime=v;};$('speed').onchange=e=>{window.Atlas3D?.setSpeed(Number(e.target.value));sourceVideo.playbackRate=Number(e.target.value);};$('model').onchange=e=>window.Atlas3D?.setStyle(e.target.value);$('zoom').oninput=e=>window.Atlas3D?.zoom(Number(e.target.value));
+files.forEach(b=>{b.onclick=()=>{files.forEach(x=>x.classList.remove('selected'));b.classList.add('selected');window.Atlas3D?.setCamera(Number(b.dataset.angle))}});
+$('search').addEventListener('input',list);
+for(let b of document.querySelectorAll('[data-format]'))b.onclick=()=>{style=b.dataset.format;document.querySelectorAll('[data-format]').forEach(x=>x.classList.toggle('selected',x===b));$('videoPrompt').value=promptFor(selection)};
+$('copyPrompt').onclick=async()=>{let v=$('videoPrompt'),ok=false;try{if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(v.value);ok=true}}catch(e){}if(!ok){v.focus();v.select();try{ok=document.execCommand('copy')}catch(e){}}$('copyStatus').textContent=ok?'Prompt copied! Paste it into your video-generation app.':'Prompt selected. Use your device’s Copy command.';};
+window.addEventListener('keydown',e=>{if(e.target?.tagName==='INPUT'||e.target?.tagName==='TEXTAREA')return;if(e.code==='Space'){e.preventDefault();$('playPause').click()}else if(e.key==='ArrowRight'){let i=CATALOG.findIndex(x=>x[0]===selection[0]);choose(CATALOG[(i+1)%CATALOG.length])}else if(e.key==='ArrowLeft'){let i=CATALOG.findIndex(x=>x[0]===selection[0]);choose(CATALOG[(i+CATALOG.length-1)%CATALOG.length])}});
+let lastBeat=-1;function stepReadout(){let f=window.Atlas3D?.frame()||{time:0,beat:0};const ref=selection[4]==='reference20516';const seconds=ref?(showingSource?sourceVideo.currentTime:f.time%10.112):0;const beat=1+Math.floor(ref?(seconds/10.112*8):f.beat);const chapter=ref?selection[8].reduce((acc,t,i)=>seconds>=t?i:acc,0):Math.floor((beat-1)/2);if(beat!==lastBeat||ref){$('beatReadout').textContent=ref?'CLIP '+seconds.toFixed(1)+' / 10.1s':'BEAT '+beat+' / 8';const steps=[...document.querySelectorAll('.movementStep')];steps.forEach((s,i)=>s.classList.toggle('active',i===chapter));lastBeat=beat;if(ref){$('scrubTime').textContent=seconds.toFixed(1)+' / 10.1s';if(!document.activeElement?.isSameNode(scrub))scrub.value=seconds.toFixed(2);}}requestAnimationFrame(stepReadout)}
+renderFilters();choose(selection);requestAnimationFrame(stepReadout);
+window.__ATLAS_TEST__={catalog:CATALOG,selectById:id=>{const d=CATALOG.find(x=>x[0]===id);if(d)choose(d)},current:()=>selection[0]};
+})();
+</script>
+</body></html>

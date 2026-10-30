@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0c1120">
+  <meta name="color-scheme" content="dark light">
+  <meta name="description" content="English reference gallery with 288 pose groups, 1,439 multi-angle images, categories, favorites and search.">
+  <meta name="application-name" content="POSE Atlas English">
+  <title>POSE Atlas — English Pose Reference Gallery</title>
+  
+  
+  <style>
+:root{color-scheme:dark;--bg:#0c1120;--surface:#151c2c;--surface2:#1b2538;--surface3:#28334a;--ink:#f6f7fe;--muted:#98a5b9;--line:#2c3850;--violet:#a58eff;--violetdeep:#7657e9;--accent:#5fe2bd;--chip:#222c42;--shadow:0 18px 40px #0005;--radius:17px}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}body.dialog-open{overflow:hidden}button,input,select{font:inherit}button{cursor:pointer;color:inherit}a{color:var(--violet)}a:hover{text-decoration:none}[hidden]{display:none!important}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:3px}.content-width{width:min(1300px,calc(100% - 48px));margin-inline:auto}
+.topbar{height:75px;display:flex;align-items:center;justify-content:space-between;padding:0 max(calc((100vw - 1300px)/2),24px);border-bottom:1px solid var(--line);background:var(--bg);position:relative;z-index:5}.brand{display:flex;gap:12px;align-items:center;letter-spacing:1.8px}.brand .logo{width:42px;height:42px;color:white;display:grid;place-items:center;border-radius:13px;background:linear-gradient(140deg,#a995ff,#6e57de);box-shadow:0 8px 20px #8960e944}.brand strong{display:block;font-weight:800;font-size:16px;line-height:1.25}.brand strong span{color:var(--violet)}.brand small{font-size:9px;letter-spacing:3px;color:var(--muted)}.top-actions{display:flex;gap:8px}.icon-button{width:39px;height:39px;display:grid;place-items:center;border:1px solid var(--line);border-radius:12px;background:var(--surface);font-size:19px}.icon-button:hover{background:var(--surface2)}
+.hero{padding:45px 0 38px;display:flex;justify-content:space-between;align-items:end;gap:35px;border-bottom:1px solid var(--line)}.eyebrow{font-size:11px;letter-spacing:2.1px;font-weight:750;color:var(--accent);display:flex;align-items:center;gap:8px}.eyebrow-dot{height:7px;width:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent)}.hero h1{font-size:clamp(35px,4.5vw,64px);line-height:1.08;letter-spacing:-2.4px;margin:14px 0 14px;font-weight:820}.hero h1 em{font-style:normal;color:var(--violet)}.hero p{max-width:580px;margin:0;color:var(--muted);line-height:1.7}.hero-stats{display:flex;align-items:center;gap:22px;flex-shrink:0;padding-bottom:8px}.hero-stats>div:not(.stat-divider){text-align:center}.hero-stats strong{display:block;font-size:29px;letter-spacing:-1px}.hero-stats span{color:var(--muted);font-size:11px;white-space:nowrap}.stat-divider{height:30px;width:1px;background:var(--line)}
+.work-area{padding-top:25px}.segment-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px}.tiny-heading{font-size:11px;letter-spacing:1.7px;font-weight:800;color:var(--muted)}.tiny-right{font-size:11px;color:var(--accent);text-align:right}.collections{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}.collection{min-width:0;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:13px 13px 12px;font-size:13px;font-weight:760;transition:background .18s,border-color .18s,transform .18s}.collection span{display:block;font-size:10px;font-weight:500;color:var(--muted);margin-top:3px}.collection:hover{border-color:var(--violet);transform:translateY(-1px)}.collection.is-selected{background:linear-gradient(125deg,var(--violetdeep),#493e94);border-color:var(--violet);color:white}.collection.is-selected span{color:#e1d9ff}
+.search-controls{display:flex;gap:10px;margin-top:18px}.search-input-wrap{position:relative;display:flex;align-items:center;flex:1;min-width:0}.search-symbol{position:absolute;left:16px;color:var(--muted);font-size:28px;font-weight:300;line-height:1}.search-input-wrap input{height:49px;min-width:0;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:12px;color:var(--ink);padding:0 51px 0 49px;outline:0}.search-input-wrap input:focus{border-color:var(--violet)}.search-input-wrap input::placeholder{color:var(--muted);opacity:.85}.search-input-wrap kbd{position:absolute;right:16px;color:var(--muted);font-size:10px;border:1px solid var(--line);border-radius:5px;padding:2px 7px}.filter-button{height:49px;display:flex;align-items:center;gap:9px;padding:0 19px;border:1px solid var(--line);background:var(--surface);border-radius:12px;font-weight:650}.filter-button>span:first-child{font-size:19px;color:var(--violet)}.filter-count{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;background:var(--violet);color:var(--bg);border-radius:50%;font-size:11px}.filters{display:grid;grid-template-columns:2fr 1.2fr 1.2fr auto;gap:12px;margin-top:12px;padding:16px;background:var(--surface);border:1px solid var(--line);border-radius:14px;align-items:end}.filters label{font-size:11px;font-weight:700;color:var(--muted);display:grid;gap:7px}.filters select{width:100%;height:41px;padding:0 12px;background:var(--surface2);color:var(--ink);border:1px solid var(--line);border-radius:9px}.text-button{height:41px;background:transparent;border:1px solid var(--line);border-radius:9px;padding:0 17px;font-size:12px;font-weight:700}.text-button:hover{border-color:var(--violet)}
+.gallery-area{padding:33px 0 50px;min-height:48vh}.gallery-heading{display:flex;align-items:end;justify-content:space-between;margin-bottom:18px;gap:15px}.gallery-heading h2{font-size:20px;margin:0;font-weight:800;letter-spacing:-.4px}.gallery-heading p{margin:4px 0 0;color:var(--muted);font-size:12px}.gallery-heading .hint{color:var(--muted);font-size:12px}.gallery-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}.pose-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;min-width:0;transition:transform .18s,border-color .18s,box-shadow .18s;cursor:pointer}.pose-card:hover,.pose-card:focus-visible{transform:translateY(-2px);border-color:var(--violet);box-shadow:var(--shadow)}.card-art{position:relative;aspect-ratio:3/4;overflow:hidden;background:linear-gradient(125deg,var(--surface2),var(--surface3))}.card-art img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .22s;opacity:1}.pose-card:hover .card-art img{transform:scale(1.02)}.card-top{position:absolute;top:10px;left:10px;right:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:6px;pointer-events:none}.tag{background:#080a10cf;color:white;padding:5px 9px;font-size:10px;line-height:1.1;border-radius:7px;backdrop-filter:blur(6px);font-weight:780}.tag.angle{background:#fffef0;color:#182032}.card-fave{position:absolute;right:10px;bottom:10px;width:33px;height:33px;border-radius:10px;display:grid;place-items:center;border:1px solid #fff8;background:#121a25c9;color:white;font-size:20px}.card-fave.saved{color:#ffd27e}.card-body{padding:13px 13px 14px}.card-body h3{margin:0;height:44px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:13px;font-weight:750;line-height:1.6}.card-meta{display:flex;justify-content:space-between;gap:7px;align-items:center;margin-top:8px;font-size:10px;color:var(--muted)}.card-meta span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.angle-preview{display:flex;gap:6px;margin-top:12px}.mini-preview{min-width:0;flex:1;border:1px solid var(--line);background:var(--surface2);border-radius:7px;overflow:hidden;padding:2px;cursor:pointer;color:var(--muted);text-align:center}.mini-preview img{display:block;width:100%;aspect-ratio:1;object-fit:cover;border-radius:5px}.mini-preview span{display:block;font-size:8px;overflow:hidden;text-overflow:clip;white-space:nowrap}.mini-preview:hover{border-color:var(--violet)}.load-more{display:block;margin:27px auto 0;height:46px;min-width:220px;padding:0 21px;border-radius:11px;background:var(--surface);border:1px solid var(--line);font-weight:720}.load-more:hover{border-color:var(--violet);color:var(--violet)}.loading-block,.empty-block{grid-column:1/-1;text-align:center;padding:74px 16px;border:1px dashed var(--line);border-radius:15px;color:var(--muted)}.empty-block h3{color:var(--ink)}.empty-block button{margin-top:12px}.spinner{height:28px;width:28px;margin:auto;border:3px solid var(--line);border-top-color:var(--violet);border-radius:50%;animation:spin .9s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}.footer{padding:19px 0 30px;border-top:1px solid var(--line);color:var(--muted);font-size:11px;display:flex;justify-content:space-between;gap:15px;flex-wrap:wrap}
+.viewer{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;background:#090b11f5;color:#f9faff}.viewer-toolbar{min-height:70px;padding:13px max(18px,calc((100vw - 1150px)/2));display:flex;justify-content:space-between;gap:12px;align-items:center;border-bottom:1px solid #ffffff20}.viewer-toolbar strong{display:block;line-height:1.2;max-width:70vw;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:15px}.viewer-toolbar small{display:block;margin-top:3px;color:#aeb7c7}.viewer-actions{display:flex;gap:8px}.viewer-icon{border:1px solid #ffffff34;background:#ffffff18;width:39px;height:39px;border-radius:11px;font-size:24px}.viewer-icon.saved{color:#ffd36e}.viewer-stage{min-height:0;flex:1;display:flex;align-items:center;justify-content:center;position:relative;padding:12px 58px;overflow:hidden;touch-action:pan-y}.viewer-stage img{display:block;max-width:100%;max-height:100%;object-fit:contain;box-shadow:0 8px 60px #0008}.viewer-arrow{position:absolute;top:50%;transform:translateY(-50%);width:40px;height:60px;border:1px solid #ffffff2b;background:#ffffff14;border-radius:11px;font-size:40px;line-height:1}.viewer-arrow:hover{background:#ffffff3b}.viewer-arrow.left{left:12px}.viewer-arrow.right{right:12px}.viewer-image-message{position:absolute;inset:20px;display:grid;place-items:center;background:#111b2bf0;text-align:center}.viewer-bottom{border-top:1px solid #ffffff20;padding:12px max(18px,calc((100vw - 1150px)/2)) 17px}.viewer-angles{display:flex;justify-content:center;gap:5px;flex-wrap:wrap}.angle-pill{border:1px solid #ffffff2d;background:#ffffff12;border-radius:7px;padding:7px 11px;color:#bfc8d9;font-size:11px}.angle-pill.selected{background:#8068f7;border-color:#b4a6ff;color:#fff}.viewer-bottom-buttons{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:12px}.subtle-button,.primary-button{min-height:36px;border-radius:9px;padding:6px 12px;font-weight:700;font-size:11px;border:1px solid #ffffff30;background:#ffffff13;color:white}.primary-button{background:#715be3;border-color:#9788ff}.subtle-button:hover,.primary-button:hover{filter:brightness(1.2)}
+.modal-backdrop{position:fixed;inset:0;z-index:80;background:#0009;display:grid;place-items:center;padding:20px}.about-modal{width:min(580px,100%);max-height:min(720px,calc(100vh - 40px));overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:25px;box-shadow:var(--shadow)}.about-title{display:flex;justify-content:space-between;align-items:center;gap:10px}.about-title h2{margin:0;font-size:22px}.about-modal h3{margin:19px 0 4px}.about-modal p{color:var(--muted);line-height:1.7}.about-links{display:flex;gap:16px;flex-wrap:wrap;margin-top:20px}.toast{position:fixed;z-index:120;left:50%;bottom:26px;transform:translateX(-50%);padding:11px 16px;border:1px solid var(--line);background:var(--surface2);box-shadow:var(--shadow);color:var(--ink);border-radius:11px;max-width:90vw;font-size:12px;text-align:center}
+body.light{color-scheme:light;--bg:#f7f8ff;--surface:#fff;--surface2:#f0f0fa;--surface3:#e5e9f7;--ink:#161b2f;--muted:#69748a;--line:#dfe3ee;--violet:#6451c9;--violetdeep:#6546d8;--accent:#188e79;--chip:#edf0ff;--shadow:0 18px 38px #2731511f}.light .brand .logo{color:white}.light .collection.is-selected span{color:#e5dbff}.light .hero h1 em{color:#7559e8}.light .card-fave{color:#fff}.light .viewer{color:white}
+@media(max-width:1100px){.collections{display:flex;overflow-x:auto;padding-bottom:5px}.collection{min-width:155px}.gallery-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.hero-stats{gap:12px}}
+@media(max-width:760px){.content-width{width:calc(100% - 28px)}.topbar{height:66px;padding:0 14px}.hero{padding:28px 0 27px;display:block}.hero h1{font-size:clamp(35px,9.5vw,53px);letter-spacing:-1.8px}.hero p{font-size:13px}.hero-stats{margin-top:22px;justify-content:space-around;padding:14px 12px;border-radius:13px;background:var(--surface);border:1px solid var(--line)}.hero-stats strong{font-size:22px}.work-area{padding-top:20px}.collections{gap:7px}.collection{min-width:137px;padding:11px}.collection span{font-size:10px}.filter-button{padding:0 12px}.filters{display:none;grid-template-columns:1fr 1fr;padding:12px}.filters.open{display:grid}.filters label:first-child{grid-column:1/-1}.filters .text-button{grid-column:1/-1}.gallery-area{padding-top:24px}.gallery-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.card-body{padding:10px}.card-body h3{font-size:12px;height:40px}.angle-preview{gap:3px}.mini-preview{padding:1px}.mini-preview span{font-size:7px}.card-meta{font-size:9px}.gallery-heading .hint{display:none}.viewer-toolbar{padding:10px 12px;min-height:61px}.viewer-toolbar strong{max-width:63vw;font-size:12px}.viewer-stage{padding:6px 35px}.viewer-arrow{width:30px;height:53px;font-size:30px}.viewer-arrow.left{left:3px}.viewer-arrow.right{right:3px}.viewer-bottom{padding:10px 8px 12px}.angle-pill{font-size:10px;padding:7px}.viewer-bottom-buttons{gap:5px}.subtle-button,.primary-button{font-size:10px;padding:5px 8px}.about-modal{padding:17px}.footer{font-size:10px}}
+@media(max-width:380px){.hero h1{font-size:34px}.gallery-grid{gap:7px}.angle-preview{display:none}.card-art{aspect-ratio:3/4}.card-body h3{height:57px}.card-meta{font-size:8px}.search-input-wrap input::placeholder{font-size:11px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+
+
+.atlas-nav{position:fixed;bottom:0;left:0;right:0;z-index:8;display:flex;gap:8px;justify-content:center;align-items:center;padding:10px max(13px,env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom));background:rgba(15,15,28,.96);border-top:1px solid #4a455f;box-shadow:0 -6px 28px #0008;backdrop-filter:blur(18px);color:#ebe9f9;font:700 13px/1.2 system-ui,sans-serif}
+.atlas-nav a{display:flex;align-items:center;justify-content:center;flex:1;min-height:40px;max-width:220px;padding:10px 7px;border-radius:11px;color:#c4c0d9;text-decoration:none;background:#29283b;border:1px solid #44445c}
+.atlas-nav a[aria-current=page]{color:#1c1228;border-color:#efb0d2;background:linear-gradient(110deg,#ffa9ce,#b2a1ff)}
+body{padding-bottom:calc(84px + env(safe-area-inset-bottom))!important}
+.atlas-nav a:focus-visible{outline:3px solid #f78cba;outline-offset:2px}
+</style>
+</head>
+<body><nav class="atlas-nav" aria-label="App sections"><a href="Dance_Atlas_English.html">♫ Dances</a><a href="POSE_Atlas_English.html" aria-current="page">◎ Poses</a><a href="Costume_Atlas_English.html">✧ Costumes</a></nav>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"><svg viewBox="0 0 40 40" width="26" height="26"><circle cx="20" cy="9" r="5" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" d="M20 15v12m-10-8h20M20 27 12 36m8-9 8 9"/></svg></span>
+      <div><strong>POSE <span>ATLAS</span></strong><small>ENGLISH EDITION</small></div>
+    </div>
+    <div class="top-actions">
+      <button id="themeButton" class="icon-button" title="Switch color theme" aria-label="Switch color theme">☀</button>
+      <button id="aboutButton" class="icon-button" title="About this gallery" aria-label="About this gallery">ⓘ</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero content-width" aria-labelledby="heroTitle">
+      <div class="hero-intro">
+        <div class="eyebrow"><span class="eyebrow-dot"></span> ARTIST REFERENCE LIBRARY</div>
+        <h1 id="heroTitle">Every angle.<br><em>Every possibility.</em></h1>
+        <p>Explore poses in English. Find inspiration, switch camera angles, save favorites, and view the original reference images.</p>
+      </div>
+      <div class="hero-stats" aria-label="Gallery statistics">
+        <div><strong id="groupCount">288</strong><span>Pose sets</span></div>
+        <div class="stat-divider"></div>
+        <div><strong id="imageCount">1,439</strong><span>Images</span></div>
+        <div class="stat-divider"></div>
+        <div><strong>5</strong><span>Angles</span></div>
+      </div>
+    </section>
+
+    <section class="work-area content-width" aria-label="Gallery browsing controls">
+      <div class="segment-head">
+        <span class="tiny-heading">COLLECTIONS</span><span class="tiny-right" id="connectionStatus" role="status">Connecting to source…</span>
+      </div>
+      <div class="collections" id="systemTabs" role="tablist" aria-label="Pose collections">
+        <button type="button" class="collection is-selected" data-system="all" role="tab" aria-selected="true">All poses <span>288 sets</span></button>
+        <button type="button" class="collection" data-system="full_single" role="tab" aria-selected="false">Full body <span>Standard</span></button>
+        <button type="button" class="collection" data-system="full_sexy" role="tab" aria-selected="false">Glamour <span>Full body</span></button>
+        <button type="button" class="collection" data-system="upper80v2" role="tab" aria-selected="false">Upper body <span>Portrait</span></button>
+        <button type="button" class="collection" data-system="pair60" role="tab" aria-selected="false">Two-person <span>Partner poses</span></button>
+        <button type="button" class="collection" data-system="favorites" role="tab" aria-selected="false">★ Favorites <span>Saved locally</span></button>
+      </div>
+      <div class="search-controls">
+        <label class="search-input-wrap" for="searchInput"><span class="search-symbol">⌕</span><input id="searchInput" type="search" autocomplete="off" placeholder="Search poses, categories or IDs…" aria-label="Search poses, categories or IDs"><kbd>/</kbd></label>
+        <button id="filterToggle" type="button" class="filter-button" aria-controls="advancedFilters" aria-expanded="false"><span>☷</span> Filters <span id="filterBadge" class="filter-count" hidden>0</span></button>
+      </div>
+      <div class="filters" id="advancedFilters">
+        <label>Category<select id="categorySelect"><option value="all">All categories</option></select></label>
+        <label>Viewpoint<select id="angleSelect"><option value="all">All angles</option><option value="front">Front</option><option value="diag">Three-quarter</option><option value="side">Side</option><option value="high">Overhead</option><option value="low">Low angle</option></select></label>
+        <label>Browse as<select id="modeSelect"><option value="groups">Pose groups</option><option value="images">Individual images</option></select></label>
+        <button id="resetButton" type="button" class="text-button">Clear filters</button>
+      </div>
+    </section>
+
+    <section class="gallery-area content-width" aria-label="English pose reference results">
+      <div class="gallery-heading"><div><h2 id="resultsTitle">All pose sets</h2><p id="resultsSubtitle" aria-live="polite">Fetching the gallery…</p></div><span class="hint">Tap a card to explore angles <span aria-hidden="true">↗</span></span></div>
+      <div class="gallery-grid" id="galleryGrid" aria-live="off"><div class="loading-block"><div class="spinner" aria-hidden="true"></div><p>Loading the pose gallery…</p></div></div>
+      <button id="loadMoreButton" type="button" class="load-more" hidden>Show more poses <span aria-hidden="true">↓</span></button>
+    </section>
+  </main>
+
+  <footer class="footer content-width"><span>POSE Atlas — English companion · For artistic reference</span><span>Source imagery © original creator · <a target="_blank" rel="noopener noreferrer" href="https://github.com/anhao/ai-pose-gallery-zh">Repository & credits</a></span></footer>
+
+  <div id="viewer" class="viewer" hidden role="dialog" aria-modal="true" aria-label="Pose image viewer" tabindex="-1">
+    <div class="viewer-toolbar"><div><strong id="viewerTitle">Pose</strong><small id="viewerSubtitle">Angle</small></div><div class="viewer-actions"><button id="favoriteButton" type="button" class="viewer-icon" aria-label="Save pose to favorites" title="Save pose">☆</button><button id="viewerClose" type="button" class="viewer-icon" aria-label="Close viewer" title="Close">×</button></div></div>
+    <div class="viewer-stage" id="viewerStage"><button id="previousAngle" class="viewer-arrow left" aria-label="Previous angle">‹</button><img id="viewerImage" src="" alt="" loading="eager"><button id="nextAngle" class="viewer-arrow right" aria-label="Next angle">›</button><div class="viewer-image-message" id="viewerImageMessage" hidden>Image unavailable. Try opening the source.</div></div>
+    <div class="viewer-bottom"><div id="viewerAngleTabs" class="viewer-angles" aria-label="Available angles"></div><div class="viewer-bottom-buttons"><button id="prevPose" class="subtle-button" title="Previous pose">← Previous pose</button><button id="copyId" class="subtle-button">Copy ID</button><button id="openOriginal" class="primary-button">Open original ↗</button><button id="downloadOriginal" class="subtle-button">Save PNG to Gallery ↓</button><button id="nextPose" class="subtle-button" title="Next pose">Next pose →</button></div></div>
+  </div>
+
+  <div id="aboutModal" class="modal-backdrop" hidden><div class="about-modal" role="dialog" aria-modal="true" aria-labelledby="aboutTitle"><div class="about-title"><h2 id="aboutTitle">About POSE Atlas</h2><button type="button" id="aboutClose" class="icon-button" aria-label="Close about dialog">×</button></div><p>This independent English-language companion helps artists browse the public AI Pose Gallery reference collection.</p><h3>How to use</h3><p>Search by English pose name, category or ID. Filter by collection and camera angle, tap to view the full-size image, swipe sideways to change angles, and use the star to keep favorites on this device.</p><h3>Original source & rights</h3><p>The original project and translated source data are maintained by Anhao, based on material by Gia (@giaaibusi). The original images and data are <strong>not</strong> covered by the source-code MIT license. Images are streamed from the original public gallery, not bundled or re-licensed here. Some references depict adult-themed positions; this gallery is intended for adults.</p><p>The gallery needs an internet connection to fetch source metadata and images. Any saved favorites and previously loaded metadata are kept locally on your device.</p><div class="about-links"><a href="https://github.com/anhao/ai-pose-gallery-zh" target="_blank" rel="noopener noreferrer">View original project ↗</a><a href="https://ai-pose-gallery.pages.dev/" target="_blank" rel="noopener noreferrer">Visit original site ↗</a></div></div></div>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script id="embeddedEnglishNames" type="application/json">{"full_sexy_P001": "S-Curve Standing Pose · Hip Pushed Sideways", "full_sexy_P002": "Back Arch · Both Hands Sweeping Hair", "full_sexy_P003": "Hip Thrust · Looking Back Over Shoulder", "full_sexy_P004": "Leaning Forward · Hands on Knees", "full_sexy_P005": "Standing · Knee Hugged to Chest · Arched Back", "full_sexy_P006": "Hands Against Wall · Hips Pushed Back", "full_sexy_P007": "Back View · Looking Over Shoulder · Hip Emphasis", "full_sexy_P008": "Standing High Leg Hold · I-Shape", "full_sexy_P009": "Brushing Hair Back · Shower-Inspired Pose", "full_sexy_P010": "Standing Cleavage Emphasis", "full_sexy_P011": "Arms Reaching Up · Twisting the Waist", "full_sexy_P012": "Standing V-Shape · High Side Leg Raise", "full_sexy_P013": "Hands Behind Back · Chest Lifted", "full_sexy_P014": "Standing Forward Fold · Hips Raised · Hands on Floor", "full_sexy_P015": "Hands on Hips · Knee Inward · Leaning Back", "full_sexy_P016": "Side-Sitting · One Hand Supporting · Curved Torso", "full_sexy_P017": "Seiza Sitting · Chest Lifted · Back Arched", "full_sexy_P018": "M-Leg Sitting · Hands Supporting Behind", "full_sexy_P019": "M-Leg Sitting · Hands on Knees", "full_sexy_P020": "Wide V-Leg Sitting · Hands Behind", "full_sexy_P021": "Seated High Leg Raise · Holding Ankle", "full_sexy_P022": "M-Leg Recline · Supported on Both Elbows", "full_sexy_P023": "Legs Extended · Side Elbow Support", "full_sexy_P024": "Seated · Holding Legs Open", "full_sexy_P025": "Holding One Knee · Arched Back", "full_sexy_P026": "Side-Sitting · Sweeping Hair Back", "full_sexy_P027": "Side-Sitting · Hands Forward · Chest Pressed Together", "full_sexy_P028": "One Knee Raised · Hands Behind for Support", "full_sexy_P029": "Seated · One Leg Open Wide", "full_sexy_P030": "Knees Hugged · Slightly Open", "full_sexy_P031": "Kneeling · Torso Leaning Back · Hands Behind Head", "full_sexy_P032": "On All Fours · Back Arched · Looking Forward", "full_sexy_P033": "Wide-Knee Kneel · Hips Lowered", "full_sexy_P034": "Seiza Kneel · Sweeping Hair Back", "full_sexy_P035": "One-Knee Kneel · Hand on Thigh", "full_sexy_P036": "Rider-Inspired Kneel · Wide Knees · Hands Forward", "full_sexy_P037": "Rider-Inspired Kneel · Hips Lowered · Hair Sweep", "full_sexy_P038": "Deep Kneeling Backbend · Holding Heels", "full_sexy_P039": "Kneeling Waist Twist · One Arm Raised", "full_sexy_P040": "Cat Stretch · Chest Down · Hips High · Side View", "full_sexy_P041": "On All Fours · One Leg Lifted High Behind", "full_sexy_P042": "Knees Apart in Seiza · Hands Forward · Pleading Pose", "full_sexy_P043": "Kneeling · Hips Pushed Forward", "full_sexy_P044": "Kneeling · Side Support · Curved Torso", "full_sexy_P045": "Kneeling Backbend · One Hand Reaching for Heel", "full_sexy_P046": "Side-Lying · Defined Waist Curve · Bent Leg", "full_sexy_P047": "Lying Face Down · Chin in Hands · Legs Raised", "full_sexy_P048": "Lying Face Down · Torso Lifted into Deep Arch", "full_sexy_P049": "Lying on Back · Torso Raised · One Leg High", "full_sexy_P050": "Lying on Back · Knees Together to One Side", "full_sexy_P051": "Face Down · Elbow Support · Legs Slightly Apart", "full_sexy_P052": "Side-Lying S-Curve · Arm Overhead", "full_sexy_P053": "Side-Lying on Bed · Inviting Pose", "full_sexy_P054": "Face Down · Hips Raised", "full_sexy_P055": "On Back · Raised Legs in V-Shape", "full_sexy_P056": "On Back · Back Arched · Arms Overhead", "full_sexy_P057": "Face Down · Looking Back · One Knee Bent Out", "full_sexy_P058": "Side-Lying · Upper Leg Raised · Holding Ankle", "full_sexy_P059": "On Back · Knees Up · One Arm Overhead", "full_sexy_P060": "Face Down · Frog-Leg Position", "full_sexy_P061": "Side-Lying Rear View · Hip Silhouette", "full_sexy_P062": "On Back · Both Knees Hugged to Chest", "full_sexy_P063": "Face Down · Chin in Hands · One Leg Raised", "full_sexy_P064": "On Back · One Knee Open to the Side", "full_sexy_P065": "Propped on Elbows · One Knee Raised", "full_sexy_P066": "High Hip Bridge · Knees Apart", "full_sexy_P067": "Folded-Body Recline · Holding Thighs · Side View", "full_sexy_P068": "Folded-Body Recline · Legs Beyond Head · Side View", "full_sexy_P069": "Folded-Body Recline · Knees Beside Head · Side View", "full_sexy_P070": "Wide-Leg Squat · Street-Style Pose", "full_sexy_P071": "Tiptoe Wide Squat · Both Hands on Floor", "full_sexy_P072": "Bridge Pose · Hands and Feet Supporting", "full_sexy_P073": "Standing Split · Deep Forward Fold · Back Leg Raised", "full_sexy_P074": "Front Split · Upper Body Arched Back", "full_sexy_P075": "Full Side Split · Upper Body Lifted", "full_sexy_P076": "Shoulder Stand · Legs in a V", "full_sexy_P077": "Kneeling Backbend · Both Hands Touching Floor", "full_sexy_P078": "Wide-Leg Squat · Hands Behind Head", "full_sexy_P079": "One-Leg Bridge · Hip Lift · Leg Pointed Up", "full_sexy_P080": "Reverse Tabletop · Hips Pushed Up", "full_single_P001": "Reclined Sitting · One Knee Raised", "full_single_P002": "One-Hand Support · Legs Extended Diagonally", "full_single_P003": "Both Hands Behind · Chest Lifted", "full_single_P004": "Triangle Sitting · Knees Tilted Left", "full_single_P005": "One Knee Raised · Hand in Hair", "full_single_P006": "Legs Angled Sideways · Hand on Hip", "full_single_P007": "Reclined Sitting · Both Elbows Supporting", "full_single_P008": "One Knee Raised · Hands Behind Head", "full_single_P009": "Leaning Right · Elbow Support", "full_single_P010": "Touching the Ankle", "full_single_P011": "Hands Behind Head · Chest Open · Back Arched", "full_single_P012": "One Knee Raised · Chin Resting on Hand", "full_single_P013": "Leaning Back · Feet Raised", "full_single_P014": "One Knee Raised · Holding Ankle", "full_single_P015": "Contrapposto Standing · Hand on Hip", "full_single_P016": "Standing · Brushing Hair Back with Both Hands", "full_single_P017": "Standing · Looking Back Over Shoulder", "full_single_P018": "Standing · Hands on Hips", "full_single_P019": "Standing · Arms Reaching Overhead", "full_single_P020": "Standing · One Hand Behind Head", "full_single_P021": "Standing · Hand at Neck and Thigh", "full_single_P022": "Standing · Arms Back · Chest Lifted", "full_single_P024": "Standing · One Leg Raised Behind", "full_single_P025": "Standing · Legs Apart · Hands on Hips", "full_single_P026": "Standing · One Arm Up · Hip Pushed Out", "full_single_P027": "Standing · Both Hands at Nape", "full_single_P029": "Standing · Hair Flowing", "full_single_P030": "Tiptoe Standing · Arms in a V", "full_single_P031": "Kneeling · Both Hands on Thighs", "full_single_P032": "Kneeling · Hands Behind Head", "full_single_P033": "Kneeling on One Knee · Hand on Knee", "full_single_P034": "Kneeling · Upper Body Leaned Back", "full_single_P035": "Kneeling · Arms Extended Up", "full_single_P036": "Kneeling · Hair Sweep and Hand on Hip", "full_single_P037": "One-Knee Kneel · Looking Up", "full_single_P038": "Kneeling · Side Lean · Hand on Floor", "full_single_P039": "Kneeling · Hands at Waist · Back Arched", "full_single_P040": "Kneeling · Hip Swing · Arm Raised", "full_single_P041": "Side-Sitting · Hands on Thighs", "full_single_P042": "Side-Sitting · Hands Supporting Forward", "full_single_P043": "Side-Sitting · Hands Behind Head", "full_single_P044": "Side-Sitting · Hands Supporting Behind", "full_single_P045": "Side-Sitting · Legs Flowing to Right", "full_single_P046": "Side-Sitting · Hand on Cheek", "full_single_P047": "Side-Sitting · One Arm Reaching Up", "full_single_P048": "Side-Sitting · Hand on Side of Neck", "full_single_P049": "On Back · Both Arms Overhead", "full_single_P050": "Side-Lying · Chin Resting on Hand", "full_single_P051": "Face Down · One Leg Raised", "full_single_P052": "On Back · One Knee Raised", "full_single_P054": "Side-Lying · Waist Curve", "full_single_P056": "On Back · Legs Straight Up", "full_single_P057": "Side-Lying · One Arm Overhead", "full_single_P058": "Face Down · Head Resting on Arm", "full_single_P059": "On Back · Chest Lifted", "full_single_P061": "Squatting · Hands on Knees", "full_single_P062": "Squatting · One Hand on Floor", "full_single_P063": "Squatting · Chin in Hand", "full_single_P064": "Squatting · Hand in Hair", "full_single_P065": "Tiptoe Squat · Both Hands on Floor", "full_single_P066": "Squatting · Looking Back", "full_single_P067": "Leaning Forward · Hands on Knees", "full_single_P068": "Leaning Forward · Touching Shin", "full_single_P069": "Leaning Forward · One Hand on Hip · Looking Up", "full_single_P070": "Leaning Forward · Hands on Thighs · Hips Back", "full_single_P071": "Leaning Forward · Arms Hanging Loose", "full_single_P072": "Leaning Forward · One Leg Raised Behind", "full_single_P073": "Standing Backbend · Chest Open", "full_single_P074": "Kneeling Backbend · Hands Supporting Behind", "full_single_P075": "Deep Backbend · Arms Raised", "full_single_P077": "Torso Twist · Standing · Arms Open", "full_single_P078": "Torso Twist · Kneeling · Looking Back", "full_single_P079": "Torso Twist · Seated · Upper Body Rotation", "upper80v2_P001": "Double-Hand Heart at Chest", "upper80v2_P002": "Heart Shape with Arms Overhead", "upper80v2_P003": "Finger Heart Beside Cheek", "upper80v2_P004": "Double Peace Signs Below Chin", "upper80v2_P005": "Gal-Style Peace Signs · Palms Out", "upper80v2_P006": "Fists Against Cheeks · Cute Pose", "upper80v2_P007": "Bunny-Ears Gesture", "upper80v2_P008": "Lucky Cat Paws", "upper80v2_P009": "Playful Roar Gesture", "upper80v2_P010": "Shh Gesture · Finger on Lips", "upper80v2_P011": "Head Tilt · One Eye Covered · Wink", "upper80v2_P012": "Blowing a Kiss", "upper80v2_P013": "Face Framed by Both Palms · Flower Pose", "upper80v2_P014": "Poking Cheek with Index Finger", "upper80v2_P015": "Oversized Sleeves · Hands Covering Mouth", "upper80v2_P016": "Please Gesture · Palms Together", "upper80v2_P017": "Hugging Self · Bashful Pose", "upper80v2_P018": "Finger Frame · Camera Viewfinder", "upper80v2_P019": "Tucking Hair Behind Ear", "upper80v2_P020": "Holding Cheeks with Both Hands", "upper80v2_P021": "Salute Pose", "upper80v2_P022": "Pointing at Camera", "upper80v2_P023": "Yawning Stretch · One Hand at Mouth", "upper80v2_P024": "One-Hand Heart · Other Hand at Chest", "upper80v2_P025": "Peeking Through Fingers", "upper80v2_P026": "Double-Hand Heart by Face · Leaning Forward", "upper80v2_P027": "Traditional Doll Pose · Both Hands on Knees", "upper80v2_P028": "Elbows In · Cleavage Emphasis · Waist Twist", "upper80v2_P029": "Raised Shoulders · Hands Clasped Below Chest", "upper80v2_P030": "Arms Crossed Beneath Chest · Lifted", "upper80v2_P031": "Both Hands Supporting from Below", "upper80v2_P032": "Chest Resting on Table", "upper80v2_P033": "Forearms Vertical · Pressed In from Both Sides", "upper80v2_P034": "One Arm Supporting Chest", "upper80v2_P035": "Top-Down Composition · Hands on Collarbones", "upper80v2_P036": "Hands at Waist · Chest Lifted", "upper80v2_P037": "Both Hands Pressing Chest from Sides", "upper80v2_P038": "Hands Clasped Behind Back · Chest Lifted", "upper80v2_P039": "Kneeling · Hands Forward · Torso Lowered", "upper80v2_P040": "One Elbow on Knee · Chin in Hand", "upper80v2_P041": "Arms Wrapped Around Chest", "upper80v2_P042": "One Hand at Chest · Other in Hair", "upper80v2_P043": "One Shoulder Lowered · Leaning Forward", "upper80v2_P044": "Face Down · Elbows Supporting · Chest Emphasis", "upper80v2_P045": "Back Arched · Arms Pressed In", "upper80v2_P046": "One Arm at Waist · Other at Neck", "upper80v2_P047": "Hands at Upper Chest · Pressing In", "upper80v2_P048": "Chin on Back of Hand · Leaning Forward", "upper80v2_P049": "On All Fours · Top-Down Chest View", "upper80v2_P050": "Arms Folded Under Chest · Lifted", "upper80v2_P051": "Holding Chest with Both Hands", "upper80v2_P052": "Both Hands Massaging Chest", "upper80v2_P053": "Covering Chest with Both Hands", "upper80v2_P054": "One Hand Covering Chest · Other on Waist", "upper80v2_P055": "One Hand at Chest · Other Brushing Hair", "upper80v2_P056": "Sliding a Shoulder Strap Off", "upper80v2_P057": "Deep Backbend · Both Hands in Hair", "upper80v2_P058": "Hands Behind Head · Underarms Exposed", "upper80v2_P059": "Tracing Beneath Chest with Fingertips", "upper80v2_P060": "Finger on Lips · One Hand at Chest", "upper80v2_P061": "Fingertips Covering Upper Chest", "upper80v2_P062": "One Hand at Chest · Other at Stomach", "upper80v2_P063": "Hands Behind · Chest Pushed Forward", "upper80v2_P064": "Face Down · One Hand Supporting Chest", "upper80v2_P065": "On All Fours · Deep Back Arch · Looking Up", "upper80v2_P066": "On All Fours · One Hand at Chest", "upper80v2_P067": "Catlike Stretch · Front View", "upper80v2_P068": "Kneeling Backbend · Touching Heel", "upper80v2_P069": "Kneeling · Hands Behind Head", "upper80v2_P070": "Finger Lightly Between Lips", "upper80v2_P071": "Holding Side of Neck · Back Arched", "upper80v2_P072": "Hands Pressing In and Lifting", "upper80v2_P073": "Side-Lying · Arms Around Chest", "upper80v2_P074": "On Back · Hands at Chest", "upper80v2_P075": "On Back · Arms Raised and Back Arched", "upper80v2_P076": "Leaning Forward · Hand on Inner Thigh", "upper80v2_P077": "Unfastening a Hook Behind Back", "upper80v2_P078": "One Hand Covering · Other Supporting", "upper80v2_P079": "Hand Placed Between Cleavage", "upper80v2_P080": "Top-Down View · Hands at Chest · Looking Up", "pair60_P001": "Facing Each Other · One Knee Lifted", "pair60_P002": "Face Down Together · Nestled Between Legs", "pair60_P003": "Ankles Lifted · Legs Open in a V", "pair60_P004": "Legs Over Shoulders · Leaning Above Partner", "pair60_P005": "Hips Elevated · Faces Close Together", "pair60_P006": "Inverted Embrace · Interlocking Positions", "pair60_P007": "Standing Forward Lean · Hands on Knees", "pair60_P008": "Legs Entwined · Holding Hands", "pair60_P009": "Back Hug · Sitting on Partner's Lap", "pair60_P010": "Side-Sitting on Partner's Lap · Embrace", "pair60_P011": "Legs Extended · Bodies Overlapping", "pair60_P013": "One Partner on All Fours · Other Kneeling Behind", "pair60_P014": "Hands on Floor · Legs Held by Partner", "pair60_P015": "On All Fours Between Partner's Legs", "pair60_P016": "Legs Draped · Leaning Against Partner's Knees", "pair60_P017": "Embracing · Legs Wrapped Around Waist", "pair60_P018": "Facing Away · Sitting on Partner's Hips", "pair60_P019": "Facing Away · Squatting on Partner's Lap", "pair60_P020": "Side-Lying · One Leg Over Partner's Shoulder", "pair60_P021": "One Above the Other · Legs Extended", "pair60_P022": "Wrists Crossed Overhead · Hugging Knees", "pair60_P023": "Facing Each Other · Sitting on Partner's Hips", "pair60_P024": "On Back · Hips Supported by Knees", "pair60_P025": "Leaning Forward on Partner's Knees", "pair60_P026": "On Back · Hips Lifted by Partner", "pair60_P030": "Arms Extended · Waist Supported", "pair60_P031": "Sitting Against Raised Knee", "pair60_P032": "Overlapping · Crossed Positions", "pair60_P034": "Kneeling Over Partner's Face", "pair60_P036": "Hands Behind for Support · Legs Entwined", "pair60_P037": "Embracing One Raised Leg", "pair60_P040": "Leaning Over · Kissing Partner's Chest", "pair60_P041": "Chest Against Floor · Hips Raised", "pair60_P042": "Cross-Legged Embrace", "pair60_P043": "Knee Drawn Toward Shoulder · Holding Ankle", "pair60_P044": "Arm Reaching Around Partner · Hand on Chest", "pair60_P045": "Deep Forward Fold · Hands on Floor", "pair60_P046": "Sitting · Both Legs Extended Forward", "pair60_P047": "Legs Crossed · One Leg on Shoulder", "pair60_P048": "Face Down · One Leg Raised", "pair60_P049": "Standing Embrace · Legs Entwined", "pair60_P050": "Standing Stretch · One Leg Lifted Behind", "pair60_P051": "Whispering in Ear · Touching Cheek", "pair60_P052": "Wrists Held Overhead", "pair60_P053": "Hug from Behind · Hands at Chest", "pair60_P054": "Carried in Arms · Back Arched", "pair60_P055": "Side-Sitting Together · One Leg Raised", "pair60_P056": "Propped on Elbows · Looking Down at Partner", "pair60_P057": "Lying Together · Legs Draped", "pair60_P058": "Chin Resting Between Partner's Legs", "pair60_P059": "Holding Behind Knees · Legs Wide Apart", "pair60_P060": "Both Knees Drawn to Chest", "pair60_P061": "Leaning Forward · Partner Supporting Waist", "pair60_P062": "Sitting on Lap · Legs Around Waist", "pair60_P063": "Reclined Against Partner · Knees Spread Wide"}</script>
+<script>
+/* POSE Atlas English — independent, credit-preserving, no image redistribution. */
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const SOURCE_DATA = [
+    'https://raw.githubusercontent.com/anhao/ai-pose-gallery-zh/main/data/pose-zh.json',
+    'https://ai-pose-gallery.pages.dev/data/pose-zh.json',
+    'https://ai-pose-gallery.anhao.app/data/pose-zh.json'
+  ];
+  const IMAGE_HOSTS = [
+    'https://ai-pose-gallery.anhao.app/',
+    'https://ai-pose-gallery.pages.dev/',
+    'https://raw.githubusercontent.com/anhao/ai-pose-gallery-zh/main/'
+  ];
+  const ANGLES = [
+    { id: 'front', title: 'Front', short: 'Front' },
+    { id: 'diag', title: 'Three-quarter', short: '3/4' },
+    { id: 'side', title: 'Side', short: 'Side' },
+    { id: 'high', title: 'Overhead', short: 'Top' },
+    { id: 'low', title: 'Low angle', short: 'Low' }
+  ];
+  const SYSTEMS = {
+    full_single: 'Full body · Standard',
+    full_sexy: 'Full body · Glamour',
+    upper80v2: 'Upper body · Portrait',
+    pair60: 'Two-person · Partner poses'
+  };
+  const CATEGORIES = {
+    '站姿': 'Standing', '坐姿': 'Sitting', '跪立・四肢着地': 'Kneeling / All fours',
+    '趴卧': 'Reclining / Lying down', '特殊': 'Special / Athletic', '跪立': 'Kneeling',
+    '侧坐・女孩坐': 'Side-sitting', '蹲姿': 'Squatting', '前倾': 'Leaning forward',
+    '后仰・挺背': 'Backbends', '扭身': 'Twisting', '可爱系': 'Cute poses',
+    '挤胸・强调事业线系': 'Chest / Cleavage emphasis', '性感・大胆系': 'Glamour / Bold',
+    '立位': 'Partner standing', '贴脸系': 'Close-up partner poses',
+    '正常位（传教士）': 'Missionary / Face-to-face', '后入位': 'Rear-entry positions',
+    '坐位': 'Partner sitting', '背向坐位': 'Back-facing seated poses',
+    '骑乘位': 'Riding / Straddling', '侧卧位': 'Side-lying partners',
+    '面对面坐位': 'Face-to-face sitting', '立位贴身': 'Standing embrace',
+    '坐位贴身': 'Seated embrace', '贴身': 'Close contact'
+  };
+  const state = {
+    titles: {}, allGroups: [], visibleGroups: [], favorites: new Set(),
+    system: 'all', category: 'all', angle: 'all', mode: 'groups', search: '',
+    page: 1, perPage: 32, viewerGroupId: null, viewerAngle: 'front',
+    dataSource: '', online: false, dark: true
+  };
+  let toastTimeout = null;
+  const MAX_CACHE_LENGTH = 2 * 1024 * 1024;
+
+  const safeGet = key => { try { return localStorage.getItem(key); } catch (_) { return null; } };
+  const safeSet = (key, value) => { try { localStorage.setItem(key, value); return true; } catch (_) { return false; } };
+  const escapeHTML = text => String(text).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
+  const groupKey = id => id.replace(/_(front|diag|side|high|low)$/, '');
+  const systemKey = id => groupKey(id).replace(/_P\d+$/, '');
+  const angleKey = id => id.match(/_(front|diag|side|high|low)$/)?.[1] || 'front';
+  const imageURL = (path, hostIndex = 0) => IMAGE_HOSTS[hostIndex] + path;
+  const angleName = id => ANGLES.find(a => a.id === id)?.title || 'View';
+  const tr = (id, fallback) => state.titles[id] || fallback;
+  const imageByAngle = (group, id) => group.items.find(item => item.angle === id) || group.items[0];
+  
+  function toast(text) {
+    const item = $('toast'); item.textContent = text; item.hidden = false;
+    clearTimeout(toastTimeout); toastTimeout = setTimeout(() => { item.hidden = true; }, 3400);
+  }
+
+  function setTheme(light) {
+    state.dark = !light;
+    document.body.classList.toggle('light', light);
+    $('themeButton').textContent = light ? '☾' : '☀';
+    $('themeButton').title = light ? 'Switch to dark mode' : 'Switch to light mode';
+    safeSet('poseatlas.theme', light ? 'light' : 'dark');
+  }
+
+  function normalize(records) {
+    if (!Array.isArray(records)) throw new Error('Unexpected data format');
+    const groups = new Map();
+    for (const raw of records) {
+      if (!raw || typeof raw.id !== 'string') continue;
+      const key = groupKey(raw.id), system = systemKey(raw.id);
+      if (!Object.hasOwn(SYSTEMS, system)) continue;
+      const rawThumb = raw['缩略图'], rawOriginal = raw['原图'];
+      if (typeof rawThumb !== 'string' || typeof rawOriginal !== 'string') continue;
+      if (!/^thumbs\/[\w.-]+\.jpe?g$/i.test(rawThumb) || !/^img\/[\w.-]+\.png$/i.test(rawOriginal)) continue;
+      let group = groups.get(key);
+      if (!group) {
+        const number = key.match(/_P(\d+)$/)?.[1] || '000';
+        const category = CATEGORIES[raw['分类']] || 'Other poses';
+        group = { key, number: 'P' + number, system, category, title: tr(key, `${SYSTEMS[system]} · Pose P${number}`), items: [] };
+        groups.set(key, group);
+      }
+      const angle = angleKey(raw.id);
+      if (!group.items.some(item => item.angle === angle)) group.items.push({ id: raw.id, angle, thumb: rawThumb, original: rawOriginal });
+    }
+    for (const group of groups.values()) group.items.sort((a,b) => ANGLES.findIndex(x=>x.id === a.angle)-ANGLES.findIndex(x=>x.id === b.angle));
+    return [...groups.values()];
+  }
+
+  function makeCompact(raw) {
+    return raw.map(r => ({id:r.id, '分类':r['分类'], '缩略图':r['缩略图'], '原图':r['原图']}));
+  }
+
+  async function getRemoteData(url) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12500);
+    try {
+      const response = await fetch(url, { mode:'cors', signal: controller.signal, cache:'default' });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      return await response.json();
+    } finally { clearTimeout(timeout); }
+  }
+
+  async function loadRecords() {
+    let records;
+    for (const url of SOURCE_DATA) {
+      try {
+        const result = await getRemoteData(url);
+        if (!Array.isArray(result) || result.length < 250) continue;
+        state.online = true;
+        state.dataSource = url;
+        records = result;
+        const compact = JSON.stringify(makeCompact(result));
+        if (compact.length <= MAX_CACHE_LENGTH) safeSet('poseatlas.cached-pose-data',compact);
+        break;
+      } catch (err) { console.warn('Gallery source unavailable:',url,err.message); }
+    }
+    if (!records) {
+      try { records = JSON.parse(safeGet('poseatlas.cached-pose-data') || 'null'); } catch (_) { /* no cached data */ }
+      if (!Array.isArray(records) || records.length < 250) throw new Error('Unable to connect to the source library. Check your internet connection and retry.');
+      state.online = false;
+    }
+    return normalize(records);
+  }
+
+  function fillCategorySelect(groups) {
+    const categories = [...new Set(groups.map(g => g.category))].sort((a,b)=>a.localeCompare(b));
+    $('categorySelect').innerHTML = '<option value="all">All categories<\/option>' + categories.map(c => `<option value="${escapeHTML(c)}">${escapeHTML(c)}<\/option>`).join('');
+  }
+
+  function activeCount() { return (state.category!=='all'?1:0) + (state.angle!=='all'?1:0) + (state.mode!=='groups'?1:0); }
+  function updateFilterBadge() {
+    const badge=$('filterBadge');const count=activeCount();badge.hidden=count===0;badge.textContent=count;
+    $('filterToggle').setAttribute('aria-expanded',String($('advancedFilters').classList.contains('open')));
+  }
+
+  function getGroups() {
+    const query=state.search.trim().toLocaleLowerCase('en-US');
+    return state.allGroups.filter(g => {
+      if (state.system === 'favorites') { if (!state.favorites.has(g.key)) return false; }
+      else if (state.system !== 'all' && state.system !== g.system) return false;
+      if (state.category !== 'all' && g.category !== state.category) return false;
+      if (state.angle !== 'all' && !g.items.some(it=>it.angle===state.angle)) return false;
+      if (query && ![g.title,g.category,SYSTEMS[g.system],g.key,g.number,...g.items.map(it=>it.id)].join(' ').toLocaleLowerCase('en-US').includes(query)) return false;
+      return true;
+    });
+  }
+
+  function render() {
+    const groups = getGroups();state.visibleGroups=groups;
+    const list = state.mode === 'groups' ? groups.map(g => ({group:g,item:imageByAngle(g,state.angle==='all'?'front':state.angle)})) : groups.flatMap(g => g.items.filter(i=>state.angle==='all'||state.angle===i.angle).map(item=>({group:g,item})));
+    const items = list.slice(0,state.perPage*state.page), root=$('galleryGrid');
+    root.replaceChildren();
+    const titleMap={all:'All pose sets',full_single:'Full-body references',full_sexy:'Glamour references',upper80v2:'Upper-body references',pair60:'Two-person references',favorites:'Your favorites'};
+    $('resultsTitle').textContent = titleMap[state.system] || 'Pose references';
+    const itemType=state.mode==='groups'?(list.length===1?'pose set':'pose sets'):(list.length===1?'image':'images');
+    $('resultsSubtitle').textContent=`${list.length.toLocaleString('en-US')} ${itemType} found${state.search?' for “'+state.search+'”':''}`;
+    if (list.length===0) {
+      root.innerHTML = '<div class="empty-block"><h3>No matching poses<\/h3><p>Try a different search or clear your filters.<\/p><button type="button" class="text-button" id="clearFromEmpty">Clear search and filters<\/button><\/div>';
+      $('clearFromEmpty').addEventListener('click',resetFilters);
+    } else {
+      const frag=document.createDocumentFragment();for (const {group,item} of items) frag.appendChild(makeCard(group,item));root.appendChild(frag);
+    }
+    $('loadMoreButton').hidden = items.length >= list.length;
+    document.querySelectorAll('.collection').forEach(btn=>{
+      const selected=btn.dataset.system===state.system;btn.classList.toggle('is-selected',selected);btn.setAttribute('aria-selected',String(selected));
+    });
+    $('filterBadge').hidden = activeCount()===0;
+    updateFilterBadge();
+  }
+
+  function makeCard(group,item) {
+    const card=document.createElement('article');card.className='pose-card';card.tabIndex=0;
+    card.setAttribute('role','button');card.setAttribute('aria-label',`${group.title}, ${angleName(item.angle)}. Open viewer.`);
+    const image=document.createElement('img');image.src=imageURL(item.thumb);image.alt=`${group.title} — ${angleName(item.angle)} view`;image.loading='lazy';image.decoding='async';
+    image.addEventListener('error',()=>{const next=Number(image.dataset.fallback||0)+1;if(next<IMAGE_HOSTS.length){image.dataset.fallback=String(next);image.src=imageURL(item.thumb,next);}});
+    const imageBox=document.createElement('div');imageBox.className='card-art';imageBox.appendChild(image);
+    const tags=document.createElement('div');tags.className='card-top';tags.innerHTML=`<span class="tag">${group.number}<\/span><span class="tag angle">${angleName(item.angle)}<\/span>`;imageBox.appendChild(tags);
+    const favorite=document.createElement('button');favorite.type='button';favorite.className='card-fave'+(state.favorites.has(group.key)?' saved':'');favorite.textContent=state.favorites.has(group.key)?'★':'☆';favorite.title='Toggle favorite';favorite.setAttribute('aria-label',state.favorites.has(group.key)?'Remove from favorites':'Add to favorites');
+    favorite.addEventListener('click',ev=>{ev.stopPropagation();toggleFavoriteKey(group.key);const saved=state.favorites.has(group.key);favorite.textContent=saved?'★':'☆';favorite.classList.toggle('saved',saved);favorite.setAttribute('aria-label',saved?'Remove from favorites':'Add to favorites');});imageBox.appendChild(favorite);
+    const body=document.createElement('div');body.className='card-body';body.innerHTML=`<h3>${escapeHTML(group.title)}<\/h3><div class="card-meta"><span>${escapeHTML(group.category)}<\/span><span>${group.items.length} views<\/span><\/div>`;
+    if (state.mode==='groups') {
+      const strip=document.createElement('div');strip.className='angle-preview';
+      for(const view of group.items){const mini=document.createElement('button');mini.className='mini-preview';mini.type='button';mini.title=`Open ${angleName(view.angle)} view`;mini.setAttribute('aria-label',mini.title);
+        const thumb=document.createElement('img');thumb.src=imageURL(view.thumb);thumb.alt='';thumb.loading='lazy';thumb.decoding='async';thumb.addEventListener('error',()=>{const next=Number(thumb.dataset.fallback||0)+1;if(next<IMAGE_HOSTS.length){thumb.dataset.fallback=String(next);thumb.src=imageURL(view.thumb,next)}});mini.appendChild(thumb);
+        const label=document.createElement('span');label.textContent=ANGLES.find(a=>a.id===view.angle)?.short||'View';mini.appendChild(label);
+        mini.addEventListener('click',ev=>{ev.stopPropagation();openViewer(group.key,view.angle)});strip.appendChild(mini);
+      }
+      body.appendChild(strip);
+    }
+    card.append(imageBox,body);
+    card.addEventListener('click',()=>openViewer(group.key,item.angle));
+    card.addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();openViewer(group.key,item.angle)}});
+    return card;
+  }
+
+  function currentGroup(){return state.allGroups.find(g=>g.key===state.viewerGroupId)}
+  function currentItem(){const group=currentGroup();return group&&imageByAngle(group,state.viewerAngle)}
+  function updateViewer() {
+    const group=currentGroup();if(!group)return;
+    const item=imageByAngle(group,state.viewerAngle);state.viewerAngle=item.angle;
+    $('viewerTitle').textContent=group.title;
+    $('viewerSubtitle').textContent=`${SYSTEMS[group.system]} · ${group.number} · ${angleName(item.angle)}`;
+    const image=$('viewerImage');$('viewerImageMessage').hidden=true;image.dataset.fallback='';image.alt=`${group.title}, ${angleName(item.angle)} camera angle`;
+    image.src=imageURL(item.original);
+    const thumbs=document.createDocumentFragment();for(const view of group.items){const btn=document.createElement('button');btn.type='button';btn.className='angle-pill'+(view.angle===item.angle?' selected':'');btn.textContent=angleName(view.angle);btn.setAttribute('aria-pressed',String(view.angle===item.angle));btn.addEventListener('click',()=>{state.viewerAngle=view.angle;updateViewer()});thumbs.appendChild(btn)}
+    $('viewerAngleTabs').replaceChildren(thumbs);
+    const saved=state.favorites.has(group.key);$('favoriteButton').textContent=saved?'★':'☆';$('favoriteButton').classList.toggle('saved',saved);$('favoriteButton').setAttribute('aria-label',saved?'Remove from favorites':'Add to favorites');
+    const ix=state.visibleGroups.findIndex(g=>g.key===group.key);$('prevPose').disabled=ix<=0;$('nextPose').disabled=ix<0||ix>=state.visibleGroups.length-1;
+  }
+
+  function openViewer(key,angle) {
+    state.viewerGroupId=key;state.viewerAngle=angle;
+    $('viewer').hidden=false;document.body.classList.add('dialog-open');updateViewer();$('viewer').focus();
+    if(history.replaceState){try{history.replaceState(null,'','#'+encodeURIComponent(key)+'-'+angle)}catch(_){}}
+  }
+  function closeViewer(){state.viewerGroupId=null;$('viewer').hidden=true;document.body.classList.remove('dialog-open');if(location.hash){try{history.replaceState(null,'',location.pathname+location.search)}catch(_){}}}
+  function changeAngle(delta){const g=currentGroup();if(!g)return;const i=g.items.findIndex(x=>x.angle===state.viewerAngle);state.viewerAngle=g.items[(i+delta+g.items.length)%g.items.length].angle;updateViewer()}
+  function changePose(delta){const index=state.visibleGroups.findIndex(g=>g.key===state.viewerGroupId);const next=state.visibleGroups[index+delta];if(next){state.viewerGroupId=next.key;state.viewerAngle=state.angle==='all'?'front':state.angle;updateViewer()}}
+  function toggleFavoriteKey(key){
+    if(state.favorites.has(key)){state.favorites.delete(key);toast('Removed from favorites')}
+    else{state.favorites.add(key);toast('Saved to favorites')}
+    safeSet('poseatlas.favorites',JSON.stringify([...state.favorites]));
+    if(state.system==='favorites')render();
+  }
+  function toggleFavorite(){if(!state.viewerGroupId)return;toggleFavoriteKey(state.viewerGroupId);updateViewer()}
+
+  function openExternal(url){
+    if(window.PoseAtlasAndroid?.openExternal){window.PoseAtlasAndroid.openExternal(url);return;}
+    const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener noreferrer';document.body.appendChild(a);a.click();a.remove();
+  }
+  function downloadImage(url,id){
+    const name=`Pose_${id}.png`;
+    if(/\bwv\b/i.test(navigator.userAgent)){
+      window.location.href='atlasdownload://save?src='+encodeURIComponent(url)+'&name='+encodeURIComponent(name);
+      toast('Saving full-resolution PNG to Samsung Gallery…');return;
+    }
+    const a=document.createElement('a');a.href=url;a.download=name;a.target='_blank';a.rel='noopener noreferrer';document.body.appendChild(a);a.click();a.remove();
+    toast('Download requested. Your browser may save the PNG in Downloads.');
+  }
+  async function copyID(){const item=currentItem();if(!item)return;try{await navigator.clipboard.writeText(item.id);toast('Image ID copied')}catch(_){const box=document.createElement('textarea');box.value=item.id;document.body.appendChild(box);box.select();document.execCommand('copy');box.remove();toast('Image ID copied')}}
+
+  function resetFilters() { state.category='all';state.angle='all';state.mode='groups';state.search='';state.page=1;$('categorySelect').value='all';$('angleSelect').value='all';$('modeSelect').value='groups';$('searchInput').value='';render() }
+  function bindEvents(){
+    document.querySelectorAll('.collection').forEach(btn=>btn.addEventListener('click',()=>{state.system=btn.dataset.system;state.page=1;render()}));
+    $('searchInput').addEventListener('input', e=>{state.search=e.target.value;state.page=1;render()});
+    $('categorySelect').addEventListener('change',e=>{state.category=e.target.value;state.page=1;render()});
+    $('angleSelect').addEventListener('change',e=>{state.angle=e.target.value;state.page=1;render()});
+    $('modeSelect').addEventListener('change',e=>{state.mode=e.target.value;state.page=1;render()});
+    $('resetButton').addEventListener('click',resetFilters);
+    $('filterToggle').addEventListener('click',()=>{$('advancedFilters').classList.toggle('open');updateFilterBadge()});
+    $('loadMoreButton').addEventListener('click',()=>{state.page++;render()});
+    $('themeButton').addEventListener('click',()=>setTheme(state.dark));
+    $('aboutButton').addEventListener('click',()=>{$('aboutModal').hidden=false;document.body.classList.add('dialog-open');$('aboutClose').focus()});
+    $('aboutClose').addEventListener('click',closeAbout);
+    $('aboutModal').addEventListener('click',e=>{if(e.target===$('aboutModal'))closeAbout()});
+    $('viewerClose').addEventListener('click',closeViewer);
+    $('previousAngle').addEventListener('click',()=>changeAngle(-1));
+    $('nextAngle').addEventListener('click',()=>changeAngle(1));
+    $('prevPose').addEventListener('click',()=>changePose(-1));
+    $('nextPose').addEventListener('click',()=>changePose(1));
+    $('favoriteButton').addEventListener('click',toggleFavorite);
+    $('copyId').addEventListener('click',copyID);
+    $('openOriginal').addEventListener('click',()=>{const i=currentItem();if(i)openExternal($('viewerImage').src||imageURL(i.original))});
+    $('downloadOriginal').addEventListener('click',()=>{const i=currentItem();if(i)downloadImage($('viewerImage').src||imageURL(i.original),i.id)});
+    $('viewerImage').addEventListener('error',e=>{const item=currentItem();if(!item||$('viewer').hidden)return;const next=Number(e.target.dataset.fallback||0)+1;if(next<IMAGE_HOSTS.length){e.target.dataset.fallback=String(next);e.target.src=imageURL(item.original,next)}else{$('viewerImageMessage').hidden=false}});
+    document.addEventListener('keydown',e=>{
+      if(e.key==='Escape'){if(!$('aboutModal').hidden)closeAbout();else if(!$('viewer').hidden)closeViewer();return}
+      if(!$('viewer').hidden){if(e.key==='ArrowLeft'){e.preventDefault();changeAngle(-1)}if(e.key==='ArrowRight'){e.preventDefault();changeAngle(1)}if(e.key==='ArrowUp'){e.preventDefault();changePose(-1)}if(e.key==='ArrowDown'){e.preventDefault();changePose(1)}}
+      else if(e.key==='/'&&document.activeElement?.tagName!=='INPUT'){e.preventDefault();$('searchInput').focus()}
+    });
+    let startX=0,startY=0;
+    $('viewerStage').addEventListener('touchstart',e=>{startX=e.touches[0].clientX;startY=e.touches[0].clientY},{passive:true});
+    $('viewerStage').addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-startX,dy=e.changedTouches[0].clientY-startY;if(Math.abs(dx)>65&&Math.abs(dx)>Math.abs(dy)*1.2)changeAngle(dx>0?-1:1);else if(Math.abs(dy)>80&&Math.abs(dy)>Math.abs(dx)*1.5)changePose(dy>0?-1:1)},{passive:true});
+  }
+  function closeAbout(){$('aboutModal').hidden=true;if($('viewer').hidden)document.body.classList.remove('dialog-open')}
+
+  async function start() {
+    bindEvents();setTheme(safeGet('poseatlas.theme')==='light');
+    try{const favorites=JSON.parse(safeGet('poseatlas.favorites')||'[]');state.favorites=new Set(Array.isArray(favorites)?favorites:[])}catch(_){state.favorites=new Set()}
+    try{
+      const labels=JSON.parse(document.getElementById('embeddedEnglishNames').textContent);
+      if(Object.keys(labels).length!==288)throw new Error('English translation table incomplete');
+      state.titles=labels;
+      state.allGroups=await loadRecords();
+      const count=state.allGroups.reduce((sum,g)=>sum+g.items.length,0);
+      $('groupCount').textContent=state.allGroups.length.toLocaleString('en-US');
+      $('imageCount').textContent=count.toLocaleString('en-US');
+      $('connectionStatus').textContent=state.online?'Connected · Source images online':'Offline · Cached metadata';
+      $('connectionStatus').style.color=state.online?'var(--accent)':'var(--muted)';
+      fillCategorySelect(state.allGroups);
+      const missing=state.allGroups.filter(g=>!Object.hasOwn(state.titles,g.key));
+      if(missing.length)console.warn('English names missing for:',missing.map(g=>g.key));
+      render();
+    }catch(err){console.error(err);$('connectionStatus').textContent='Unable to load gallery';$('galleryGrid').innerHTML=`<div class="empty-block"><h3>Gallery unavailable<\/h3><p>${escapeHTML(err.message)}<\/p><button type="button" class="text-button" id="retryButton">Retry loading<\/button><\/div>`;$('resultsSubtitle').textContent='Connect to the internet to load the original source';$('retryButton').addEventListener('click',()=>location.reload())}
+    /* No service worker in the one-file edition. */
+  }
+  document.addEventListener('DOMContentLoaded',start);
+})();
+
+</script>
+</body>
+</html>
