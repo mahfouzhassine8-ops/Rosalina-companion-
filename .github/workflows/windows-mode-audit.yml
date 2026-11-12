@@ -1,0 +1,40 @@
+name: Windows Mode - APK signature and package audit
+on:
+  push:
+    branches: [windows-mode-android-research]
+    paths: ['.github/workflows/windows-mode-audit.yml']
+  workflow_dispatch:
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Download actual completed Windows Mode APK artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/vm
+          gh run download 43311518707 --repo "${{ github.repository }}" --name windows-mode-arm64-proof-apk --dir /tmp/vm
+          ls -lh /tmp/vm
+          test -s /tmp/vm/WindowsMode-QEMU-Proof-arm64.apk
+      - name: Verify Android v1 v2 v3 signature, APK alignment, package, and native engine
+        run: |
+          set -euo pipefail
+          APK=/tmp/vm/WindowsMode-QEMU-Proof-arm64.apk
+          sudo apt-get update -qq
+          echo '--- SDK tools ---'
+          ls -d "$ANDROID_HOME"/build-tools/* | tail
+          SDK_TOOLS=$(find "$ANDROID_HOME/build-tools" -maxdepth 1 -type d | sort -V | tail -n 1)
+          echo "TOOLS=$SDK_TOOLS"
+          "$SDK_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/windowsmode-apk-audit.txt
+          "$SDK_TOOLS/zipalign" -c -v 4 "$APK" | tail -8 | tee -a /tmp/windowsmode-apk-audit.txt
+          "$SDK_TOOLS/aapt" dump badging "$APK" | grep -E "^(package:|sdkVersion:|targetSdkVersion:|native-code:|application-label:)" | tee -a /tmp/windowsmode-apk-audit.txt
+          sha256sum "$APK" | tee -a /tmp/windowsmode-apk-audit.txt
+          unzip -Z1 "$APK" | grep -E '^lib/arm64-v8a/(libqemu-system-aarch64|libqube|libglib-2.0|libpixman-1)\.so$' | tee -a /tmp/windowsmode-apk-audit.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-mode-apk-audit
+          path: /tmp/windowsmode-apk-audit.txt
