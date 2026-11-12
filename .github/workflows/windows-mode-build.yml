@@ -54,6 +54,10 @@ jobs:
           p=Path('qube-android-arm/src/main/res/values/strings.xml')
           s=p.read_text().replace('>QubeVM ARM<','>Windows Mode (QubeVM-based test)<').replace('>Qube ARM<','>Windows Mode Test<')
           p.write_text(s)
+          for f in Path('.').rglob('build.gradle'):
+              old=f.read_text()
+              new=old.replace('compileSdk = 37', 'compileSdk = 36').replace('targetSdk = 37', 'targetSdk = 35')
+              if new!=old: f.write_text(new)
           PY
           {
              echo 'Windows Mode Android — engine-integrated experimental build'
@@ -74,7 +78,7 @@ jobs:
           echo "JAVA_HOME=$JAVA_HOME"
           java -version
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" "build-tools;37.0.0"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"
       - name: Build signed experimental ARM64 APK
         run: |
           set -euo pipefail
