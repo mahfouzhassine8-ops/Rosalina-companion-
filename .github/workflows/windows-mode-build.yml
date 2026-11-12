@@ -125,7 +125,7 @@ jobs:
           SDK_TOOLS=$(find "$ANDROID_HOME/build-tools" -maxdepth 1 -type d | sort -V | tail -n 1)
           "$SDK_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/windows-mode-signature.txt
           grep -q 'a40da80a59d170caa950cf15c18c454d47a39b26989d8b640ecd745ba71bf5dc' /tmp/windows-mode-signature.txt
-          "$SDK_TOOLS/aapt" dump badging "$APK" | tee /tmp/windows-mode-badging.txt
+          "$SDK_TOOLS/aapt" dump badging "$APK" | grep -E "^(package:|sdkVersion:|targetSdkVersion:|native-code:|application-label:)" | tee /tmp/windows-mode-badging.txt
           grep -q "name='com.fold.windowsmode.research' versionCode='70105'" /tmp/windows-mode-badging.txt
           mkdir -p /tmp/windowsmode-out
           cp "$APK" /tmp/windowsmode-out/WindowsMode-QEMU-ROMFIX-arm64.apk
@@ -133,7 +133,7 @@ jobs:
           cp /tmp/WINDOWS_MODE_BUILD_NOTICE.txt /tmp/windowsmode-out/BUILD_NOTICE.txt
           cp /tmp/windows-mode-signature.txt /tmp/windowsmode-out/SIGNATURE_VERIFY.txt
           cp /tmp/windows-mode-badging.txt /tmp/windowsmode-out/PACKAGE_VERIFY.txt
-          sha256sum /tmp/windowsmode-out/WindowsMode-QEMU-Proof-arm64.apk > /tmp/windowsmode-out/APK-SHA256.txt
+          sha256sum /tmp/windowsmode-out/WindowsMode-QEMU-ROMFIX-arm64.apk > /tmp/windowsmode-out/APK-SHA256.txt
       - name: Upload Windows Mode research APK and licensing
         uses: actions/upload-artifact@v4
         with:
