@@ -50,7 +50,7 @@ jobs:
           mkdir -p "$ROMS/keymaps"
           find /tmp/qemu-rom-source/pc-bios -maxdepth 1 -type f \( -name '*.rom' -o -name '*.bin' -o -name '*.img' -o -name '*.rsrc' \) -exec cp -f {} "$ROMS/" \;
           cp -af /tmp/qemu-rom-source/pc-bios/keymaps/. "$ROMS/keymaps/"
-          printf '11.1.3\\n' > upstream/qube-android-lib/src/main/assets/QEMU_VERSION
+          echo 11.1.3 > upstream/qube-android-lib/src/main/assets/QEMU_VERSION
           test -s "$ROMS/efi-e1000.rom"
           test -s "$ROMS/efi-virtio.rom"
           test -s "$ROMS/keymaps/en-us"
