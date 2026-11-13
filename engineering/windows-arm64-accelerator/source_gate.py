@@ -95,7 +95,7 @@ def run(repo, qemu, ios, output):
                   "Mach virtual executable-memory mapping", report)
     host = inspect(ios/"host/winvm.c", ["CoreFoundation", "winvm_start"],
                    "Apple runtime/guest-machine host", report)
-    cpu = inspect(ios/"core/cpu.h", ["HvCpu", "guest x18", "host x18"],
+    cpu = inspect(ios/"core/cpu.h", ["HvCpu", "Guest x18", "host x18"],
                   "Host ABI/guest register state", report)
     dependencies = {
         "Darwin/Mach JIT memory": sum(jit.count(t) for t in ("vm_remap", "MAP_JIT", "pthread_jit_write_protect_np")),
