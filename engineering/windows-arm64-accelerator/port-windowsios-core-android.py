@@ -55,6 +55,7 @@ for name in ("dispatch.c","machine.c","sysreg.c"):
     print(f"PORT {name}: Android monotonic->24MHz conversion at {count} call sites")
 
 patch(core/"dispatch.c", "#include <mach/mach.h>", "#include <time.h>")
+patch(core/"machine.h", "#include <TargetConditionals.h>", "#define TARGET_OS_IPHONE 0")
 
 stat_old='''        thread_basic_info_data_t ti;
         mach_msg_type_number_t cnt = THREAD_BASIC_INFO_COUNT;
