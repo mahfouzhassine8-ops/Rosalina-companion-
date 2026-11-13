@@ -140,4 +140,35 @@ for file_name, checks in {
     for needle in checks:
         if needle not in body:
             raise AssertionError(f"Missing {needle!r} in {file_name}")
+# Attach a read-only, bundled ARM64 VirtIO driver CD through a separate USB
+# controller. The existing Windows ISO, configured Hard Disk A controller and
+# QCOW2 contents are left unchanged. Windows Setup can Load Driver from this CD.
+patch("jni/VMExecutor.java",
+      '''    public void addRemovableDrives(ArrayList<String> paramsList) {
+        String cdImagePath = getDriveFilePath(getMachine().getCdImagePath());''',
+      '''    public void addRemovableDrives(ArrayList<String> paramsList) {
+        addWindowsArm64DriverDisc(paramsList);
+        String cdImagePath = getDriveFilePath(getMachine().getCdImagePath());''')
+patch("jni/VMExecutor.java",
+      '''    public void addRemovableDrives(ArrayList<String> paramsList) {''',
+      '''    private void addWindowsArm64DriverDisc(ArrayList<String> paramsList) {
+        if (QubeApplication.arch != Config.Arch.arm64
+                || !"com.fold.windowsmode.research".equals(QubeApplication.getInstance().getPackageName()))
+            return;
+        File driverIso = new File(QubeApplication.getBasefileDir(), "win11-arm64-drivers.iso");
+        if (!driverIso.isFile() || driverIso.length() == 0) {
+            Log.w(TAG, "Windows ARM64 driver disc unavailable; VM storage unchanged");
+            return;
+        }
+        paramsList.add("-drive");
+        paramsList.add("if=none,id=win11armdrivers,format=raw,readonly=on,media=cdrom,file="
+                + qemuOpt(driverIso.getAbsolutePath()));
+        addUsbController(paramsList);
+        paramsList.add("-device");
+        paramsList.add("usb-storage,drive=win11armdrivers,bus=" + USB_ID + ".0,removable=on");
+    }
+
+    public void addRemovableDrives(ArrayList<String> paramsList) {''')
+assert "win11-arm64-drivers.iso" in (root / "jni/VMExecutor.java").read_text()
+
 print("ALL SOURCE PATCH ANCHORS PASS; no VM disk files were accessed")
