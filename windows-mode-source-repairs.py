@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Scoped source edits for Windows Mode 7.1.8, applied to pinned QubeVM 7.1.4 checkout."""
+"""Scoped source edits for Windows Mode 7.1.9, applied to pinned QubeVM 7.1.4 checkout."""
 from pathlib import Path
 import sys
 
@@ -254,5 +254,142 @@ assert 'getMachine().getHdaInterface()' in executor
 assert 'ide-hd,drive=' in executor
 assert 'win11-arm64-drivers.iso' not in executor
 print("WIN11 ISO USB CD-ROM PATCH PASS; QCOW2 and AHCI wiring untouched")
+
+
+# Optional, explicitly user-triggered Windows 11 ARM64 Setup shortcut.
+# Runs ONLY while a Windows 11 install ISO is attached to this research app.
+# QEMU's existing local QMP HMP sendkey path is used because the Samsung IME's
+# Send Text action dropped long strings. No VM media, disk, firmware or settings
+# are changed. The two values belong to the temporary WinPE registry.
+patch("virtualkeys/VirtualKey.java",
+      '    DiskCheck(null, "Disk Check", 0, "Read-only QEMU storage report", false),',
+      '''    DiskCheck(null, "Disk Check", 0, "Read-only QEMU storage report", false),
+    SetupBypass(null, "Win11 Bypass", 0, "Type TPM/Secure Boot setup registry commands", false),''')
+patch("virtualkeys/VirtualKeyLayoutConfig.java",
+      "VirtualKey.Space, VirtualKey.SetupCmd, VirtualKey.DiskCheck, VirtualKey.LeftCtrl,",
+      "VirtualKey.Space, VirtualKey.SetupCmd, VirtualKey.DiskCheck, VirtualKey.SetupBypass, VirtualKey.LeftCtrl,")
+patch("virtualkeys/VirtualKeyLayoutConfig.java",
+      "Arrays.asList(VirtualKey.Enter, VirtualKey.Space, VirtualKey.SetupCmd, VirtualKey.DiskCheck)",
+      "Arrays.asList(VirtualKey.Enter, VirtualKey.Space, VirtualKey.SetupCmd, VirtualKey.DiskCheck, VirtualKey.SetupBypass)")
+
+patch("virtualkeys/VirtualKeys.java",
+      '''            } else if (vk == VirtualKey.DiskCheck) {''',
+      r'''            } else if (vk == VirtualKey.SetupBypass) {
+                view.setOnClickListener(v -> new com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
+                        .setTitle("Windows 11 Setup compatibility")
+                        .setMessage("On the Windows 11 TPM/Secure Boot warning screen, "
+                                + "this will open Command Prompt and send only two "
+                                + "LabConfig registry commands through QEMU keyboard input. "
+                                + "Your virtual disk and machine settings are not changed. "
+                                + "This bypasses Windows 11's hardware checks; the guest remains unsupported.")
+                        .setPositiveButton("Send bypass commands", (dialog, which) -> {
+                            com.max2idea.android.qube.machine.Machine vm =
+                                    com.max2idea.android.qube.machine.MachineController
+                                            .getInstance().getMachine();
+                            String iso = vm == null ? "" : String.valueOf(vm.getCdImagePath());
+                            String lowerIso = iso.toLowerCase(java.util.Locale.ROOT);
+                            if (com.max2idea.android.qube.main.QubeApplication.arch
+                                        != com.max2idea.android.qube.main.Config.Arch.arm64
+                                    || !(lowerIso.contains("windows11") || lowerIso.contains("win11"))
+                                    || !lowerIso.endsWith(".iso")) {
+                                ToastUtils.toastLong(activity,
+                                        "Only available for Windows 11 ARM64 installer ISO");
+                                return;
+                            }
+                            ToastUtils.toastLong(activity, "Sending setup commands. "
+                                    + "Keep Windows in the foreground; do not tap guest controls.");
+                            new Thread(() -> {
+                                boolean ok = sendSetupHmpKey("shift-f10");
+                                if (ok) ok = waitSetupInput(3500);
+                                if (ok) ok = typeSetupCommand(
+                                        "reg add hklm\\system\\setup\\labconfig "
+                                        + "/v bypasstpmcheck /t reg_dword /d 1 /f");
+                                if (ok) ok = waitSetupInput(1200);
+                                if (ok) ok = typeSetupCommand(
+                                        "reg add hklm\\system\\setup\\labconfig "
+                                        + "/v bypasssecurebootcheck /t reg_dword /d 1 /f");
+                                final boolean sent = ok;
+                                activity.runOnUiThread(() ->
+                                        new com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
+                                                .setTitle(sent
+                                                        ? "Windows Setup commands sent"
+                                                        : "Windows Setup command delivery failed")
+                                                .setMessage(sent
+                                                        ? "Check the Command Prompt for TWO "
+                                                        + "'The operation completed successfully' messages. "
+                                                        + "The app cannot verify guest registry changes. "
+                                                        + "If both succeeded, close Command Prompt, "
+                                                        + "select Back, and continue Windows Setup. "
+                                                        + "Do not format or delete the 64 GB disk yet."
+                                                        : "QMP key delivery failed or was interrupted. "
+                                                        + "Do not assume the bypass was applied; "
+                                                        + "check Command Prompt before continuing.")
+                                                .setPositiveButton("OK", null)
+                                                .show());
+                            }, "QubeWin11SetupBypass").start();
+                        })
+                        .setNegativeButton("Cancel", null)
+                        .show());
+            } else if (vk == VirtualKey.DiskCheck) {''')
+patch("virtualkeys/VirtualKeys.java",
+      '''    private void initToggleKey(final ToggleButton key, final int keyCode) {''',
+      r'''    // Send HMP keys through the same QMP socket as the already-working Shift+F10.
+    // Each key must be released before the next key is sent, especially for
+    // USB keyboard input under TCG. Never report command execution as verified.
+    private static boolean sendSetupHmpKey(String keyName) {
+        String qmp = "{\"execute\":\"human-monitor-command\",\"arguments\":"
+                + "{\"command-line\":\"sendkey " + keyName + " 20\"}}";
+        String result = QmpClient.sendCommand(qmp);
+        if (result == null || !result.contains("\"return\"") || result.contains("\"error\""))
+            return false;
+        return waitSetupInput(100);
+    }
+
+    private static boolean waitSetupInput(long delayMs) {
+        try {
+            Thread.sleep(delayMs);
+            return true;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    private static boolean typeSetupCommand(String text) {
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            String keyName;
+            if ((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')) {
+                keyName = String.valueOf(ch);
+            } else if (ch == ' ') {
+                keyName = "spc";
+            } else if (ch == '\\') {
+                keyName = "backslash";
+            } else if (ch == '/') {
+                keyName = "slash";
+            } else if (ch == '_') {
+                keyName = "shift-minus";
+            } else {
+                return false;
+            }
+            if (!sendSetupHmpKey(keyName))
+                return false;
+        }
+        return sendSetupHmpKey("ret");
+    }
+
+    private void initToggleKey(final ToggleButton key, final int keyCode) {''')
+for file_name, checks in {
+    "virtualkeys/VirtualKey.java": ("SetupBypass(null",),
+    "virtualkeys/VirtualKeyLayoutConfig.java": ("VirtualKey.SetupBypass",),
+    "virtualkeys/VirtualKeys.java": ("sendSetupHmpKey", "typeSetupCommand",
+                                    "bypasstpmcheck", "bypasssecurebootcheck",
+                                    "spc", "backslash", "shift-minus",
+                                    "sendkey ", "the app cannot verify".replace("the", "The")),
+}.items():
+    content = (root / file_name).read_text()
+    for check in checks:
+        assert check in content, f"Setup bypass anchor absent {check!r}: {file_name}"
+print("WIN11 SETUP BYPASS PATCH PASS: explicit action; no VM disk I/O or storage change")
 
 print("ALL SOURCE PATCH ANCHORS PASS; no VM disk files were accessed")
