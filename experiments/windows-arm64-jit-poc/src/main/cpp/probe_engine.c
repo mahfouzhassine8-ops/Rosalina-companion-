@@ -2,6 +2,7 @@
  * Source-level ARM64 decoder and Android executable-memory probe.
  * Vendors the exact WindowsiOS classifier/operand logic, NOT an interpreter.
  */
+#define _POSIX_C_SOURCE 200809L
 #include "probe_engine.h"
 #include "android_jit_region.h"
 #include "classify.h"
