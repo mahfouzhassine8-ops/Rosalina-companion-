@@ -1,4 +1,4 @@
-name: Windows Mode - Win11 Full View and Installed Boot Recovery APK
+name: Windows Mode - Win11 Reversible CPU Trial and Boot Diagnostics APK
 on:
   push:
     branches: [windows-mode-android-research]
@@ -78,8 +78,8 @@ jobs:
           manifest=Path('qube-android-arm/src/main/AndroidManifest.xml')
           m=manifest.read_text()
           assert 'android:versionCode="70104"' in m, 'Do not change an unknown baseline versionCode'
-          m=m.replace('android:versionCode="70104"', 'android:versionCode="70113"')
-          m=m.replace('android:versionName="7.1.4-arm"', 'android:versionName="7.1.13-desktopboot"')
+          m=m.replace('android:versionCode="70104"', 'android:versionCode="70114"')
+          m=m.replace('android:versionName="7.1.4-arm"', 'android:versionName="7.1.14-bootbench"')
           manifest.write_text(m)
           p=Path('qube-android-arm/src/main/res/values/strings.xml')
           s=p.read_text().replace('>QubeVM ARM<','>Windows Mode (QubeVM-based test)<').replace('>Qube ARM<','>Windows Mode Test<')
@@ -99,21 +99,22 @@ jobs:
              echo 'Includes QEMU and its GPL-licensed dependencies from upstream v7.1.4 release, and QEMU firmware/keymaps from v11.1.3.'
              echo 'Source is available at the upstream repository and source commit above.'
              echo 'Test signing uses the public upstream Android test key, NOT production identity.'
-             echo '7.1.13-desktopboot preserves all signed 7.1.12 features. Fixes unused portrait half-screen gap on Windows Fold view, ensures guest surface fills its available pane, adds reversible optional installed-Windows boot without attaching the original setup ISO, and one-tap guest Task Manager/Windows Explorer rescue. Does NOT modify the disk image, installed Windows, saved ISO, UEFI VARS, CPU, networking, or unrelated VMs.'
-             echo 'Native QEMU ARM64 remains unchanged. Fold portrait gap fix uses existing QEMU guest framebuffer and does not change Windows resolution. Optional skip-ISO is a reversible runtime-only choice (OFF by default). A missing guest taskbar is a Windows shell problem; Desktop Fix sends user-confirmed keyboard keys only. QEMU TCG speed cannot be guaranteed. Physical Fold acceptance required.'
-             echo 'User reached Windows wallpaper on the installed 64GB NVMe QCOW2, but no Start/taskbar. The APK inherited QubeVM portrait gap splitting display into two equal halves. 7.1.13 removes the blank gap for Win11 only; preserves 7.1.12, adds visible Task Manager rescue keys and opt-in ISO-less installed boot. Device tests pending.'
+             echo '7.1.14-bootbench preserves signed 7.1.13: existing Fold portrait view, immersive display, touch/IME, OOBE and Desktop Fix shortcuts, installed-Windows boot, Fast CPU, NAT, NVMe and UEFI. Adds Windows-only opt-in 4-versus-2 vCPU runtime trial (default 4, saved Machine unchanged) and read-only host/QMP boot report. No automatic guest commands, no guest disk/media changes, no new GPU or CPU flags.'
+             echo 'Native QEMU ARM64 remains unchanged. CPU trial changes only QEMU runtime -smp with user consent, keeping the saved four-core baseline. Boot report timestamps QEMU start and first framebuffer update, while wallpaper and taskbar require manual marking. QMP info jit/query-blockstats are read-only cumulative counters; they do not reveal Windows processes. Fast TCG gain is unverified. Physical Fold testing required.'
+             echo 'User reported ~60+ seconds to wallpaper and absent Windows taskbar. A QEMU 11.1.3 source check found implementation-defined pointer authentication already default, so no speculative pauth flag added. First measured performance variable is 2 versus 4 virtual CPUs; opt-in only. Taskbar recovery remains via Desktop Fix. QCOW2 shared storage, UEFI and guest hardware drivers untouched.'
              echo 'No Windows media is included. Same Android ID and public test-key certificate, higher versionCode; existing QCOW2, VM and settings not altered by this workflow.'
           } > /tmp/WINDOWS_MODE_BUILD_NOTICE.txt
-      - name: Preserve 70112 and fix Win11 Fold portrait display/installed boot
+      - name: Preserve 70113; add reversible Win11 CPU comparison and QMP measurements
         run: |
           set -euo pipefail
           test -s windows-mode-source-repairs.py
-          python3 -m py_compile windows-mode-source-repairs.py windows-mode-ui-repairs.py windows-mode-performance-repairs.py windows-mode-setup-display-repairs.py windows-mode-desktop-boot-repairs.py
+          python3 -m py_compile windows-mode-source-repairs.py windows-mode-ui-repairs.py windows-mode-performance-repairs.py windows-mode-setup-display-repairs.py windows-mode-desktop-boot-repairs.py windows-mode-boot-benchmark-repairs.py
           python3 windows-mode-source-repairs.py upstream
           python3 windows-mode-ui-repairs.py upstream
           python3 windows-mode-performance-repairs.py upstream
           python3 windows-mode-setup-display-repairs.py upstream
           python3 windows-mode-desktop-boot-repairs.py upstream
+          python3 windows-mode-boot-benchmark-repairs.py upstream
       - name: Confirm Android environment and provision missing SDKs
         run: |
           set -euo pipefail
@@ -145,17 +146,17 @@ jobs:
           "$SDK_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/windows-mode-signature.txt
           grep -q 'a40da80a59d170caa950cf15c18c454d47a39b26989d8b640ecd745ba71bf5dc' /tmp/windows-mode-signature.txt
           "$SDK_TOOLS/aapt" dump badging "$APK" | grep -E "^(package:|sdkVersion:|targetSdkVersion:|native-code:|application-label:)" | tee /tmp/windows-mode-badging.txt
-          grep -q "name='com.fold.windowsmode.research' versionCode='70113'" /tmp/windows-mode-badging.txt
+          grep -q "name='com.fold.windowsmode.research' versionCode='70114'" /tmp/windows-mode-badging.txt
           mkdir -p /tmp/windowsmode-out
-          cp "$APK" /tmp/windowsmode-out/WindowsMode-QEMU-DESKTOPBOOT-70113.apk
+          cp "$APK" /tmp/windowsmode-out/WindowsMode-QEMU-BOOTBENCH-70114.apk
           cp COPYING /tmp/windowsmode-out/QubeVM-GPL-3.0-LICENSE.txt
           cp /tmp/WINDOWS_MODE_BUILD_NOTICE.txt /tmp/windowsmode-out/BUILD_NOTICE.txt
           cp /tmp/windows-mode-signature.txt /tmp/windowsmode-out/SIGNATURE_VERIFY.txt
           cp /tmp/windows-mode-badging.txt /tmp/windowsmode-out/PACKAGE_VERIFY.txt
-          sha256sum /tmp/windowsmode-out/WindowsMode-QEMU-DESKTOPBOOT-70113.apk > /tmp/windowsmode-out/APK-SHA256.txt
+          sha256sum /tmp/windowsmode-out/WindowsMode-QEMU-BOOTBENCH-70114.apk > /tmp/windowsmode-out/APK-SHA256.txt
       - name: Upload Windows Mode research APK and licensing
         uses: actions/upload-artifact@v4
         with:
-          name: windows-mode-arm64-desktopboot-70113-apk
+          name: windows-mode-arm64-bootbench-70114-apk
           path: /tmp/windowsmode-out/
           if-no-files-found: error
