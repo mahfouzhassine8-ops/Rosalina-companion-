@@ -68,6 +68,21 @@ stat_new='''        struct timespec ti;
             double busy = (double)ti.tv_sec + (double)ti.tv_nsec / 1e9;'''
 patch(core/"dispatch.c",stat_old,stat_new)
 patch(core/"dispatch.c", "        mach_port_deallocate(mach_task_self(), self);\n", "")
+patch(core/"dispatch.c",
+      '''        struct timespec ts = {(time_t)(wait_ticks / 24000000), (long)(wait_ticks % 24000000) * 1000 / 24};
+        pthread_cond_timedwait_relative_np(&p->wake_cv, &p->wake_mu, &ts);''',
+      '''        /* Bionic/POSIX condvars use absolute CLOCK_REALTIME by default.
+           Preserve the guest's relative 24 MHz wait without Apple's _np API. */
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        uint64_t ns = wait_ticks * 1000ULL / 24ULL;
+        ts.tv_sec += (time_t)(ns / 1000000000ULL);
+        ts.tv_nsec += (long)(ns % 1000000000ULL);
+        if (ts.tv_nsec >= 1000000000L) {
+            ts.tv_sec++;
+            ts.tv_nsec -= 1000000000L;
+        }
+        pthread_cond_timedwait(&p->wake_cv, &p->wake_mu, &ts);''')
 
 # The entry assembly uses Mach-O leading underscores for symbols.
 # Rename ONLY symbol identifiers in an isolated checkout; do not rewrite
