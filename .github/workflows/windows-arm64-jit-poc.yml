@@ -22,7 +22,7 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --no-tags origin windows-mode-android-research
-          git diff --name-only FETCH_HEAD...HEAD > /tmp/jit-changed-files.txt
+          git diff --name-only FETCH_HEAD HEAD > /tmp/jit-changed-files.txt
           cat /tmp/jit-changed-files.txt
           python3 - <<'PY'
           from pathlib import Path
