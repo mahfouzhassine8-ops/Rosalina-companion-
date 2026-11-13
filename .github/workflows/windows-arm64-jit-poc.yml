@@ -1,0 +1,155 @@
+name: Windows ARM64 - isolated Android JIT engine PoC
+
+on:
+  push:
+    branches: [windows-arm64-android-jit-poc]
+    paths:
+      - '.github/workflows/windows-arm64-jit-poc.yml'
+      - 'experiments/windows-arm64-jit-poc/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-arm64-engine-smoke:
+    name: Linux AArch64 native decoder and W-X JIT smoke
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify isolated changes only and original Windows Mode untouched
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin windows-mode-android-research
+          git diff --name-only FETCH_HEAD...HEAD > /tmp/jit-changed-files.txt
+          cat /tmp/jit-changed-files.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          files=Path('/tmp/jit-changed-files.txt').read_text().splitlines()
+          assert files, "No isolated changes found"
+          assert all(x.startswith('experiments/windows-arm64-jit-poc/')
+                     or x=='.github/workflows/windows-arm64-jit-poc.yml'
+                     for x in files), "Protected Windows Mode files modified"
+          assert not any('windows-mode-build.yml' in x for x in files)
+          print('PRESERVATION PASS: protected Windows Mode 7.1.14 unchanged')
+          PY
+      - name: Native upstream ARM64 decoder and operand fixture tests
+        run: |
+          set -euo pipefail
+          ROOT=experiments/windows-arm64-jit-poc
+          VENDOR="$ROOT/vendor/windowsios"
+          mkdir -p /tmp/windows-jit-test
+          # Original fixtures are Darwin Mach-O AArch64 assembly. Translate only
+          # their global label spelling and PAGE relocations for ELF AArch64.
+          sed -e 's/_hv_classify_cases/hv_classify_cases/g' \
+              -e 's/@PAGE//g' "$VENDOR/tests/classify_cases.s" \
+              > /tmp/windows-jit-test/classify_cases.S
+          sed -e 's/_hv_operand_cases/hv_operand_cases/g' \
+              -e 's/and sp, x1, #0xff/and xzr, x1, #0xff/' \
+              "$VENDOR/tests/operand_cases.s" \
+              > /tmp/windows-jit-test/operand_cases.S
+          clang -O2 -march=armv8.5-a+lse+pauth \
+            -I"$VENDOR/core" "$VENDOR/core/classify.c" \
+            "$VENDOR/tests/test_classify.c" /tmp/windows-jit-test/classify_cases.S \
+            -o /tmp/windows-jit-test/test_classify
+          clang -O2 -march=armv8.5-a+lse+pauth \
+            -I"$VENDOR/core" "$VENDOR/core/operands.c" \
+            "$VENDOR/tests/test_operands.c" /tmp/windows-jit-test/operand_cases.S \
+            -o /tmp/windows-jit-test/test_operands
+          /tmp/windows-jit-test/test_classify
+          /tmp/windows-jit-test/test_operands
+      - name: Run the EXACT native decoder and executable-memory engine harness
+        run: |
+          set -euo pipefail
+          ROOT=experiments/windows-arm64-jit-poc
+          clang -std=c11 -O2 -Wall -Wextra \
+            -I"$ROOT/vendor/windowsios/core" -I"$ROOT/src/main/cpp" \
+            "$ROOT/src/main/cpp/android_jit_region.c" \
+            "$ROOT/src/main/cpp/probe_engine.c" \
+            "$ROOT/vendor/windowsios/core/classify.c" \
+            "$ROOT/vendor/windowsios/core/operands.c" \
+            "$ROOT/tests/native_probe_main.c" \
+            -o /tmp/windows-jit-test/native_probe
+          /tmp/windows-jit-test/native_probe | tee /tmp/windows-jit-test/native-report.txt
+          grep -F 'Executable memory permitted: YES' /tmp/windows-jit-test/native-report.txt
+
+  android-arm64-apk:
+    name: Cross-compile standalone Android JNI JIT probe (signed)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Gradle 9.6
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+      - name: Provision exact Android SDK, NDK and CMake
+        run: |
+          set -euo pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-36" "build-tools;36.0.0" \
+            "ndk;27.2.12479018" "cmake;3.22.1"
+      - name: Use separate experiment APK identity with stable test certificate
+        run: |
+          set -euo pipefail
+          POC=experiments/windows-arm64-jit-poc
+          mkdir -p "$POC/test-signing"
+          git clone --depth 1 --branch 7.1.4 https://github.com/rhn-1k/QubeVM.git /tmp/qubevm-jit-test-cert
+          cp /tmp/qubevm-jit-test-cert/keystore/testkey.keystore \
+             "$POC/test-signing/testkey.keystore"
+          test -s "$POC/test-signing/testkey.keystore"
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('experiments/windows-arm64-jit-poc')
+          manifest=(p/'app/src/main/AndroidManifest.xml').read_text()
+          build=(p/'app/build.gradle').read_text()
+          assert '<uses-permission' not in manifest
+          assert "com.fold.windowsjit.probe" in build
+          assert "com.fold.windowsmode.research" not in build
+          assert 'arm64-v8a' in build
+          assert not list(p.rglob('*.qcow2'))
+          assert not list(p.rglob('*.iso'))
+          print("ISOLATION PASS: no VM path, Windows disk, or Android permissions")
+          PY
+      - name: Build ARM64 native code and standalone test-signed APK
+        run: |
+          set -euo pipefail
+          POC=experiments/windows-arm64-jit-poc
+          gradle -p "$POC" --no-daemon --stacktrace :app:assembleRelease
+          APK=$(find "$POC/app/build/outputs/apk/release" \
+                -type f -name '*.apk' | head -1)
+          test -s "$APK"
+          python3 - "$APK" <<'PY'
+          from zipfile import ZipFile
+          import sys
+          with ZipFile(sys.argv[1]) as z:
+            names=z.namelist()
+            assert 'lib/arm64-v8a/libandroidjitprobe.so' in names
+            assert not any(x.endswith(('.iso','.qcow2','.img','.fd')) for x in names)
+            assert not any(x.startswith('lib/x86') for x in names)
+            print('APK native library present; no guest disk or firmware embedded')
+          PY
+          SDK_TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)
+          "$SDK_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/jit-signature.txt
+          "$SDK_TOOLS/aapt" dump badging "$APK" | tee /tmp/jit-badging.txt
+          grep -q "name='com.fold.windowsjit.probe' versionCode='1'" /tmp/jit-badging.txt
+          mkdir -p /tmp/windows-jit-poc-out
+          cp "$APK" /tmp/windows-jit-poc-out/Windows-ARM64-JIT-Probe-0.1.0.apk
+          cp /tmp/jit-signature.txt /tmp/windows-jit-poc-out/SIGNATURE.txt
+          cp /tmp/jit-badging.txt /tmp/windows-jit-poc-out/APK-METADATA.txt
+          cp "$POC/README.md" /tmp/windows-jit-poc-out/README.md
+          sha256sum /tmp/windows-jit-poc-out/Windows-ARM64-JIT-Probe-0.1.0.apk \
+            | tee /tmp/windows-jit-poc-out/APK-SHA256.txt
+      - name: Publish isolated JIT probe, not a Windows VM
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-arm64-jit-android-poc-001
+          path: /tmp/windows-jit-poc-out/
+          if-no-files-found: error
