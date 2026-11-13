@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Scoped source edits for Windows Mode 7.1.7, applied to pinned QubeVM 7.1.4 checkout."""
+"""Scoped source edits for Windows Mode 7.1.8, applied to pinned QubeVM 7.1.4 checkout."""
 from pathlib import Path
 import sys
 
@@ -209,5 +209,50 @@ for file_name, checks in {
         assert needle in content, f"missing {needle!r} in {file_name}"
 assert "win11-arm64-drivers.iso" not in (root / "jni/VMExecutor.java").read_text()
 print("READ-ONLY STORAGE DIAGNOSTIC PATCH PASS: no QEMU storage arguments modified")
+
+# Windows 11 ARM64 WinPE has no inbox VirtIO block storage driver.
+# The prior Win11 ISO was on QEMU if=virtio and could boot via UEFI but was
+# inaccessible to Windows Setup. Attach ONLY this Windows installer ISO through
+# an emulated USB mass-storage CD-ROM. Keep the existing QCOW2/AHCI arrangement,
+# the configured CD selection, other VMs, and all unrelated behavior unchanged.
+patch("jni/VMExecutor.java",
+      '''            String cdInterface = getMachine().getCDInterface();
+            if ("ahci".equals(cdInterface)) {''',
+      '''            String cdInterface = getMachine().getCDInterface();
+            String selectedIso = getMachine().getCdImagePath();
+            String selectedIsoLower = selectedIso == null ? ""
+                    : selectedIso.toLowerCase(java.util.Locale.ROOT);
+            boolean windowsArmSetupIsoViaVirtio =
+                    QubeApplication.arch == Config.Arch.arm64
+                    && "com.fold.windowsmode.research".equals(
+                            QubeApplication.getInstance().getPackageName())
+                    && "virtio".equals(cdInterface)
+                    && selectedIsoLower.endsWith(".iso")
+                    && (selectedIsoLower.contains("windows11")
+                        || selectedIsoLower.contains("win11"));
+            if (windowsArmSetupIsoViaVirtio) {
+                // Windows Setup must see its install media after UEFI hands off.
+                // No changes to Hard Disk A, its AHCI controller or its image.
+                paramsList.add("-drive");
+                paramsList.add("if=none,id=" + cdDeviceName
+                        + ",format=raw,readonly=on,media=cdrom,file="
+                        + qemuOpt(cdImagePath));
+                addUsbController(paramsList);
+                paramsList.add("-device");
+                paramsList.add("usb-storage,drive=" + cdDeviceName
+                        + ",bus=" + USB_ID + ".0,removable=on");
+                Log.i(TAG, "Windows 11 ARM64 setup ISO exposed over USB CD-ROM; "
+                        + "saved VM configuration and QCOW2 unchanged");
+            } else if ("ahci".equals(cdInterface)) {''')
+executor = (root / "jni/VMExecutor.java").read_text()
+for required in ('"virtio".equals(cdInterface)', 'selectedIsoLower.contains("windows11")',
+                 'usb-storage,drive=', 'media=cdrom,file=', 'readonly=on',
+                 'if (windowsArmSetupIsoViaVirtio)', 'else if ("ahci".equals(cdInterface))'):
+    assert required in executor, f"missing Win11 USB installer repair: {required}"
+# An intentional narrow fix: no disk-interface override, no firmware changes.
+assert 'getMachine().getHdaInterface()' in executor
+assert 'ide-hd,drive=' in executor
+assert 'win11-arm64-drivers.iso' not in executor
+print("WIN11 ISO USB CD-ROM PATCH PASS; QCOW2 and AHCI wiring untouched")
 
 print("ALL SOURCE PATCH ANCHORS PASS; no VM disk files were accessed")
