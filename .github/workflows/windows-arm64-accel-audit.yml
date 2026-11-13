@@ -34,7 +34,9 @@ jobs:
           assert names, 'Expected research branch changes'
           assert all(
             p.startswith('engineering/windows-arm64-accelerator/')
-            or p == '.github/workflows/windows-arm64-accel-audit.yml'
+            or p in ('.github/workflows/windows-arm64-accel-audit.yml',
+                     '.github/workflows/windows-arm64-native-qemu-source.yml',
+                     '.github/workflows/windows-arm64-winjit-core-ndk.yml')
             for p in names
           ), 'Protected Windows Mode source, APK or settings were touched'
           print('PASS: Windows Mode 7.1.14 release files exactly preserved')
