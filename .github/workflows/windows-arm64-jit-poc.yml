@@ -141,6 +141,7 @@ jobs:
           "$SDK_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/jit-signature.txt
           "$SDK_TOOLS/aapt" dump badging "$APK" | tee /tmp/jit-badging.txt
           grep -q "name='com.fold.windowsjit.probe' versionCode='1'" /tmp/jit-badging.txt
+          grep -Fq "application: label='Windows JIT Engine Probe'" /tmp/jit-badging.txt
           mkdir -p /tmp/windows-jit-poc-out
           cp "$APK" /tmp/windows-jit-poc-out/Windows-ARM64-JIT-Probe-0.1.0.apk
           cp /tmp/jit-signature.txt /tmp/windows-jit-poc-out/SIGNATURE.txt
