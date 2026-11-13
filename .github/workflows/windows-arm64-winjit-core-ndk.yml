@@ -1,0 +1,87 @@
+name: Windows ARM64 WinJIT core - Android NDK compile gate (NO APK)
+on:
+  push:
+    branches: [windows-arm64-qemu-accel-research]
+    paths:
+      - '.github/workflows/windows-arm64-winjit-core-ndk.yml'
+      - 'engineering/windows-arm64-accelerator/port-windowsios-core-android.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  port-and-compile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify protected Windows Mode release is byte-for-byte unchanged
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin windows-mode-android-research
+          git diff --name-only FETCH_HEAD HEAD | tee /tmp/changed.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          paths=Path('/tmp/changed.txt').read_text().splitlines()
+          assert paths and all(p.startswith('engineering/windows-arm64-accelerator/')
+                  or p in ('.github/workflows/windows-arm64-accel-audit.yml',
+                           '.github/workflows/windows-arm64-native-qemu-source.yml',
+                           '.github/workflows/windows-arm64-winjit-core-ndk.yml')
+                  for p in paths), 'Protected Windows Mode 7.1.14 source modified'
+          print('PASS: Windows Mode 7.1.14 release preserved')
+          PY
+      - name: Install Android NDK r30 for ARM64 and pin WindowsiOS source
+        run: |
+          set -euo pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;30.0.16248370"
+          NDK="$ANDROID_HOME/ndk/30.0.16248370"
+          test -x "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+          echo "NDK_ROOT=$NDK" >> "$GITHUB_ENV"
+          git init -q /tmp/winjit-android-source
+          git -C /tmp/winjit-android-source remote add origin https://github.com/ammaarreshi/WindowsiOS.git
+          git -C /tmp/winjit-android-source -c advice.detachedHead=false fetch -q --depth=1 origin 0071d6975287fd720b9046dfd3bd80b6f2aa765e
+          git -C /tmp/winjit-android-source checkout -q FETCH_HEAD
+          test "$(git -C /tmp/winjit-android-source rev-parse HEAD)" = 0071d6975287fd720b9046dfd3bd80b6f2aa765e
+      - name: Apply minimal Android ABI portability changes to disposable source
+        run: |
+          set -euo pipefail
+          python3 -m py_compile engineering/windows-arm64-accelerator/port-windowsios-core-android.py
+          python3 engineering/windows-arm64-accelerator/port-windowsios-core-android.py /tmp/winjit-android-source
+          mkdir -p /tmp/winjit-core-out /tmp/winjit-objects
+          echo 'SOURCE-ONLY Android NDK translator/MMU compile attempt; no QEMU accelerator and no APK.' > /tmp/winjit-core-out/STATUS.txt
+      - name: Compile entire WindowsiOS ARM64 core and entry assembly with Android NDK
+        run: |
+          set -euo pipefail
+          SRC=/tmp/winjit-android-source
+          C="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+          AR="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+          for f in "$SRC"/core/*.c; do
+            name="$(basename "$f" .c)"
+            echo "ANDROID NDK AARCH64 CORE: $name"
+            EXTRA=""
+            if [ "$name" = mmu ]; then EXTRA=-mgeneral-regs-only; fi
+            "$C" --target=aarch64-linux-android30 -std=gnu11 -O2 -fPIC \
+              -D_GNU_SOURCE -Wall -Wextra -Werror=implicit-function-declaration \
+              -I "$SRC/core" $EXTRA \
+              -c "$f" -o "/tmp/winjit-objects/${name}.o"
+          done
+          "$C" --target=aarch64-linux-android30 -fPIC -c \
+            "$SRC/host/enter.S" -o /tmp/winjit-objects/enter.o
+          "$AR" rcs /tmp/winjit-core-out/libwinjit-core-android-aarch64.a \
+            /tmp/winjit-objects/*.o
+          test -s /tmp/winjit-core-out/libwinjit-core-android-aarch64.a
+          "$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" \
+            -g /tmp/winjit-core-out/libwinjit-core-android-aarch64.a \
+            | tee /tmp/winjit-core-out/SYMBOLS.txt
+          sha256sum /tmp/winjit-core-out/libwinjit-core-android-aarch64.a \
+            | tee /tmp/winjit-core-out/SHA256.txt
+          echo 'NDK CORE COMPILE PASS. This is NOT linked to QEMU and cannot boot Windows.' >> /tmp/winjit-core-out/STATUS.txt
+      - name: Upload native core evidence only, not an installable APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-arm64-winjit-core-android-source-compile
+          path: /tmp/winjit-core-out/
+          if-no-files-found: warn
