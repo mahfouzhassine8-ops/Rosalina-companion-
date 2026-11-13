@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Scoped source edits for Windows Mode 7.1.6, applied to pinned QubeVM 7.1.4 checkout."""
+"""Scoped source edits for Windows Mode 7.1.7, applied to pinned QubeVM 7.1.4 checkout."""
 from pathlib import Path
 import sys
 
@@ -140,35 +140,74 @@ for file_name, checks in {
     for needle in checks:
         if needle not in body:
             raise AssertionError(f"Missing {needle!r} in {file_name}")
-# Attach a read-only, bundled ARM64 VirtIO driver CD through a separate USB
-# controller. The existing Windows ISO, configured Hard Disk A controller and
-# QCOW2 contents are left unchanged. Windows Setup can Load Driver from this CD.
-patch("jni/VMExecutor.java",
-      '''    public void addRemovableDrives(ArrayList<String> paramsList) {
-        String cdImagePath = getDriveFilePath(getMachine().getCdImagePath());''',
-      '''    public void addRemovableDrives(ArrayList<String> paramsList) {
-        addWindowsArm64DriverDisc(paramsList);
-        String cdImagePath = getDriveFilePath(getMachine().getCdImagePath());''')
-patch("jni/VMExecutor.java",
-      '''    public void addRemovableDrives(ArrayList<String> paramsList) {''',
-      '''    private void addWindowsArm64DriverDisc(ArrayList<String> paramsList) {
-        if (QubeApplication.arch != Config.Arch.arm64
-                || !"com.fold.windowsmode.research".equals(QubeApplication.getInstance().getPackageName()))
-            return;
-        File driverIso = new File(QubeApplication.getBasefileDir(), "win11-arm64-drivers.iso");
-        if (!driverIso.isFile() || driverIso.length() == 0) {
-            Log.w(TAG, "Windows ARM64 driver disc unavailable; VM storage unchanged");
-            return;
-        }
-        paramsList.add("-drive");
-        paramsList.add("if=none,id=win11armdrivers,format=raw,readonly=on,media=cdrom,file="
-                + qemuOpt(driverIso.getAbsolutePath()));
-        addUsbController(paramsList);
-        paramsList.add("-device");
-        paramsList.add("usb-storage,drive=win11armdrivers,bus=" + USB_ID + ".0,removable=on");
-    }
-
-    public void addRemovableDrives(ArrayList<String> paramsList) {''')
-assert "win11-arm64-drivers.iso" in (root / "jni/VMExecutor.java").read_text()
+# Read-only QMP snapshot: do not change the VM, controller, Windows ISO, or QCOW2.
+# The upstream qemu-xhci and AHCI device wiring is preserved exactly.
+patch("virtualkeys/VirtualKey.java",
+      '    SetupCmd(null, "Shift+F10", 0, "Windows Setup command prompt", false),',
+      '''    SetupCmd(null, "Shift+F10", 0, "Windows Setup command prompt", false),
+    DiskCheck(null, "Disk Check", 0, "Read-only QEMU storage report", false),''')
+patch("virtualkeys/VirtualKeyLayoutConfig.java",
+      'VirtualKey.Space, VirtualKey.SetupCmd, VirtualKey.LeftCtrl,',
+      'VirtualKey.Space, VirtualKey.SetupCmd, VirtualKey.DiskCheck, VirtualKey.LeftCtrl,')
+patch("virtualkeys/VirtualKeyLayoutConfig.java",
+      "Arrays.asList(VirtualKey.Enter, VirtualKey.Space, VirtualKey.SetupCmd)",
+      "Arrays.asList(VirtualKey.Enter, VirtualKey.Space, VirtualKey.SetupCmd, VirtualKey.DiskCheck)")
+patch("virtualkeys/VirtualKeys.java",
+      '''            } else if (vk.keyCode != null) {
+                if (view instanceof ToggleButton)''',
+      r'''            } else if (vk == VirtualKey.DiskCheck) {
+                view.setOnClickListener(v -> {
+                    ToastUtils.toastShort(activity, "Reading QEMU storage (read-only)...");
+                    new Thread(() -> {
+                        String block = QmpClient.sendCommand("{\"execute\":\"query-block\"}");
+                        String nodes = QmpClient.sendCommand("{\"execute\":\"query-named-block-nodes\"}");
+                        String pci = QmpClient.sendCommand("{\"execute\":\"query-pci\"}");
+                        String stats = QmpClient.sendCommand("{\"execute\":\"query-blockstats\"}");
+                        String tree = QmpClient.sendCommand(
+                                "{\"execute\":\"human-monitor-command\",\"arguments\":{\"command-line\":\"info qtree\"}}");
+                        String summary;
+                        if (block == null || block.trim().isEmpty() || block.contains("\"error\"")) {
+                            summary = "QMP query-block unavailable: inspect full report";
+                        } else {
+                            summary = block.contains("hd0")
+                                    ? "Hard Disk A (hd0): FOUND in QMP"
+                                    : "Hard Disk A (hd0): NOT LISTED by QMP";
+                        }
+                        String report = "QubeVM read-only storage diagnostic\n"
+                                + "No disk, VM, firmware, or OS settings changed.\n\n"
+                                + "[query-block]\n" + String.valueOf(block) + "\n"
+                                + "[query-named-block-nodes]\n" + String.valueOf(nodes) + "\n"
+                                + "[query-pci]\n" + String.valueOf(pci) + "\n"
+                                + "[query-blockstats]\n" + String.valueOf(stats) + "\n"
+                                + "[HMP info qtree]\n" + String.valueOf(tree) + "\n";
+                        final String status = summary;
+                        activity.runOnUiThread(() -> new androidx.appcompat.app.AlertDialog.Builder(activity)
+                                .setTitle("QEMU Disk Check")
+                                .setMessage(status + "\n\nCopy the report to share the detailed result. File paths may be included.")
+                                .setPositiveButton("Copy Report", (d, w) -> {
+                                    android.content.ClipboardManager clipboard =
+                                            (android.content.ClipboardManager) activity.getSystemService(
+                                                    android.content.Context.CLIPBOARD_SERVICE);
+                                    if (clipboard != null)
+                                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText(
+                                                "QubeVM disk diagnostic", report));
+                                })
+                                .setNegativeButton("Close", null)
+                                .show());
+                    }, "QubeDiskCheck").start();
+                });
+            } else if (vk.keyCode != null) {
+                if (view instanceof ToggleButton)''')
+for file_name, checks in {
+    "virtualkeys/VirtualKey.java": ("DiskCheck(null",),
+    "virtualkeys/VirtualKeys.java": ("query-block", "query-named-block-nodes", "query-pci",
+                                      "query-blockstats", "info qtree", "Copy Report"),
+    "virtualkeys/VirtualKeyLayoutConfig.java": ("VirtualKey.DiskCheck",),
+}.items():
+    content = (root / file_name).read_text()
+    for needle in checks:
+        assert needle in content, f"missing {needle!r} in {file_name}"
+assert "win11-arm64-drivers.iso" not in (root / "jni/VMExecutor.java").read_text()
+print("READ-ONLY STORAGE DIAGNOSTIC PATCH PASS: no QEMU storage arguments modified")
 
 print("ALL SOURCE PATCH ANCHORS PASS; no VM disk files were accessed")
