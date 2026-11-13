@@ -41,12 +41,13 @@ jobs:
           VENDOR="$ROOT/vendor/windowsios"
           mkdir -p /tmp/windows-jit-test
           # Original fixtures are Darwin Mach-O AArch64 assembly. Translate only
-          # their global label spelling and PAGE relocations for ELF AArch64.
+          # their global label spelling, PAGE relocations, and one Apple-specific
+          # assembler alias for ELF AArch64; the expected register mask is unchanged.
           sed -e 's/_hv_classify_cases/hv_classify_cases/g' \
               -e 's/@PAGE//g' "$VENDOR/tests/classify_cases.s" \
               > /tmp/windows-jit-test/classify_cases.S
           sed -e 's/_hv_operand_cases/hv_operand_cases/g' \
-              -e 's/and sp, x1, #0xff/and xzr, x1, #0xff/' \
+              -e 's/and sp, x1, #0xff/and x2, x1, #0xff/' \
               "$VENDOR/tests/operand_cases.s" \
               > /tmp/windows-jit-test/operand_cases.S
           clang -O2 -march=armv8.5-a+lse+pauth \
