@@ -1,0 +1,90 @@
+name: Windows ARM64 QEMU Accelerator - Stage 0 Source Audit (NO APK)
+
+on:
+  push:
+    branches: [windows-arm64-qemu-accel-research]
+    paths:
+      - '.github/workflows/windows-arm64-accel-audit.yml'
+      - 'engineering/windows-arm64-accelerator/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  review-native-integration:
+    name: Pinned-source audit; no Windows disk / no APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout source-only research branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Fail if anything outside accelerator research is changed
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin windows-mode-android-research
+          git diff --name-only FETCH_HEAD HEAD | tee /tmp/research-diff.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          names = Path('/tmp/research-diff.txt').read_text().splitlines()
+          assert names, 'Expected research branch changes'
+          assert all(
+            p.startswith('engineering/windows-arm64-accelerator/')
+            or p == '.github/workflows/windows-arm64-accel-audit.yml'
+            for p in names
+          ), 'Protected Windows Mode source, APK or settings were touched'
+          print('PASS: Windows Mode 7.1.14 release files exactly preserved')
+          PY
+
+      - name: Check out exact upstream QEMU 11.1.3 API source
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 1 --filter=blob:none --sparse \
+            --branch v11.1.3 https://github.com/qemu/qemu.git /tmp/qemu-1113
+          git -C /tmp/qemu-1113 sparse-checkout set \
+            accel/tcg accel/hvf target/arm/hvf
+          test -s /tmp/qemu-1113/accel/tcg/tcg-accel-ops.c
+          test -s /tmp/qemu-1113/accel/hvf/hvf-accel-ops.c
+          test -s /tmp/qemu-1113/target/arm/hvf/hvf.c
+          test -s /tmp/qemu-1113/accel/meson.build
+
+      - name: Pin exact WindowsiOS translator source and assess portability
+        run: |
+          set -euo pipefail
+          git init -q /tmp/windowsios-pinned
+          git -C /tmp/windowsios-pinned remote add origin \
+            https://github.com/ammaarreshi/WindowsiOS.git
+          git -C /tmp/windowsios-pinned -c advice.detachedHead=false \
+            fetch -q --depth 1 origin 0071d6975287fd720b9046dfd3bd80b6f2aa765e
+          git -C /tmp/windowsios-pinned checkout -q FETCH_HEAD
+          test "$(git -C /tmp/windowsios-pinned rev-parse HEAD)" = \
+            0071d6975287fd720b9046dfd3bd80b6f2aa765e
+          test -s /tmp/windowsios-pinned/core/translate.c
+          test -s /tmp/windowsios-pinned/core/mmu.c
+          test -s /tmp/windowsios-pinned/host/jit_region.c
+
+      - name: Prove current precompiled native QEMU blocker and write audit
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            engineering/windows-arm64-accelerator/source_gate.py
+          python3 engineering/windows-arm64-accelerator/source_gate.py \
+            --repo . \
+            --qemu /tmp/qemu-1113 \
+            --windowsios /tmp/windowsios-pinned \
+            --output /tmp/windows-accelerator-audit/stage0-source-report.md
+          test -s /tmp/windows-accelerator-audit/stage0-source-report.md
+          grep -Fq 'NOT VERIFIED' /tmp/windows-accelerator-audit/stage0-source-report.md
+          grep -Fq 'PRECOMPILED shared library' /tmp/windows-accelerator-audit/stage0-source-report.md
+          test ! -d /tmp/windows-accelerator-audit/apk
+
+      - name: Publish source-only evidence (NEVER an Android APK)
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-arm64-accel-stage0-source-audit
+          path: /tmp/windows-accelerator-audit/stage0-source-report.md
+          if-no-files-found: error
