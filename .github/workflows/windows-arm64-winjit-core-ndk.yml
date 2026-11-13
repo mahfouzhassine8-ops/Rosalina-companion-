@@ -64,7 +64,7 @@ jobs:
             if [ "$name" = mmu ]; then EXTRA=-mgeneral-regs-only; fi
             "$C" --target=aarch64-linux-android30 -std=gnu11 -O2 -fPIC \
               -D_GNU_SOURCE -Wall -Wextra -Werror=implicit-function-declaration \
-              -I "$SRC/core" $EXTRA \
+              -I "$SRC/core" -I "$SRC/host" $EXTRA \
               -c "$f" -o "/tmp/winjit-objects/${name}.o"
           done
           "$C" --target=aarch64-linux-android30 -fPIC -c \
