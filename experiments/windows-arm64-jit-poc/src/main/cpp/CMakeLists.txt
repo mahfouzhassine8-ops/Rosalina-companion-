@@ -4,9 +4,9 @@ add_library(androidjitprobe SHARED
     probe_jni.c
     probe_engine.c
     android_jit_region.c
-    ../../../../vendor/windowsios/core/classify.c
-    ../../../../vendor/windowsios/core/operands.c)
+    ../../../vendor/windowsios/core/classify.c
+    ../../../vendor/windowsios/core/operands.c)
 target_include_directories(androidjitprobe PRIVATE
-    ../../../../vendor/windowsios/core)
+    ../../../vendor/windowsios/core)
 target_compile_options(androidjitprobe PRIVATE -O2 -Wall -Wextra -fno-omit-frame-pointer)
 target_link_libraries(androidjitprobe log)
