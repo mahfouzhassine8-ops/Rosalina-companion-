@@ -1,0 +1,104 @@
+name: Windows ARM64 WinJIT real guest-instruction smoke gate (NO APK)
+on:
+  push:
+    branches: [windows-arm64-qemu-accel-research]
+    paths:
+      - '.github/workflows/windows-arm64-winjit-native-guest.yml'
+      - 'engineering/windows-arm64-accelerator/test_winjit_native_guest.c'
+      - 'engineering/windows-arm64-accelerator/winjit_phys_bus.c'
+      - 'engineering/windows-arm64-accelerator/jit_region_android.c'
+      - 'engineering/windows-arm64-accelerator/port-windowsios-core-android.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  execute-translated-aarch64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Fail closed if protected Windows Mode release differs
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin windows-mode-android-research
+          test "$(git rev-parse FETCH_HEAD)" = 68c0b948b89ab03c5f5b010a2e35b99e69339e1d
+          git diff --name-only FETCH_HEAD HEAD > /tmp/research-diff.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/research-diff.txt').read_text().splitlines()
+          accepted={'.github/workflows/windows-arm64-accel-audit.yml',
+                    '.github/workflows/windows-arm64-native-qemu-source.yml',
+                    '.github/workflows/windows-arm64-winjit-core-ndk.yml',
+                    '.github/workflows/windows-arm64-source-native-research-apk.yml',
+                    '.github/workflows/windows-arm64-winjit-native-guest.yml'}
+          assert p and all(x.startswith('engineering/windows-arm64-accelerator/') or x in accepted for x in p), p
+          print('PASS: original 7.1.14 sources unchanged')
+          PY
+
+      - name: Pin ARM64 Linux runner and exact WindowsiOS source
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang
+          git init -q /tmp/winjit-test-source
+          git -C /tmp/winjit-test-source remote add origin https://github.com/ammaarreshi/WindowsiOS.git
+          git -C /tmp/winjit-test-source -c advice.detachedHead=false fetch -q --depth=1 origin 0071d6975287fd720b9046dfd3bd80b6f2aa765e
+          git -C /tmp/winjit-test-source checkout -q FETCH_HEAD
+          test "$(git -C /tmp/winjit-test-source rev-parse HEAD)" = 0071d6975287fd720b9046dfd3bd80b6f2aa765e
+          python3 engineering/windows-arm64-accelerator/port-windowsios-core-android.py /tmp/winjit-test-source
+
+      - name: Compile complete WinJIT core, real ARM64 entrypoint and W^X host
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/winjit-test-obj /tmp/winjit-test-out
+          SRC=/tmp/winjit-test-source
+          for f in "$SRC"/core/*.c; do
+            name=$(basename "$f" .c)
+            EXTRA=""
+            if [ "$name" = mmu ]; then EXTRA=-mgeneral-regs-only; fi
+            clang -std=gnu11 -O2 -fPIC -D_GNU_SOURCE -Wall -Wextra -Werror=implicit-function-declaration \
+              -I "$SRC/core" -I "$SRC/host" $EXTRA -c "$f" -o "/tmp/winjit-test-obj/$name.o"
+          done
+          clang -fPIC -c "$SRC/host/enter.S" -o /tmp/winjit-test-obj/enter.o
+          clang -std=gnu11 -O2 -fPIC -D_GNU_SOURCE -Wall -Wextra -Werror \
+            -I "$SRC/host" -c engineering/windows-arm64-accelerator/jit_region_android.c \
+            -o /tmp/winjit-test-obj/jit_region_android.o
+          clang -std=gnu11 -O2 -fPIC -D_GNU_SOURCE -Wall -Wextra -Werror \
+            -I "$SRC/core" -I "$SRC/host" \
+            -c engineering/windows-arm64-accelerator/winjit_phys_bus.c \
+            -o /tmp/winjit-test-obj/winjit_phys_bus.o
+          clang -std=gnu11 -O2 -fPIC -D_GNU_SOURCE -Wall -Wextra -Werror \
+            -I "$SRC/core" -I "$SRC/host" -I engineering/windows-arm64-accelerator \
+            -c engineering/windows-arm64-accelerator/test_winjit_native_guest.c \
+            -o /tmp/winjit-test-obj/test_winjit_native_guest.o
+          clang -fPIE -pie -o /tmp/winjit-test-out/winjit-native-aarch64-guest \
+            /tmp/winjit-test-obj/*.o -lm -ldl -pthread
+          file /tmp/winjit-test-out/winjit-native-aarch64-guest
+          readelf -h /tmp/winjit-test-out/winjit-native-aarch64-guest | grep -F AArch64
+          sha256sum /tmp/winjit-test-out/winjit-native-aarch64-guest \
+            > /tmp/winjit-test-out/SHA256.txt
+
+      - name: Actually execute translated AArch64 instructions and MMIO
+        run: |
+          set -euo pipefail
+          timeout 30s /tmp/winjit-test-out/winjit-native-aarch64-guest \
+            | tee /tmp/winjit-test-out/REAL-GUEST-SMOKE-RESULT.txt
+          grep -Fq 'PASS: REAL WinJIT AArch64 guest instructions executed' \
+            /tmp/winjit-test-out/REAL-GUEST-SMOKE-RESULT.txt
+          echo 'REAL NATIVE ARM64 TRANSLATOR MICROGUEST PASSED. QEMU ACCELERATOR AND WINDOWS BOOT NOT VERIFIED.' \
+            > /tmp/winjit-test-out/STATUS.txt
+
+      - name: Publish only test evidence, never an APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-winjit-arm64-real-guest-execution-evidence
+          path: |
+            /tmp/winjit-test-out/SHA256.txt
+            /tmp/winjit-test-out/STATUS.txt
+            /tmp/winjit-test-out/REAL-GUEST-SMOKE-RESULT.txt
+          if-no-files-found: warn
