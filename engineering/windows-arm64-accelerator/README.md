@@ -47,6 +47,8 @@ Investigate an alternative direct AArch64 translator as a separate QEMU accelera
 ## Verified progress on the research branch (2026-11-13)
 
 - QEMU 11.1.3 Android ARM64 native **source build PASSED**: Actions 43520669820.
+- **Actual ARM64 guest microprogram execution PASSED** on ARM64 Linux: native WinJIT translated MOV/ADD/LDR/branch instructions, accessed a QEMU-style MMIO callback via the new W^X code cache, and stopped at the expected PC with verified registers. Actions 43551607658. This is a real translator test, **not QEMU or Windows boot**.
+- A fail-closed QEMU ARM64 EL1 state-snapshot adapter and QEMU AddressSpace MMIO callbacks have been added to the research branch; native Android QEMU source compilation is a separate gate. Do not call them a functioning accelerator or ship an APK until that gate plus real guest boots pass.
 - WindowsiOS translated ARM64/MMU core and entry assembly **COMPILED** on Android NDK, and an isolated fully linked ARM64 **libwinjit-core-android-aarch64.so** was produced with no undefined native symbols: Actions 43548034462.
 - Linux smoke test for the new Android-style **dual RW/RX memfd code cache PASSED**. This is W^X, not a root/SELinux bypass; actual Fold executable-memory policy and native guest execution remain unverified.
 - An in-place upgrade **package identity gate PASSED** (same `com.fold.windowsmode.research`, required protected signer fingerprint, candidate versionCode `70115`, and rejection of the mistaken `com.fold.windowsmode.sourcenative` duplicate). This is SOURCE-PREPARATION TESTING ONLY, not a signed upgrade APK.
