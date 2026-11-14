@@ -54,6 +54,19 @@ patch(core/"dispatch.c",
       '''        case HV_EXIT_WFI:
             if (one) return HV_EXIT_WFI; /* QEMU schedules timer/IRQ wakeup */
             if (wait_for_interrupt(cpu) != 0) return HV_EXIT_WFI;''')
+# QEMU imports/exports one block while holding its I/O lock. The upstream
+# single-step entry still enabled self-chaining/indirect jumps, which could
+# run forever after a timer IRQ and starve the QEMU shutdown request. Honor
+# the one-block contract, including the translator's early self-chain pass.
+patch(core/"dispatch.c",
+      '''int hv_run_one(HvCpu *cpu) {
+    hv_big_lock(cpu->m);''',
+      '''int hv_run_one(HvCpu *cpu) {
+    hv_big_lock(cpu->m);
+    cpu->m->chain = 0; /* bounded QEMU vCPU scheduling, including self loops */''')
+patch(core/"translate.c",
+      'for (uint32_t k = 0; k < e->nsite && !m->trace; k++)',
+      'for (uint32_t k = 0; k < e->nsite && m->chain && !m->trace; k++)')
 
 clock=core/"android_hv_clock.h"
 assert not clock.exists()
