@@ -142,7 +142,7 @@ jobs:
           objcopy -O binary /tmp/winjit-test-out/guest.elf /tmp/winjit-test-out/guest.bin
           cd /tmp/winjit-qemu
           set +e
-          LD_LIBRARY_PATH=/tmp/winjit-lib:$LD_LIBRARY_PATH \
+          LD_LIBRARY_PATH=/tmp/winjit-lib:${LD_LIBRARY_PATH:-} \
           timeout 15s ./build/qemu-system-aarch64 -accel winjit \
             -machine virt,secure=off,virtualization=off -cpu cortex-a53 \
             -smp 1 -m 128M -bios /tmp/winjit-test-out/guest.bin \
