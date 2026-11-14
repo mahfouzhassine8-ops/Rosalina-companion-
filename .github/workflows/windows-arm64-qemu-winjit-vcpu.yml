@@ -7,6 +7,7 @@ on:
       - 'engineering/windows-arm64-accelerator/qemu_arm_snapshot.c'
       - 'engineering/windows-arm64-accelerator/qemu_phys_io.c'
       - 'engineering/windows-arm64-accelerator/qemu_winjit_accel.c'
+      - 'engineering/windows-arm64-accelerator/patch_qemu_virt_winjit.py'
   workflow_dispatch:
 
 permissions:
@@ -137,6 +138,7 @@ jobs:
           p.write_text(s.replace(anchor, insert+anchor))
           print('PASS: real QEMU ARM64 source now compiles WinJIT state snapshot')
           PY
+          python3 engineering/windows-arm64-accelerator/patch_qemu_virt_winjit.py "$Q"
       - name: Build actual QEMU 11.1.3 ARM64 shared library from source
         timeout-minutes: 105
         run: |
