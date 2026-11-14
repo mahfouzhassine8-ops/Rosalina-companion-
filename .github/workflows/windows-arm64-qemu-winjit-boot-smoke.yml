@@ -455,6 +455,16 @@ jobs:
               movk x12, #0xaa55, lsl #16
               adrp x2, values
               add x2, x2, :lo12:values
+              // Probe guest x16/x17 loads *before* any MMU MSR helper call.
+              // Later F/G/H/I markers distinguish post-helper corruption.
+              movz x10, #74
+              ldr x16, [x2]
+              cmp x16, x9
+              b.ne bad
+              movz x10, #75
+              ldr x17, [x2, #8]
+              cmp x17, x12
+              b.ne bad
               movz x10, #65
               ldr x0, [x2]
               cmp x0, x9
