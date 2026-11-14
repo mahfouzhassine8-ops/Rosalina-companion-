@@ -68,6 +68,51 @@ jobs:
           sha256sum /tmp/native-qemu/libqemu-system-aarch64.so \
                     /tmp/native-winjit/libwinjit-core-android-aarch64.so \
             > /tmp/winjit-preflight/ENGINES-SHA256.txt
+      - name: Verify native shared-library dependencies against protected 7.1.14 APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/protected-apk
+          gh run download 43428370564 --repo "$GITHUB_REPOSITORY" \
+            --name windows-mode-arm64-bootbench-70114-apk --dir /tmp/protected-apk
+          APK=/tmp/protected-apk/WindowsMode-QEMU-BOOTBENCH-70114.apk
+          test -s "$APK"
+          python3 - <<'PY'
+          import re,subprocess,zipfile
+          from pathlib import Path
+          apk=Path('/tmp/protected-apk/WindowsMode-QEMU-BOOTBENCH-70114.apk')
+          old_so=Path('/tmp/protected-apk/original-libqemu-system-aarch64.so')
+          with zipfile.ZipFile(apk) as z:
+              members=set(z.namelist())
+              prefix='lib/arm64-v8a/'
+              bundled={Path(name).name for name in members if name.startswith(prefix) and name.endswith('.so')}
+              name=prefix+'libqemu-system-aarch64.so'
+              assert name in members and z.getinfo(name).file_size>0
+              old_so.write_bytes(z.read(name))
+          new_so=Path('/tmp/native-qemu/libqemu-system-aarch64.so')
+          def needed(path):
+              result=subprocess.check_output(['readelf','-d',str(path)],text=True)
+              return set(re.findall(r'Shared library:\s*\[([^\]]+)\]',result))
+          original=needed(old_so)
+          proposed=needed(new_so)
+          android_platform={'libc.so','libm.so','libdl.so','liblog.so',
+                            'libandroid.so','libz.so','libEGL.so','libGLESv2.so',
+                            'libGLESv1_CM.so','libOpenSLES.so','libjnigraphics.so',
+                            'libvulkan.so','libaaudio.so','libstdc++.so'}
+          unexpected=proposed - bundled - android_platform
+          report=(
+              'Original NEEDED: '+', '.join(sorted(original))+'\n'
+              'Candidate NEEDED: '+', '.join(sorted(proposed))+'\n'
+              'New NEEDED: '+', '.join(sorted(proposed-original))+'\n'
+              'Bundled runtime libraries: '+', '.join(sorted(bundled))+'\n'
+              'Missing new non-system dependencies: '+', '.join(sorted(unexpected))+'\n'
+          )
+          Path('/tmp/winjit-preflight/PROTECTED-QEMU-DEPENDENCY-AUDIT.txt').write_text(report)
+          print(report)
+          assert not unexpected, 'New QEMU native binary needs a library missing from protected runtime'
+          print('PASS: candidate dependencies covered by original APK runtime or Android platform')
+          PY
       - name: Rebuild existing 7.1.14 Java source in disposable checkout
         run: |
           set -euo pipefail
