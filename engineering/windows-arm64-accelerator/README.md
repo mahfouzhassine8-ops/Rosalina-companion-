@@ -56,6 +56,13 @@ Investigate an alternative direct AArch64 translator as a separate QEMU accelera
 - **Critical missing integration:** no QEMU `-accel winjit` implementation, lifecycle/CPUARMState synchronization, mapped QEMU RAM/MMIO and DMA invalidation, GIC/timers/interrupts, system register fidelity, or UEFI/Linux/Windows boot verification under WinJIT. The linked core library cannot replace QEMU's native accelerator by being placed in APK jniLibs.
 - **Release gate:** do not produce or publish an in-place accelerated APK until WinJIT actually runs a guest under QEMU, passes UEFI and licensed Windows ARM64 desktop/compatibility checks on a safe disk overlay with copied UEFI VARS, and the signed APK passes package/signer/version checks. Preserve the original Windows Mode 7.1.14, signed identity, installed Windows and user data.
 
+## Latest real QEMU WinJIT native guest acceptance (2026-11-14)
+
+- **Passed** run [43557386466](https://github.com/mahfouzhassine8-ops/Rosalina-companion-/actions/runs/43557386466), evidence artifact 14098414521: QEMU 11.1.3 with the actual `-accel winjit` native ARM64 execution path printed the microguest's `OK` on emulated UART and remained alive until the deliberately imposed timeout (`GUEST_EXIT=124`), with no crash captured.
+- This fixed a real core abort seen in run [43557029014](https://github.com/mahfouzhassine8-ops/Rosalina-companion-/actions/runs/43557029014): WinJIT's pinned translator can issue valid zero-byte code-pool writes; the original Android W^X cache treated them as fatal. Fix `e3241885`, regression `f3ef2377`.
+- **Passed** Android WinJIT core compilation and regression tests, run 43557455819, and native translator regression run 43557458948. Direct-upgrade source checks passed in run 43556353079; no APK signed.
+- **NOT VERIFIED:** UEFI/Linux/Windows ARM64 boot, Windows desktop/application compatibility, GIC interrupts and timers, DMA invalidation, transition to EL0, Android Fold runtime and actual APK in-place install. Successful microguest execution is not Windows compatibility evidence. Release remains blocked, and the original Windows Mode 7.1.14/disk/signing identity stays protected.
+
 ## Strict protection
 
 No installed-Windows disk or firmware access, no disabling Defender, no root, no KVM, no SELinux bypass, no edits to release scripts, packaged APK, signing, app settings or unrelated projects. CI stage is read-only and emits only a source-audit report, NOT an APK.
