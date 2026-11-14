@@ -619,6 +619,141 @@ jobs:
           echo 'NOT VERIFIED: Windows UEFI, NVMe, graphics, GICv3, installed disk, Fold' \
             >> /tmp/winjit-test-out/STATUS.txt
 
+      - name: Verify actual QEMU/WinJIT guest-visible CPU identification and counter frequency
+        run: |
+          set -euo pipefail
+          # Identical Cortex-A53 machine/ROM under TCG and WinJIT. Output the
+          # full 64-bit MIDR_EL1, ID_AA64PFR0_EL1, and CNTFRQ_EL0 as hex,
+          # without comparing against hard-coded expected values.
+          # This explicitly tests whether the two engines give the same
+          # CPU identity and timer frequency to the same guest.
+          cat > /tmp/winjit-test-out/sysid-guest.s <<'ASM'
+          .section .text
+          .global _start
+          _start:
+              movz x11, #0
+              movk x11, #0x900, lsl #16
+              mrs x0, midr_el1
+              bl hex64
+              mrs x0, id_aa64pfr0_el1
+              bl hex64
+              mrs x0, cntfrq_el0
+              bl hex64
+          idle:
+              b idle
+          hex64:
+              movz w1, #16
+          nibble:
+              lsr x3, x0, #60
+              cmp w3, #9
+              b.le decimal
+              add w3, w3, #7
+          decimal:
+              add w3, w3, #48
+              strb w3, [x11]
+              lsl x0, x0, #4
+              subs w1, w1, #1
+              b.ne nibble
+              movz w3, #10
+              strb w3, [x11]
+              ret
+          ASM
+          clang -c /tmp/winjit-test-out/sysid-guest.s -o /tmp/winjit-test-out/sysid-guest.o
+          ld.lld -Ttext=0 -o /tmp/winjit-test-out/sysid-guest.elf /tmp/winjit-test-out/sysid-guest.o
+          objcopy -O binary /tmp/winjit-test-out/sysid-guest.elf /tmp/winjit-test-out/sysid-guest.bin
+          cd /tmp/winjit-qemu
+          set +e
+          timeout --signal=TERM --kill-after=2s 10s \
+            ./build/qemu-system-aarch64 -accel tcg \
+            -machine virt,gic-version=2,secure=off,virtualization=off \
+            -cpu cortex-a53 -smp 1 -m 128M \
+            -bios /tmp/winjit-test-out/sysid-guest.bin \
+            -nographic -monitor none -serial stdio \
+            > /tmp/winjit-test-out/sysid-tcg.log 2>&1
+          TCG_EXIT=$?
+          set -e
+          grep -E '^[0-9A-F]{16}
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-winjit-linux-aarch64-actual-microguest-boot-evidence
+          path: |
+            /tmp/winjit-test-out/STATUS.txt
+            /tmp/winjit-test-out/guest.log
+            /tmp/winjit-test-out/user-guest.log
+            /tmp/winjit-test-out/mmu-tcg.log
+            /tmp/winjit-test-out/mmu-winjit.log
+            /tmp/winjit-test-out/sysreg-tcg.log
+            /tmp/winjit-test-out/sysreg-winjit.log
+            /tmp/winjit-test-out/loadsys-tcg.log
+            /tmp/winjit-test-out/loadsys-winjit.log
+            /tmp/winjit-test-out/profile-tcg.log
+            /tmp/winjit-test-out/profile-winjit.log
+            /tmp/winjit-test-out/sysid-tcg.log
+            /tmp/winjit-test-out/sysid-winjit.log
+            /tmp/winjit-test-out/sysid-tcg-values.txt
+            /tmp/winjit-test-out/sysid-winjit-values.txt
+            /tmp/winjit-test-out/sysid-diff.txt
+            /tmp/winjit-test-out/accel-help.txt
+          if-no-files-found: warn
+ /tmp/winjit-test-out/sysid-tcg.log \
+            > /tmp/winjit-test-out/sysid-tcg-values.txt || :
+          test "$TCG_EXIT" -eq 124
+          test "$(wc -l < /tmp/winjit-test-out/sysid-tcg-values.txt)" -eq 3
+          set +e
+          LD_LIBRARY_PATH=/tmp/winjit-lib \
+          timeout --signal=TERM --kill-after=2s 12s \
+            gdb --quiet --batch -ex run -ex 'thread apply all bt 12' --args \
+            ./build/qemu-system-aarch64 -accel winjit \
+            -machine virt,gic-version=2,secure=off,virtualization=off \
+            -cpu cortex-a53 -smp 1 -m 128M \
+            -bios /tmp/winjit-test-out/sysid-guest.bin \
+            -nographic -monitor none -serial stdio \
+            > /tmp/winjit-test-out/sysid-winjit.log 2>&1
+          WINJIT_EXIT=$?
+          set -e
+          grep -E '^[0-9A-F]{16}
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-winjit-linux-aarch64-actual-microguest-boot-evidence
+          path: |
+            /tmp/winjit-test-out/STATUS.txt
+            /tmp/winjit-test-out/guest.log
+            /tmp/winjit-test-out/user-guest.log
+            /tmp/winjit-test-out/mmu-tcg.log
+            /tmp/winjit-test-out/mmu-winjit.log
+            /tmp/winjit-test-out/sysreg-tcg.log
+            /tmp/winjit-test-out/sysreg-winjit.log
+            /tmp/winjit-test-out/loadsys-tcg.log
+            /tmp/winjit-test-out/loadsys-winjit.log
+            /tmp/winjit-test-out/profile-tcg.log
+            /tmp/winjit-test-out/profile-winjit.log
+            /tmp/winjit-test-out/accel-help.txt
+          if-no-files-found: warn
+ /tmp/winjit-test-out/sysid-winjit.log \
+            > /tmp/winjit-test-out/sysid-winjit-values.txt || :
+          printf 'IDENTITY_TCG_EXIT=%s IDENTITY_WINJIT_EXIT=%s\n' \
+            "$TCG_EXIT" "$WINJIT_EXIT" >> /tmp/winjit-test-out/STATUS.txt
+          echo 'guest IDs: MIDR_EL1, ID_AA64PFR0_EL1, CNTFRQ_EL0' \
+            >> /tmp/winjit-test-out/STATUS.txt
+          if [ "$WINJIT_EXIT" -ne 124 ] ||
+             [ "$(wc -l < /tmp/winjit-test-out/sysid-winjit-values.txt)" -ne 3 ]; then
+            echo 'FAIL: WinJIT cannot run guest ID-register read probe' \
+              >> /tmp/winjit-test-out/STATUS.txt
+            exit 1
+          fi
+          if ! diff -u /tmp/winjit-test-out/sysid-tcg-values.txt \
+                        /tmp/winjit-test-out/sysid-winjit-values.txt \
+                        > /tmp/winjit-test-out/sysid-diff.txt; then
+            cat /tmp/winjit-test-out/sysid-diff.txt
+            echo 'FAIL: guest-visible CPU ID or timer frequency differs between TCG and WinJIT for the identical QEMU machine' \
+              >> /tmp/winjit-test-out/STATUS.txt
+            exit 1
+          fi
+          echo 'PASS: QEMU/WinJIT CPU identification and counter frequency match TCG' \
+            >> /tmp/winjit-test-out/STATUS.txt
+
       - name: Publish ONLY native boot evidence, NOT Android APK
         if: always()
         uses: actions/upload-artifact@v4
