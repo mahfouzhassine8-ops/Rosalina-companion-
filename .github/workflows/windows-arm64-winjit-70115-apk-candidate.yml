@@ -135,6 +135,36 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"
           cd upstream
           gradle --no-daemon --stacktrace :qube-android-arm:assembleRelease -PqemuVersion=11.1.3
+      - name: Include WinJIT core ELF excluded by Gradle native-lib selection, then re-sign
+        run: |
+          set -euo pipefail
+          TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          APK=$(find upstream/qube-android-arm/build/outputs/apk/release -type f -name '*.apk' | head -n 1)
+          test -s "$APK"
+          CORE=lib/arm64-v8a/libwinjit-core-android-aarch64.so
+          if ! unzip -Z -1 "$APK" | grep -Fxq "$CORE"; then
+            echo 'Gradle excluded WinJIT .so basename; inserting exact native ELF before signing.'
+            TMPDIR=$(mktemp -d)
+            mkdir -p "$TMPDIR/lib/arm64-v8a"
+            cp /tmp/native-winjit/libwinjit-core-android-aarch64.so "$TMPDIR/$CORE"
+            APK_REAL=$(realpath "$APK")
+            (cd "$TMPDIR" && zip -q -0 "$APK_REAL" "$CORE")
+            "$TOOLS/zipalign" -P 16 -f 4 "$APK" /tmp/windowsmode-70115-native-aligned.apk
+            "$TOOLS/apksigner" sign \
+              --ks upstream/keystore/testkey.keystore \
+              --ks-key-alias androidtestkey \
+              --ks-pass pass:android \
+              --key-pass pass:android \
+              --v1-signing-enabled true \
+              --v2-signing-enabled true \
+              --v3-signing-enabled true \
+              --out /tmp/windowsmode-70115-native-resigned.apk \
+              /tmp/windowsmode-70115-native-aligned.apk
+            cp /tmp/windowsmode-70115-native-resigned.apk "$APK"
+          fi
+          unzip -Z -1 "$APK" | grep -Fx "$CORE"
+          "$TOOLS/zipalign" -c -P 16 -v 4 "$APK"
+          "$TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/windowsmode-out/NATIVE-REPACK-SIGNATURE.txt
       - name: Verify actual APK package, signer, ABI and exact native payload
         run: |
           set -euo pipefail
