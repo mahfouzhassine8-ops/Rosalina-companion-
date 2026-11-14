@@ -12,6 +12,9 @@ on:
       - 'engineering/windows-arm64-accelerator/winjit_cpu_bridge.h'
       - 'engineering/windows-arm64-accelerator/winjit_cpu_bridge.c'
       - 'engineering/windows-arm64-accelerator/test_winjit_cpu_bridge.c'
+      - 'engineering/windows-arm64-accelerator/winjit_phys_bus.h'
+      - 'engineering/windows-arm64-accelerator/winjit_phys_bus.c'
+      - 'engineering/windows-arm64-accelerator/test_winjit_phys_bus.c'
   workflow_dispatch:
 permissions:
   contents: read
@@ -79,6 +82,17 @@ jobs:
             engineering/windows-arm64-accelerator/test_winjit_cpu_bridge.c \
             -o /tmp/test-winjit-cpu-bridge
           /tmp/test-winjit-cpu-bridge
+      - name: Test WinJIT physical bus/MMIO QEMU boundary (NO GUEST)
+        run: |
+          set -euo pipefail
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -I /tmp/winjit-android-source/core \
+            -I /tmp/winjit-android-source/host \
+            -I engineering/windows-arm64-accelerator \
+            engineering/windows-arm64-accelerator/winjit_phys_bus.c \
+            engineering/windows-arm64-accelerator/test_winjit_phys_bus.c \
+            -o /tmp/test-winjit-phys-bus
+          /tmp/test-winjit-phys-bus
       - name: Direct-upgrade package ID/signature/version regression gate (NO APK)
         run: |
           set -euo pipefail
@@ -140,6 +154,11 @@ jobs:
             -I "$SRC/core" -I engineering/windows-arm64-accelerator \
             -c engineering/windows-arm64-accelerator/winjit_cpu_bridge.c \
             -o /tmp/winjit-objects/winjit_cpu_bridge.o
+          "$C" --target=aarch64-linux-android30 -std=gnu11 -O2 -fPIC \
+            -Wall -Wextra -Werror \
+            -I "$SRC/core" -I "$SRC/host" -I engineering/windows-arm64-accelerator \
+            -c engineering/windows-arm64-accelerator/winjit_phys_bus.c \
+            -o /tmp/winjit-objects/winjit_phys_bus.o
           "$C" --target=aarch64-linux-android30 -fPIC -c \
             "$SRC/host/enter.S" -o /tmp/winjit-objects/enter.o
           "$AR" rcs /tmp/winjit-core-out/libwinjit-core-android-aarch64.a \
@@ -157,7 +176,8 @@ jobs:
           required={'hv_jit_region_open','hv_jit_region_attach','hv_jit_region_close',
                     'hv_jit_write','hv_jit_finish','hv_jit_reserve','hv_jit_reset',
                     'hv_enter','hv_run','winjit_cpu_from_qemu_state',
-                    'winjit_cpu_to_qemu_state'}
+                    'winjit_cpu_to_qemu_state','winjit_bus_install',
+                    'winjit_bus_mmio_read','winjit_bus_mmio_write'}
           assert required <= symbols, f'Missing WinJIT native symbols: {required - symbols}'
           print('PASS: Android W^X and full translator entry symbols present')
           PY
