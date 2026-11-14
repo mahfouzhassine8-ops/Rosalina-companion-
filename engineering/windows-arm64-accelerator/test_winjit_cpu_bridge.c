@@ -78,9 +78,20 @@ int main(void)
     assert(winjit_cpu_to_qemu_state(&b, hv) == WINJIT_CPU_OK);
     assert_equivalent(&a, &b);
 
-    /* Reject EL0, EL2 and EL3, non-AArch64 state, unmodeled flags and
-     * ABI mismatches rather than corrupting the caller's CPU state. */
-    const uint64_t bad_modes[] = {0x0ULL, 0x8ULL, 0x9ULL, 0xcULL, 0xdULL};
+    /* A real Windows user-mode process requires EL0t. Verify roundtrip
+     * with DAIF, vector registers and active user SP preserved. */
+    a.pstate = 0x900003c0ULL;
+    a.sp = 0x00007ffdead000ULL;
+    a.sp_el0 = a.sp;
+    assert(winjit_cpu_from_qemu_state(hv, &a) == WINJIT_CPU_OK);
+    assert(hv->el == 0 && hv->spsel == 0);
+    assert(hv->sp == a.sp && hv->sp_el0 == a.sp_el0);
+    assert(winjit_cpu_to_qemu_state(&b, hv) == WINJIT_CPU_OK);
+    assert_equivalent(&a, &b);
+
+    /* Reject EL0h, EL2 and EL3, non-AArch64, unmodeled flags and
+     * ABI mismatches rather than corrupting caller's CPU state. */
+    const uint64_t bad_modes[] = {0x1ULL, 0x8ULL, 0x9ULL, 0xcULL, 0xdULL};
     for (size_t i = 0; i < sizeof bad_modes / sizeof bad_modes[0]; i++) {
         a.pstate = 0x3c0ULL | bad_modes[i];
         assert(winjit_cpu_from_qemu_state(hv, &a) == WINJIT_CPU_UNSUPPORTED);
@@ -97,7 +108,10 @@ int main(void)
     assert(winjit_cpu_to_qemu_state(NULL, hv) == WINJIT_CPU_INVALID);
     hv->el = 2;
     assert(winjit_cpu_to_qemu_state(&b, hv) == WINJIT_CPU_UNSUPPORTED);
+    hv->el = 0;
+    hv->spsel = 1;
+    assert(winjit_cpu_to_qemu_state(&b, hv) == WINJIT_CPU_UNSUPPORTED);
     free(hv);
-    puts("PASS: WinJIT EL1 CPU register/vector state roundtrip and rejected unsafe modes");
+    puts("PASS: WinJIT AArch64 EL0/EL1 CPU/vector roundtrip and invalid mode rejection");
     return 0;
 }
