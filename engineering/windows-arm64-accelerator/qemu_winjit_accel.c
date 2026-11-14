@@ -108,7 +108,7 @@ static void winjit_memory_add(MemoryListener *listener,
 {
     WinjitState *s = container_of(listener, WinjitState, listener);
     MemoryRegion *region = section->mr;
-    if (!memory_region_is_ram(region)) {
+    if (!memory_region_is_ram(region) && !memory_region_is_romd(region)) {
         return;
     }
     if (s->started) {
@@ -122,7 +122,7 @@ static void winjit_memory_add(MemoryListener *listener,
                       int128_get64(section->size),
                       (uint8_t *)memory_region_get_ram_ptr(region) +
                           section->offset_within_region,
-                      section->readonly) != 0) {
+                      (section->readonly || memory_region_is_romd(region))) != 0) {
         s->failed = true;
         error_report("winjit: RAM mapping unsupported; no guest execution");
     }
@@ -132,7 +132,8 @@ static void winjit_memory_del(MemoryListener *listener,
                               MemoryRegionSection *section)
 {
     WinjitState *s = container_of(listener, WinjitState, listener);
-    if (memory_region_is_ram(section->mr)) {
+    if (s->started && (memory_region_is_ram(section->mr) ||
+                       memory_region_is_romd(section->mr))) {
         s->failed = true;
         error_report("winjit: RAM removal requires translation invalidation");
     }
@@ -168,14 +169,21 @@ static int winjit_machine_init(AccelState *as, MachineState *ms)
         .region_del = winjit_memory_del,
     };
     runtime = s;
-    memory_listener_register(&s->listener, &address_space_memory);
-    if (s->failed) {
-        error_report("winjit: initial QEMU memory layout unsupported");
-        return -ENOTSUP;
-    }
+    /* Defer memory registration until the board/flash/RAM has been built.
+     * Registering during init_machine causes transient ROM mappings to be
+     * removed and leaves the state permanently marked unsafe. */
     error_report("winjit: RESEARCH accelerator loaded; Windows not validated");
     return 0;
 #endif
+}
+
+static void winjit_setup_post(AccelState *as)
+{
+    WinjitState *s = (WinjitState *)as;
+    memory_listener_register(&s->listener, &address_space_memory);
+    if (s->failed) {
+        error_report("winjit: board RAM/ROM mapping unsupported; guest disabled");
+    }
 }
 
 static void winjit_stop_unsafe(CPUState *cpu, const char *why)
@@ -296,6 +304,7 @@ static void winjit_accel_class_init(ObjectClass *oc, const void *data)
     AccelClass *ac = ACCEL_CLASS(oc);
     ac->name = "WinJIT (unverified research)";
     ac->init_machine = winjit_machine_init;
+    ac->setup_post = winjit_setup_post;
     ac->allowed = &winjit_allowed;
 }
 
