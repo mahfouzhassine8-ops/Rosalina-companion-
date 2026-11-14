@@ -123,6 +123,14 @@ jobs:
           cp /tmp/native-winjit/libwinjit-core-android-aarch64.so upstream/qube-android-arm/src/main/jniLibs/arm64-v8a/
           python3 - <<'PYCODE'
           from pathlib import Path
+          app=Path('upstream/qube-android-arm')
+          strings=app/'src/main/res/values/strings.xml'
+          strings.write_text(strings.read_text().replace('>QubeVM ARM<','>Windows Mode (QubeVM-based test)<').replace('>Qube ARM<','>Windows Mode Test<'))
+          # AGP otherwise strips the newly compiled translator, changing the
+          # verified ELF bytes. Preserve both scoped engines byte-for-byte.
+          gradle=app/'build.gradle'
+          with gradle.open('a') as f:
+              f.write('\nandroid { packaging { jniLibs { keepDebugSymbols += ["**/libqemu-system-aarch64.so", "**/libwinjit-core-android-aarch64.so"] } } }\n')
           for f in Path('upstream').rglob('build.gradle'):
               s=f.read_text()
               s=s.replace('compileSdk = 37','compileSdk = 36').replace('targetSdk = 37','targetSdk = 35')
