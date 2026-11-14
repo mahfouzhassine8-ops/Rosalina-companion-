@@ -117,12 +117,12 @@ static void winjit_memory_add(MemoryListener *listener,
         error_report("winjit: RAM changed after vCPU start; accelerator disabled");
         return;
     }
-    if (section->size.hi != 0 || !int128_get64(section->size) ||
+    if (int128_gethi(section->size) != 0 || !int128_get64(section->size) ||
         s->fn.add_ram(s->machine, section->offset_within_address_space,
                       int128_get64(section->size),
                       (uint8_t *)memory_region_get_ram_ptr(region) +
                           section->offset_within_region,
-                      region->readonly) != 0) {
+                      section->readonly) != 0) {
         s->failed = true;
         error_report("winjit: RAM mapping unsupported; no guest execution");
     }
