@@ -88,7 +88,11 @@ static void require_span(const HvJitRegion *region, uint32_t *start, size_t byte
 
 void hv_jit_write(HvJitRegion *region, uint32_t *start, const void *src, size_t bytes) {
     require_span(region, start, bytes);
-    if (!src || bytes == 0) abort();
+    /* The upstream translator may emit no literal-pool or cold words.
+     * Zero-byte writes are valid no-ops, not a fatal JIT violation.
+     * Preserve strict bounds and non-null source checks for real writes. */
+    if (bytes == 0) return;
+    if (!src) abort();
     uint8_t *rw = (uint8_t *)((uintptr_t)start + region->rw_diff);
     if (bytes == sizeof(uint32_t)) {
         if ((uintptr_t)start % sizeof(uint32_t)) abort();
