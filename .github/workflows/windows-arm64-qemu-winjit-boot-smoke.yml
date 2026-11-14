@@ -98,8 +98,11 @@ jobs:
           import sys
           m=Path(sys.argv[1])
           s=m.read_text()
-          assert s.count('#include <TargetConditionals.h>')==1
-          m.write_text(s.replace('#include <TargetConditionals.h>','#define TARGET_OS_IPHONE 0'))
+          if '#include <TargetConditionals.h>' in s:
+              assert s.count('#include <TargetConditionals.h>')==1
+              m.write_text(s.replace('#include <TargetConditionals.h>','#define TARGET_OS_IPHONE 0'))
+          else:
+              assert '#define TARGET_OS_IPHONE 0' in s, 'Unexpected pinned WinJIT machine header'
           p=Path(sys.argv[2])
           s=p.read_text()
           anchor="target_common_system_arch += {'arm': arm_common_system_ss}"
