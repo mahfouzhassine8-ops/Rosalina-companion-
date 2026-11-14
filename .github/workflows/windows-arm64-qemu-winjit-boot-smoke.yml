@@ -503,6 +503,7 @@ jobs:
               ldr x16, [x2]
               cmp x16, x9
               b.ne bad
+              movz x10, #72
               msr tcr_el1, x16
               mrs x4, tcr_el1
               cmp x4, x9
@@ -511,6 +512,7 @@ jobs:
               ldr x17, [x2, #8]
               cmp x17, x12
               b.ne bad
+              movz x10, #73
               msr mair_el1, x17
               mrs x4, mair_el1
               cmp x4, x12
