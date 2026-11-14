@@ -9,6 +9,7 @@ on:
       - 'engineering/windows-arm64-accelerator/qemu_phys_io.c'
       - 'engineering/windows-arm64-accelerator/jit_region_android.c'
       - 'engineering/windows-arm64-accelerator/port-windowsios-core-android.py'
+      - 'engineering/windows-arm64-accelerator/patch_qemu_virt_winjit.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -110,6 +111,7 @@ jobs:
           new="arm_common_system_ss.add(when: 'TARGET_AARCH64', if_true: files('winjit_qemu_snapshot.c', 'winjit_qemu_phys_io.c', 'winjit_qemu_accel.c'))\n"
           p.write_text(s.replace(anchor,new+anchor))
           PY
+          python3 engineering/windows-arm64-accelerator/patch_qemu_virt_winjit.py "$Q"
           cd "$Q"
           ./configure --target-list=aarch64-softmmu --disable-docs \
             --disable-gtk --disable-sdl --disable-vnc --disable-werror \
@@ -144,7 +146,7 @@ jobs:
           set +e
           LD_LIBRARY_PATH=/tmp/winjit-lib:${LD_LIBRARY_PATH:-} \
           timeout 15s ./build/qemu-system-aarch64 -accel winjit \
-            -machine virt,secure=off,virtualization=off -cpu cortex-a53 \
+            -machine virt,gic-version=2,secure=off,virtualization=off -cpu cortex-a53 \
             -smp 1 -m 128M -bios /tmp/winjit-test-out/guest.bin \
             -nographic -monitor none -serial stdio \
             > /tmp/winjit-test-out/guest.log 2>&1
