@@ -265,6 +265,27 @@ static void *winjit_cpu_thread(void *opaque)
             continue;
         }
         if (result != HV_EXIT_BRANCH) {
+            /*
+             * Emit bounded, non-sensitive state at the FIRST unsupported
+             * architectural exit. A Linux boot without early guest UART
+             * previously reported only "unhandled exception or halt",
+             * which cannot distinguish WFI, undefined instruction,
+             * translation failure, or a repeated exception-vector fault.
+             * Never downgrade an unsupported exit to success.
+             */
+            error_report("winjit: unhandled guest exit code=%d "
+                         "hv_reason=%u pc=0x%llx el=%u spsel=%u "
+                         "pstate=0x%llx sctlr_el1=0x%llx "
+                         "esr_el1=0x%llx far_el1=0x%llx "
+                         "halted=%u off=%u qemu_interrupts=0x%x",
+                         result, hv->exit_reason,
+                         (unsigned long long)hv->pc, hv->el, hv->spsel,
+                         (unsigned long long)snap.pstate,
+                         (unsigned long long)hv->sctlr_el1,
+                         (unsigned long long)hv->esr_el1,
+                         (unsigned long long)hv->far_el1,
+                         hv->halted, hv->off,
+                         qatomic_read(&cpu->interrupt_request));
             winjit_stop_unsafe(cpu, "unhandled WinJIT exception or halt");
             continue;
         }
