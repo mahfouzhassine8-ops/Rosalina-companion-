@@ -12,6 +12,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
   port-and-compile:
     runs-on: ubuntu-24.04
@@ -70,6 +71,36 @@ jobs:
           set -euo pipefail
           python3 -m py_compile engineering/windows-arm64-accelerator/inplace_upgrade_gate.py
           python3 engineering/windows-arm64-accelerator/test_inplace_upgrade_gate.py
+      - name: Verify actual signed 7.1.14 APK identity before future in-place upgrade (NO APK)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/protected-windowsmode
+          gh run download 43428370564 --repo "$GITHUB_REPOSITORY" \
+            --name windows-mode-arm64-bootbench-70114-apk --dir /tmp/protected-windowsmode
+          APK=/tmp/protected-windowsmode/WindowsMode-QEMU-BOOTBENCH-70114.apk
+          test -s "$APK"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.0.0"
+          TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          "$TOOLS/aapt" dump badging "$APK" | tee /tmp/protected-windowsmode/badging.txt
+          "$TOOLS/apksigner" verify --verbose --print-certs "$APK" \
+            | tee /tmp/protected-windowsmode/signature.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          from sys import path
+          path.insert(0, 'engineering/windows-arm64-accelerator')
+          from inplace_upgrade_gate import PACKAGE, CERT_SHA256, PROTECTED_VERSION_CODE
+          b=Path('/tmp/protected-windowsmode/badging.txt').read_text()
+          s=Path('/tmp/protected-windowsmode/signature.txt').read_text()
+          m=re.search(r"package: name='([^']+)' versionCode='([0-9]+)'", b)
+          assert m and m.group(1)==PACKAGE and int(m.group(2))==PROTECTED_VERSION_CODE, \
+              'Protected installation identity differs: block direct upgrade'
+          assert CERT_SHA256 in s and 'Verified using v3 scheme (APK Signature Scheme v3): true' in s, \
+              'Protected installation signing identity differs: block direct upgrade'
+          print('PASS: actual protected APK is Windows Mode 70114 and has matching v3 signer')
+          PY
       - name: Compile entire WindowsiOS ARM64 core and entry assembly with Android NDK
         run: |
           set -euo pipefail
