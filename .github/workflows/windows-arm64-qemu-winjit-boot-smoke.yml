@@ -356,6 +356,8 @@ jobs:
               TCR_TEST x6, 67
               TCR_TEST x7, 68
               TCR_TEST x15, 69
+              TCR_TEST x16, 83
+              TCR_TEST x17, 84
               TCR_TEST x18, 70
               TCR_TEST x19, 71
               TCR_TEST x28, 72
@@ -365,6 +367,8 @@ jobs:
               MAIR_TEST x6, 76
               MAIR_TEST x7, 77
               MAIR_TEST x15, 78
+              MAIR_TEST x16, 85
+              MAIR_TEST x17, 86
               MAIR_TEST x18, 79
               MAIR_TEST x19, 80
               MAIR_TEST x28, 81
@@ -490,6 +494,24 @@ jobs:
               cmp x1, x12
               b.ne bad
               msr mair_el1, x1
+              mrs x4, mair_el1
+              cmp x4, x12
+              b.ne bad
+              // Linux's first failing MMU writes use x17 (MAIR) and x16 (TCR).
+              // Test both memory-loaded values, not only immediate MOVZ/MOVK.
+              movz x10, #70
+              ldr x16, [x2]
+              cmp x16, x9
+              b.ne bad
+              msr tcr_el1, x16
+              mrs x4, tcr_el1
+              cmp x4, x9
+              b.ne bad
+              movz x10, #71
+              ldr x17, [x2, #8]
+              cmp x17, x12
+              b.ne bad
+              msr mair_el1, x17
               mrs x4, mair_el1
               cmp x4, x12
               b.ne bad
