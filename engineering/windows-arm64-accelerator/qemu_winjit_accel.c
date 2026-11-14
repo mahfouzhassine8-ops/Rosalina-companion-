@@ -67,6 +67,7 @@ typedef struct WinjitState {
     WinjitPhysBus bus;
     MemoryListener listener;
     bool failed, started;
+    unsigned sysreg_trace_count;
 } WinjitState;
 
 static bool winjit_allowed;
@@ -259,7 +260,36 @@ static void *winjit_cpu_thread(void *opaque)
          * serializes the experimental memory callbacks and avoids hidden
          * races until DMA invalidation and interrupt delivery are ready.
          */
+        uint64_t old_tcr = hv->tcr_el1;
+        uint64_t old_mair = hv->mair_el1;
+        uint64_t old_sctlr = hv->sctlr_el1;
+        uint64_t old_pc = hv->pc;
         int result = s->fn.cpu_run_one(hv);
+        /* Opt-in, bounded research tracing. Off in ordinary Android use.
+         * Detect the FIRST wrong TCR/MAIR write or MMU switch in Linux
+         * rather than guessing from its later translation fault. */
+        const char *trace = getenv("WINJIT_TRACE_SYSREG");
+        if (trace && strcmp(trace, "1") == 0 &&
+            s->sysreg_trace_count < 24 &&
+            (old_tcr != hv->tcr_el1 ||
+             old_mair != hv->mair_el1 ||
+             (old_sctlr ^ hv->sctlr_el1) & 1)) {
+            s->sysreg_trace_count++;
+            error_report("winjit-sysreg-change[%u]: from_pc=0x%llx "
+                         "to_pc=0x%llx reason=%d el=%u "
+                         "tcr=0x%llx->0x%llx mair=0x%llx->0x%llx "
+                         "sctlr=0x%llx->0x%llx",
+                         s->sysreg_trace_count,
+                         (unsigned long long)old_pc,
+                         (unsigned long long)hv->pc,
+                         result, hv->el,
+                         (unsigned long long)old_tcr,
+                         (unsigned long long)hv->tcr_el1,
+                         (unsigned long long)old_mair,
+                         (unsigned long long)hv->mair_el1,
+                         (unsigned long long)old_sctlr,
+                         (unsigned long long)hv->sctlr_el1);
+        }
         if (s->fn.bus_failures(&s->bus)) {
             winjit_stop_unsafe(cpu, "QEMU physical MMIO transaction failure");
             continue;
