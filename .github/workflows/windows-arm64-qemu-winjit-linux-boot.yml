@@ -138,7 +138,12 @@ jobs:
           ln -s busybox /tmp/linux-guest-root/bin/sh
           cat > /tmp/linux-guest-root/init <<'SH'
           #!/bin/sh
-          mount -t proc proc /proc
+          set -eu
+          # BusyBox is copied as /bin/busybox without standalone applet links.
+          # Invoke the mount applet explicitly; otherwise /init falsely prints
+          # LINUX-READY even when its unqualified "mount" command failed.
+          /bin/busybox mount -t proc proc /proc
+          /bin/busybox grep -q '^Linux version ' /proc/version
           echo LINUX-READY
           while :; do /bin/busybox sleep 5; done
           SH
