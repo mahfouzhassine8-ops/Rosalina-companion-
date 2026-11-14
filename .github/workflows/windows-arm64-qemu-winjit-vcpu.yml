@@ -1,0 +1,174 @@
+name: Windows Mode - QEMU 11.1.3 experimental WinJIT vCPU accelerator native build (NO APK)
+on:
+  push:
+    branches: [windows-arm64-qemu-accel-research]
+    paths:
+      - '.github/workflows/windows-arm64-qemu-winjit-vcpu.yml'
+      - 'engineering/windows-arm64-accelerator/qemu_arm_snapshot.c'
+      - 'engineering/windows-arm64-accelerator/qemu_phys_io.c'
+      - 'engineering/windows-arm64-accelerator/qemu_winjit_accel.c'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rebuild-qemu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      QUBE_TAG: '7.1.4'
+      QEMU_VERSION: '11.1.3'
+      NDK_VERSION: '30.0.16248370'
+      BUILD_THREADS: '4'
+      BUILD_GUEST: aarch64-softmmu
+      BUILD_HOST: arm64-v8a
+      USE_QEMU_VERSION: '11.1.3'
+      USE_OPTIMIZATION: 'true'
+      USE_KVM: 'false'
+      USE_VENUS: 'false'
+      NDK_ENV: linux-x86_64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Reject changes outside accelerator research
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin windows-mode-android-research
+          git diff --name-only FETCH_HEAD HEAD > /tmp/changed.txt
+          cat /tmp/changed.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          changes=Path('/tmp/changed.txt').read_text().splitlines()
+          assert changes and all(x.startswith('engineering/windows-arm64-accelerator/')
+               or x.startswith('.github/workflows/windows-arm64-') for x in changes), changes
+          print('PASS: release source unchanged; only isolated accelerator research files')
+          PY
+      - name: Install prerequisites and Android NDK r30
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool-bin gettext autopoint \
+            flex bison texinfo rsync pkg-config meson ninja-build wget \
+            libglib2.0-dev libpixman-1-dev libfdt-dev libslirp-dev \
+            zlib1g-dev libffi-dev curl unzip xz-utils python3-pip
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;${NDK_VERSION}"
+          test -x "$ANDROID_HOME/ndk/${NDK_VERSION}/ndk-build"
+          echo "NDK_ROOT=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+          python3 -m pip install --break-system-packages --user 'meson>=1.6,<1.11' mako
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Retrieve pinned GPL QubeVM 7.1.4 source/Android build recipes
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 1 --branch "${QUBE_TAG}" \
+            https://github.com/rhn-1k/QubeVM.git /tmp/qube-native
+          git -C /tmp/qube-native rev-parse HEAD
+          mkdir -p /tmp/native-out
+          git -C /tmp/qube-native rev-parse HEAD > /tmp/native-out/QubeVM-commit.txt
+          echo 'SOURCE-BUILD IN PROGRESS. NOT ACCELERATED. NOT AN APK.' > /tmp/native-out/STATUS.txt
+      - name: Fetch external source dependencies and apply QubeVM Android patches
+        run: |
+          set -euo pipefail
+          N=/tmp/qube-native/qube-android-lib/src/main/jni
+          cd /tmp
+          curl -fL --retry 3 "https://download.qemu.org/qemu-${QEMU_VERSION}.tar.xz" -o qemu.tar.xz
+          tar -xJf qemu.tar.xz
+          mv "qemu-${QEMU_VERSION}" "$N/qemu"
+          (cd "$N/qemu"; patch --batch --forward --fuzz=0 -p1 < "$N/patches/qemu-${QEMU_VERSION}.patch")
+          curl -fL --retry 3 'https://download.gnome.org/sources/glib/2.90/glib-2.90.1.tar.xz' -o glib.tar.xz
+          tar -xJf glib.tar.xz
+          mv glib-2.90.1 "$N/glib"
+          (cd "$N/glib"; patch --batch --forward --fuzz=0 -p1 < "$N/patches/glib-2.90.1.patch")
+          curl -fL --retry 3 'https://github.com/libffi/libffi/releases/download/v3.8.0/libffi-3.8.0.tar.gz' -o ffi.tar.gz
+          tar -xzf ffi.tar.gz
+          mv libffi-3.8.0 "$N/libffi"
+          curl -fL --retry 3 'https://gitlab.freedesktop.org/pixman/pixman/-/archive/pixman-0.46.4/pixman-pixman-0.46.4.tar.gz' -o pixman.tar.gz
+          tar -xzf pixman.tar.gz
+          mv pixman-pixman-0.46.4 "$N/pixman"
+          curl -fL --retry 3 'https://github.com/anholt/libepoxy/archive/refs/tags/1.5.10.zip' -o epoxy.zip
+          unzip -q epoxy.zip
+          mv libepoxy-1.5.10 "$N/libepoxy"
+          git clone --quiet --depth 1 https://gitlab.freedesktop.org/virgl/virglrenderer.git "$N/virglrenderer"
+          git -C "$N/virglrenderer" rev-parse HEAD > /tmp/native-out/VirGL-commit.txt
+          (cd "$N/virglrenderer"; patch --batch --forward --fuzz=0 -p1 < "$N/patches/virglrenderer-1.3.0-android-egl.patch")
+          curl -fL --retry 3 'https://gitlab.freedesktop.org/slirp/libslirp/-/archive/v4.9.5/libslirp-v4.9.5.zip' -o slirp.zip
+          unzip -q slirp.zip -d "$N/qemu/subprojects"
+          mv "$N/qemu/subprojects/libslirp-v4.9.5" "$N/qemu/subprojects/libslirp"
+          (cd "$N/qemu/subprojects/libslirp"; patch --batch --forward --fuzz=0 -p1 < "$N/patches/libslirp-4.9.5.patch")
+          echo 'Dependency and QEMU patch bootstrap PASS' >> /tmp/native-out/STATUS.txt
+      - name: Compile real QEMU arm64 source with WinJIT EL1 state snapshot interface
+        run: |
+          set -euo pipefail
+          Q=/tmp/qube-native/qube-android-lib/src/main/jni/qemu
+          test -f "$Q/target/arm/meson.build"
+          cp engineering/windows-arm64-accelerator/qemu_arm_snapshot.c "$Q/target/arm/winjit_qemu_snapshot.c"
+          cp engineering/windows-arm64-accelerator/qemu_phys_io.c "$Q/target/arm/winjit_qemu_phys_io.c"
+          cp engineering/windows-arm64-accelerator/qemu_winjit_accel.c "$Q/target/arm/winjit_qemu_accel.c"
+          cp engineering/windows-arm64-accelerator/winjit_phys_bus.h "$Q/target/arm/winjit_phys_bus.h"
+          mkdir -p "$Q/target/arm/winjit_pinned"
+          git init -q /tmp/ioscore
+          git -C /tmp/ioscore remote add origin https://github.com/ammaarreshi/WindowsiOS.git
+          git -C /tmp/ioscore -c advice.detachedHead=false fetch -q --depth=1 origin 0071d6975287fd720b9046dfd3bd80b6f2aa765e
+          git -C /tmp/ioscore checkout -q FETCH_HEAD
+          test "$(git -C /tmp/ioscore rev-parse HEAD)" = 0071d6975287fd720b9046dfd3bd80b6f2aa765e
+          cp /tmp/ioscore/core/cpu.h /tmp/ioscore/core/machine.h /tmp/ioscore/core/dispatch.h /tmp/ioscore/host/jit_region.h "$Q/target/arm/winjit_pinned/"
+          python3 - "$Q/target/arm/winjit_pinned/machine.h" <<'PY'
+          from pathlib import Path
+          import sys
+          p=Path(sys.argv[1])
+          s=p.read_text()
+          assert s.count('#include <TargetConditionals.h>') == 1
+          p.write_text(s.replace('#include <TargetConditionals.h>','#define TARGET_OS_IPHONE 0'))
+          print('PASS: research-only portable WinJIT headers staged')
+          PY
+          cp engineering/windows-arm64-accelerator/winjit_cpu_bridge.h "$Q/target/arm/winjit_cpu_bridge.h"
+          python3 - "$Q/target/arm/meson.build" <<'PY'
+          from pathlib import Path
+          import sys
+          p=Path(sys.argv[1])
+          s=p.read_text()
+          anchor="target_common_system_arch += {'arm': arm_common_system_ss}"
+          assert s.count(anchor)==1, 'QEMU ARM build registration changed unexpectedly'
+          insert="arm_common_system_ss.add(when: 'TARGET_AARCH64', if_true: files('winjit_qemu_snapshot.c', 'winjit_qemu_phys_io.c', 'winjit_qemu_accel.c'))\n"
+          assert 'winjit_qemu_snapshot.c' not in s
+          p.write_text(s.replace(anchor, insert+anchor))
+          print('PASS: real QEMU ARM64 source now compiles WinJIT state snapshot')
+          PY
+      - name: Build actual QEMU 11.1.3 ARM64 shared library from source
+        timeout-minutes: 105
+        run: |
+          set -euo pipefail
+          cd /tmp/qube-native/qube-android-lib/src/main/jni
+          make qube NDK_ROOT="$NDK_ROOT" BUILD_THREADS=4 \
+            BUILD_HOST=arm64-v8a BUILD_GUEST=aarch64-softmmu \
+            USE_QEMU_VERSION=11.1.3 USE_OPTIMIZATION=true USE_KVM=false USE_VENUS=false \
+            2>&1 | tee /tmp/native-out/native-build.log
+      - name: Verify newly compiled aarch64 native library
+        run: |
+          set -euo pipefail
+          LIB=/tmp/qube-native/qube-android-arm/src/main/jniLibs/arm64-v8a/libqemu-system-aarch64.so
+          test -s "$LIB"
+          readelf -h "$LIB" | tee /tmp/native-out/ELF.txt
+          readelf -h "$LIB" | grep -F 'AArch64'
+          readelf -d "$LIB" > /tmp/native-out/ELF-dependencies.txt
+          sha256sum "$LIB" | tee /tmp/native-out/QEMU-sha256.txt
+          cp "$LIB" /tmp/native-out/libqemu-system-aarch64.so
+          grep -F 'winjit_qemu_snapshot.c' /tmp/native-out/native-build.log > /tmp/native-out/WINJIT-SNAPSHOT-COMPILATION.txt
+          test -s /tmp/native-out/WINJIT-SNAPSHOT-COMPILATION.txt
+          grep -F 'winjit_qemu_phys_io.c' /tmp/native-out/native-build.log > /tmp/native-out/WINJIT-MMIO-COMPILATION.txt
+          test -s /tmp/native-out/WINJIT-MMIO-COMPILATION.txt
+          grep -F 'winjit_qemu_accel.c' /tmp/native-out/native-build.log > /tmp/native-out/WINJIT-VCPU-COMPILATION.txt
+          test -s /tmp/native-out/WINJIT-VCPU-COMPILATION.txt
+          echo 'EXPERIMENTAL -accel winjit QEMU vCPU bridge COMPILED; UNVERIFIED on Android, no IRQ/GIC/DMA/timer or Windows boot claim.' >> /tmp/native-out/STATUS.txt
+          echo 'NATIVE QEMU SOURCE BUILD PASSED. ACCELERATOR STILL NOT IMPLEMENTED; NO APK RELEASED.' >> /tmp/native-out/STATUS.txt
+      - name: Publish native build report only (no APK)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-mode-qemu-winjit-vcpu-source-native-gate
+          path: /tmp/native-out/
+          if-no-files-found: warn
+          retention-days: 14
