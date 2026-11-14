@@ -124,8 +124,13 @@ jobs:
       - name: Boot Linux AArch64 kernel and initramfs through real WinJIT (NO WINDOWS)
         run: |
           set -euo pipefail
-          KERNEL=$(find /boot -maxdepth 1 -name 'vmlinuz-*-generic' -type f | sort -V | tail -1)
-          test -n "$KERNEL" && test -s "$KERNEL"
+          SELECTED_KERNEL=$(find /boot -maxdepth 1 -name 'vmlinuz-*-generic' -type f | sort -V | tail -1)
+          test -n "$SELECTED_KERNEL" && sudo test -s "$SELECTED_KERNEL"
+          # Hosted runners may restrict /boot images to root; copy only on
+          # the disposable CI machine, never change host permissions in place.
+          sudo install -m 0644 "$SELECTED_KERNEL" /tmp/winjit-kernel-test-image
+          KERNEL=/tmp/winjit-kernel-test-image
+          test -r "$KERNEL" && test -s "$KERNEL"
           file "$KERNEL" | tee /tmp/linux-kernel-filetype.txt
           od -An -tx1 -N32 "$KERNEL" | tee /tmp/linux-kernel-header.txt
           mkdir -p /tmp/linux-guest-root/{bin,proc,sys,dev,etc} /tmp/winjit-test-out
