@@ -66,3 +66,59 @@ int winjit_qemu_capture_arm64(ARMCPU *cpu, WinjitA64State *dest)
     *dest = tmp;
     return WINJIT_CPU_OK;
 }
+
+
+/*
+ * Import only state that is fully modeled in WinjitA64State. This is a
+ * research-only mechanism; no QEMU guest execution or -accel backend is
+ * enabled by this function.
+ */
+int winjit_qemu_restore_arm64(ARMCPU *cpu, const WinjitA64State *src)
+{
+    if (!cpu || !src || src->abi_version != WINJIT_CPU_ABI_VERSION ||
+        src->aarch64 != 1) {
+        return WINJIT_CPU_INVALID;
+    }
+    const uint64_t flags = 0xf0000000ULL | 0x3c0ULL |
+        (1ULL << 12) | (1ULL << 22) | (1ULL << 23) |
+        (1ULL << 24) | (1ULL << 25) | 0xfULL;
+    CPUARMState *env = &cpu->env;
+    uint64_t old = pstate_read(env);
+    if (!env->aarch64 || (old & 0xe) != 0x4 ||
+        (src->pstate & 0xe) != 0x4 ||
+        (src->pstate & ~flags) != 0) {
+        return WINJIT_CPU_UNSUPPORTED;
+    }
+    for (unsigned i = 0; i < 31; i++) {
+        env->xregs[i] = src->x[i];
+    }
+    for (unsigned i = 0; i < 32; i++) {
+        env->vfp.zregs[i].d[0] = src->v_lo[i];
+        env->vfp.zregs[i].d[1] = src->v_hi[i];
+    }
+    env->xregs[31] = src->sp;
+    env->pc = src->pc;
+    pstate_write(env, src->pstate);
+    vfp_set_fpcr(env, src->fpcr);
+    vfp_set_fpsr(env, src->fpsr);
+    env->cp15.tpidr_el[0] = src->tpidr_el0;
+    env->cp15.tpidrro_el[0] = src->tpidrro_el0;
+    env->cp15.tpidr_el[1] = src->tpidr_el1;
+    env->cp15.sctlr_el[1] = src->sctlr_el1;
+    env->cp15.ttbr0_el[1] = src->ttbr0_el1;
+    env->cp15.ttbr1_el[1] = src->ttbr1_el1;
+    env->cp15.tcr_el[1] = src->tcr_el1;
+    env->cp15.mair_el[1] = src->mair_el1;
+    env->cp15.vbar_el[1] = src->vbar_el1;
+    env->cp15.contextidr_el[1] = src->contextidr_el1;
+    env->cp15.cpacr_el1 = src->cpacr_el1;
+    env->elr_el[1] = src->elr_el1;
+    env->banked_spsr[BANK_SVC] = src->spsr_el1;
+    env->sp_el[0] = src->sp_el0;
+    env->sp_el[1] = src->sp_el1;
+    env->cp15.esr_el[1] = src->esr_el1;
+    env->cp15.far_el[1] = src->far_el1;
+    env->cp15.c14_cntkctl = src->cntkctl_el1;
+    arm_rebuild_hflags(env);
+    return WINJIT_CPU_OK;
+}
