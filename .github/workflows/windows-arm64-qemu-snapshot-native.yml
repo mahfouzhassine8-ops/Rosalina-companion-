@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/windows-arm64-qemu-snapshot-native.yml'
       - 'engineering/windows-arm64-accelerator/qemu_arm_snapshot.c'
+      - 'engineering/windows-arm64-accelerator/qemu_phys_io.c'
   workflow_dispatch:
 
 permissions:
@@ -110,6 +111,7 @@ jobs:
           Q=/tmp/qube-native/qube-android-lib/src/main/jni/qemu
           test -f "$Q/target/arm/meson.build"
           cp engineering/windows-arm64-accelerator/qemu_arm_snapshot.c "$Q/target/arm/winjit_qemu_snapshot.c"
+          cp engineering/windows-arm64-accelerator/qemu_phys_io.c "$Q/target/arm/winjit_qemu_phys_io.c"
           cp engineering/windows-arm64-accelerator/winjit_cpu_bridge.h "$Q/target/arm/winjit_cpu_bridge.h"
           python3 - "$Q/target/arm/meson.build" <<'PY'
           from pathlib import Path
@@ -118,7 +120,7 @@ jobs:
           s=p.read_text()
           anchor="target_common_system_arch += {'arm': arm_common_system_ss}"
           assert s.count(anchor)==1, 'QEMU ARM build registration changed unexpectedly'
-          insert="arm_common_system_ss.add(when: 'TARGET_AARCH64', if_true: files('winjit_qemu_snapshot.c'))\n"
+          insert="arm_common_system_ss.add(when: 'TARGET_AARCH64', if_true: files('winjit_qemu_snapshot.c', 'winjit_qemu_phys_io.c'))\n"
           assert 'winjit_qemu_snapshot.c' not in s
           p.write_text(s.replace(anchor, insert+anchor))
           print('PASS: real QEMU ARM64 source now compiles WinJIT state snapshot')
@@ -144,6 +146,8 @@ jobs:
           cp "$LIB" /tmp/native-out/libqemu-system-aarch64.so
           grep -F 'winjit_qemu_snapshot.c' /tmp/native-out/native-build.log > /tmp/native-out/WINJIT-SNAPSHOT-COMPILATION.txt
           test -s /tmp/native-out/WINJIT-SNAPSHOT-COMPILATION.txt
+          grep -F 'winjit_qemu_phys_io.c' /tmp/native-out/native-build.log > /tmp/native-out/WINJIT-MMIO-COMPILATION.txt
+          test -s /tmp/native-out/WINJIT-MMIO-COMPILATION.txt
           echo 'QEMU STATE-SNAPSHOT COMPILE PASS; QEMU -accel winjit, vCPU execution, Windows boot NOT IMPLEMENTED.' >> /tmp/native-out/STATUS.txt
           echo 'NATIVE QEMU SOURCE BUILD PASSED. ACCELERATOR STILL NOT IMPLEMENTED; NO APK RELEASED.' >> /tmp/native-out/STATUS.txt
       - name: Publish native build report only (no APK)
