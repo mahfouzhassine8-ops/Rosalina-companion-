@@ -433,6 +433,136 @@ jobs:
           echo 'PASS: QEMU WinJIT TCR/MAIR sysreg matrix matches TCG for normal and borrowed GPRs' \
             >> /tmp/winjit-test-out/STATUS.txt
 
+      - name: Differential-test guest memory loads into ARM64 TCR and MAIR
+        run: |
+          set -euo pipefail
+          # Linux obtains sysreg values through guest memory loads and address
+          # calculations. Validate the *actual value*, not just MSR/MRS
+          # roundtrip, against identical TCG guest instruction execution.
+          cat > /tmp/winjit-test-out/loadsys-guest.s <<'ASM'
+          .section .text
+          .global _start
+          _start:
+              movz x11, #0
+              movk x11, #0x900, lsl #16
+              movz x9, #0x3519
+              movk x9, #0x80, lsl #16
+              movz x12, #0xff44
+              movk x12, #0xaa55, lsl #16
+              adrp x2, values
+              add x2, x2, :lo12:values
+              movz x10, #65
+              ldr x0, [x2]
+              cmp x0, x9
+              b.ne bad
+              msr tcr_el1, x0
+              mrs x4, tcr_el1
+              cmp x4, x9
+              b.ne bad
+              movz x10, #66
+              ldr x6, [x2]
+              cmp x6, x9
+              b.ne bad
+              msr tcr_el1, x6
+              mrs x4, tcr_el1
+              cmp x4, x9
+              b.ne bad
+              movz x10, #67
+              ldr x28, [x2, #8]
+              cmp x28, x12
+              b.ne bad
+              msr mair_el1, x28
+              mrs x4, mair_el1
+              cmp x4, x12
+              b.ne bad
+              movz x10, #68
+              ldr x7, values
+              cmp x7, x9
+              b.ne bad
+              msr tcr_el1, x7
+              mrs x4, tcr_el1
+              cmp x4, x9
+              b.ne bad
+              movz x10, #69
+              ldp x0, x1, [x2]
+              cmp x0, x9
+              b.ne bad
+              cmp x1, x12
+              b.ne bad
+              msr mair_el1, x1
+              mrs x4, mair_el1
+              cmp x4, x12
+              b.ne bad
+              movz w0, #76
+              strb w0, [x11]
+              movz w0, #79
+              strb w0, [x11]
+              movz w0, #65
+              strb w0, [x11]
+              movz w0, #68
+              strb w0, [x11]
+              movz w0, #10
+              strb w0, [x11]
+          idle:
+              b idle
+          bad:
+              movz w0, #70
+              strb w0, [x11]
+              strb w10, [x11]
+              movz w0, #10
+              strb w0, [x11]
+          bad_idle:
+              b bad_idle
+          .balign 16
+          values:
+              .quad 0x0000000000803519
+              .quad 0x00000000aa55ff44
+          ASM
+          clang -c /tmp/winjit-test-out/loadsys-guest.s -o /tmp/winjit-test-out/loadsys-guest.o
+          ld.lld -Ttext=0 -o /tmp/winjit-test-out/loadsys-guest.elf /tmp/winjit-test-out/loadsys-guest.o
+          objcopy -O binary /tmp/winjit-test-out/loadsys-guest.elf /tmp/winjit-test-out/loadsys-guest.bin
+          cd /tmp/winjit-qemu
+          set +e
+          timeout --signal=TERM --kill-after=3s 8s \
+            ./build/qemu-system-aarch64 -accel tcg \
+            -machine virt,gic-version=2,secure=off,virtualization=off \
+            -cpu cortex-a53 -smp 1 -m 128M \
+            -bios /tmp/winjit-test-out/loadsys-guest.bin \
+            -nographic -monitor none -serial stdio \
+            > /tmp/winjit-test-out/loadsys-tcg.log 2>&1
+          TCG_EXIT=$?
+          set -e
+          cat /tmp/winjit-test-out/loadsys-tcg.log
+          if [ "$TCG_EXIT" -ne 124 ] ||
+             ! grep -Fxq LOAD /tmp/winjit-test-out/loadsys-tcg.log; then
+            echo 'FAIL: guest memory-load test itself failed stable QEMU TCG' >> /tmp/winjit-test-out/STATUS.txt
+            exit 1
+          fi
+          set +e
+          LD_LIBRARY_PATH=/tmp/winjit-lib \
+          timeout --signal=TERM --kill-after=3s 10s \
+            gdb --quiet --batch -ex run -ex 'thread apply all bt 12' --args \
+            ./build/qemu-system-aarch64 -accel winjit \
+            -machine virt,gic-version=2,secure=off,virtualization=off \
+            -cpu cortex-a53 -smp 1 -m 128M \
+            -bios /tmp/winjit-test-out/loadsys-guest.bin \
+            -nographic -monitor none -serial stdio \
+            > /tmp/winjit-test-out/loadsys-winjit.log 2>&1
+          WINJIT_EXIT=$?
+          set -e
+          cat /tmp/winjit-test-out/loadsys-winjit.log
+          echo "LOADSYS_TCG_EXIT=$TCG_EXIT LOADSYS_WINJIT_EXIT=$WINJIT_EXIT" \
+            >> /tmp/winjit-test-out/STATUS.txt
+          if [ "$WINJIT_EXIT" -ne 124 ] ||
+             ! grep -Fxq LOAD /tmp/winjit-test-out/loadsys-winjit.log ||
+             grep -Eiq '(Program received signal SIG|Aborted|core dumped|assertion.*failed|SIGSEGV)' \
+               /tmp/winjit-test-out/loadsys-winjit.log; then
+            echo 'FAIL: WinJIT memory-derived TCR/MAIR value differs from QEMU TCG; inspect diagnostic failure letter' >> /tmp/winjit-test-out/STATUS.txt
+            exit 1
+          fi
+          echo 'PASS: WinJIT guest memory loads and sysreg writes matched TCG' \
+            >> /tmp/winjit-test-out/STATUS.txt
+
       - name: Publish ONLY native boot evidence, NOT Android APK
         if: always()
         uses: actions/upload-artifact@v4
@@ -446,5 +576,7 @@ jobs:
             /tmp/winjit-test-out/mmu-winjit.log
             /tmp/winjit-test-out/sysreg-tcg.log
             /tmp/winjit-test-out/sysreg-winjit.log
+            /tmp/winjit-test-out/loadsys-tcg.log
+            /tmp/winjit-test-out/loadsys-winjit.log
             /tmp/winjit-test-out/accel-help.txt
           if-no-files-found: warn
