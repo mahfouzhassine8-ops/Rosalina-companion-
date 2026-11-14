@@ -106,14 +106,14 @@ sysreg_msr_probe = r"""    uint32_t reg = (insn >> 5) & 0xffff;
         ++winjit_trace_mmu_writes;
         fprintf(stderr,
                 "winjit-msr-source[%u] pc=0x%llx insn=0x%08x rt=x%d "
-                "src=0x%llx el=%u\\n",
+                "src=0x%llx el=%u\n",
                 winjit_trace_mmu_writes, (unsigned long long)pc,
                 insn, rt,
                 (unsigned long long)(rt == 31 ? 0 : cpu->x[rt]),
                 cpu->el);
     }
     if (cpu->m->log >= 3)
-        fprintf(stderr, "msr S%u_%u_C%u_C%u_%u = %llx pc %llx el%u\\n", """
+        fprintf(stderr, "msr S%u_%u_C%u_C%u_%u = %llx pc %llx el%u\n", """
 patch(core/"sysreg.c", sysreg_msr_anchor, sysreg_msr_probe)
 
 # The entry assembly uses Mach-O leading underscores for symbols.
