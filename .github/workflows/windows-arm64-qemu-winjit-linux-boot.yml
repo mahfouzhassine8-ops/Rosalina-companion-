@@ -126,6 +126,8 @@ jobs:
           set -euo pipefail
           KERNEL=$(find /boot -maxdepth 1 -name 'vmlinuz-*' -type f | sort -V | tail -1)
           test -n "$KERNEL" && test -s "$KERNEL"
+          file "$KERNEL" | tee /tmp/linux-kernel-filetype.txt
+          od -An -tx1 -N32 "$KERNEL" | tee /tmp/linux-kernel-header.txt
           mkdir -p /tmp/linux-guest-root/{bin,proc,sys,dev,etc} /tmp/winjit-test-out
           cp "$(command -v busybox)" /tmp/linux-guest-root/bin/busybox
           ln -s busybox /tmp/linux-guest-root/bin/sh
@@ -141,6 +143,25 @@ jobs:
           test -s /tmp/winjit-test-out/linux-initrd.cpio.gz
           echo "KERNEL=$KERNEL" > /tmp/winjit-test-out/LINUX-STATUS.txt
           cd /tmp/winjit-qemu
+          # Control: prove this exact stock Linux image works under QEMU TCG.
+          # If not, stop without attributing the failure to experimental WinJIT.
+          set +e
+          timeout --signal=TERM --kill-after=3s 45s \
+          ./build/qemu-system-aarch64 -accel tcg \
+            -machine virt,gic-version=2,secure=off,virtualization=off \
+            -cpu cortex-a53 -smp 1 -m 512M -no-reboot \
+            -kernel "$KERNEL" -initrd /tmp/winjit-test-out/linux-initrd.cpio.gz \
+            -append 'console=ttyAMA0 earlycon=pl011,0x09000000 loglevel=6 rdinit=/init' \
+            -nographic -monitor none -serial stdio \
+            > /tmp/winjit-test-out/linux-tcg-control.log 2>&1
+          TCG_EXIT=$?
+          set -e
+          tail -n 20 /tmp/winjit-test-out/linux-tcg-control.log
+          echo "TCG_CONTROL_EXIT=$TCG_EXIT" >> /tmp/winjit-test-out/LINUX-STATUS.txt
+          if ! grep -Fq 'LINUX-READY' /tmp/winjit-test-out/linux-tcg-control.log; then
+            echo 'FAIL: Linux kernel/initrd control did not boot even in stable QEMU TCG; fix test media before judging WinJIT' >> /tmp/winjit-test-out/LINUX-STATUS.txt
+            exit 1
+          fi
           set +e
           LD_LIBRARY_PATH=/tmp/winjit-lib \
           timeout --signal=TERM --kill-after=3s 75s \
@@ -181,5 +202,6 @@ jobs:
           path: |
             /tmp/winjit-test-out/LINUX-STATUS.txt
             /tmp/winjit-test-out/linux-guest.log
+            /tmp/winjit-test-out/linux-tcg-control.log
             /tmp/winjit-test-out/accel-help.txt
           if-no-files-found: warn
