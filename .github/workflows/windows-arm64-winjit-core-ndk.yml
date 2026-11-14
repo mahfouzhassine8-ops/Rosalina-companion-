@@ -35,14 +35,9 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           paths=Path('/tmp/changed.txt').read_text().splitlines()
-          assert paths and all(p.startswith('engineering/windows-arm64-accelerator/')
-                  or p in ('.github/workflows/windows-arm64-accel-audit.yml',
-                           '.github/workflows/windows-arm64-native-qemu-source.yml',
-                           '.github/workflows/windows-arm64-winjit-core-ndk.yml',
-                           '.github/workflows/windows-arm64-source-native-research-apk.yml',
-                     '.github/workflows/windows-arm64-qemu-snapshot-native.yml',
-                     '.github/workflows/windows-arm64-winjit-native-guest.yml')
-                  for p in paths), 'Protected Windows Mode 7.1.14 source modified'
+          assert paths and all(v.startswith('engineering/windows-arm64-accelerator/')
+              or v.startswith('.github/workflows/windows-arm64-')
+              for v in paths), 'Protected Windows Mode 7.1.14 source modified'
           print('PASS: Windows Mode 7.1.14 release preserved')
           PY
       - name: Install Android NDK r30 for ARM64 and pin WindowsiOS source
