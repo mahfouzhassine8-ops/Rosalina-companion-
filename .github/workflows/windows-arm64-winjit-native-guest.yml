@@ -6,6 +6,8 @@ on:
       - '.github/workflows/windows-arm64-winjit-native-guest.yml'
       - 'engineering/windows-arm64-accelerator/test_winjit_native_guest.c'
       - 'engineering/windows-arm64-accelerator/winjit_phys_bus.c'
+      - 'engineering/windows-arm64-accelerator/winjit_cpu_bridge.c'
+      - 'engineering/windows-arm64-accelerator/winjit_cpu_bridge.h'
       - 'engineering/windows-arm64-accelerator/jit_region_android.c'
       - 'engineering/windows-arm64-accelerator/port-windowsios-core-android.py'
   workflow_dispatch:
@@ -70,6 +72,10 @@ jobs:
           clang -std=gnu11 -O2 -fPIC -D_GNU_SOURCE -Wall -Wextra -Werror \
             -I "$SRC/host" -c engineering/windows-arm64-accelerator/jit_region_android.c \
             -o /tmp/winjit-test-obj/jit_region_android.o
+          clang -std=gnu11 -O2 -fPIC -D_GNU_SOURCE -Wall -Wextra -Werror \
+            -I "$SRC/core" -I engineering/windows-arm64-accelerator \
+            -c engineering/windows-arm64-accelerator/winjit_cpu_bridge.c \
+            -o /tmp/winjit-test-obj/winjit_cpu_bridge.o
           clang -std=gnu11 -O2 -fPIC -D_GNU_SOURCE -Wall -Wextra -Werror \
             -I "$SRC/core" -I "$SRC/host" \
             -c engineering/windows-arm64-accelerator/winjit_phys_bus.c \
