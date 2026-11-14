@@ -5,6 +5,8 @@ on:
     paths:
       - '.github/workflows/windows-arm64-winjit-core-ndk.yml'
       - 'engineering/windows-arm64-accelerator/port-windowsios-core-android.py'
+      - 'engineering/windows-arm64-accelerator/jit_region_android.c'
+      - 'engineering/windows-arm64-accelerator/test_jit_region_android.c'
   workflow_dispatch:
 permissions:
   contents: read
@@ -27,7 +29,8 @@ jobs:
           assert paths and all(p.startswith('engineering/windows-arm64-accelerator/')
                   or p in ('.github/workflows/windows-arm64-accel-audit.yml',
                            '.github/workflows/windows-arm64-native-qemu-source.yml',
-                           '.github/workflows/windows-arm64-winjit-core-ndk.yml')
+                           '.github/workflows/windows-arm64-winjit-core-ndk.yml',
+                           '.github/workflows/windows-arm64-source-native-research-apk.yml')
                   for p in paths), 'Protected Windows Mode 7.1.14 source modified'
           print('PASS: Windows Mode 7.1.14 release preserved')
           PY
@@ -51,6 +54,15 @@ jobs:
           python3 engineering/windows-arm64-accelerator/port-windowsios-core-android.py /tmp/winjit-android-source
           mkdir -p /tmp/winjit-core-out /tmp/winjit-objects
           echo 'SOURCE-ONLY Android NDK translator/MMU compile attempt; no QEMU accelerator and no APK.' > /tmp/winjit-core-out/STATUS.txt
+      - name: Linux executable-memory W^X dual-alias test (NOT Android device proof)
+        run: |
+          set -euo pipefail
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -pthread \
+            -I /tmp/winjit-android-source/host \
+            engineering/windows-arm64-accelerator/jit_region_android.c \
+            engineering/windows-arm64-accelerator/test_jit_region_android.c \
+            -o /tmp/test-jit-cache
+          /tmp/test-jit-cache
       - name: Compile entire WindowsiOS ARM64 core and entry assembly with Android NDK
         run: |
           set -euo pipefail
@@ -67,6 +79,11 @@ jobs:
               -I "$SRC/core" -I "$SRC/host" $EXTRA \
               -c "$f" -o "/tmp/winjit-objects/${name}.o"
           done
+          "$C" --target=aarch64-linux-android30 -std=gnu11 -O2 -fPIC \
+            -D_GNU_SOURCE -Wall -Wextra -Werror \
+            -I "$SRC/host" \
+            -c engineering/windows-arm64-accelerator/jit_region_android.c \
+            -o /tmp/winjit-objects/jit_region_android.o
           "$C" --target=aarch64-linux-android30 -fPIC -c \
             "$SRC/host/enter.S" -o /tmp/winjit-objects/enter.o
           "$AR" rcs /tmp/winjit-core-out/libwinjit-core-android-aarch64.a \
@@ -77,7 +94,29 @@ jobs:
             | tee /tmp/winjit-core-out/SYMBOLS.txt
           sha256sum /tmp/winjit-core-out/libwinjit-core-android-aarch64.a \
             | tee /tmp/winjit-core-out/SHA256.txt
-          echo 'NDK CORE COMPILE PASS. This is NOT linked to QEMU and cannot boot Windows.' >> /tmp/winjit-core-out/STATUS.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          lines=Path('/tmp/winjit-core-out/SYMBOLS.txt').read_text().splitlines()
+          symbols={a[2] for line in lines if len(a := line.split()) == 3 and a[1] in {'T','t'}}
+          required={'hv_jit_region_open','hv_jit_region_attach','hv_jit_region_close',
+                    'hv_jit_write','hv_jit_finish','hv_jit_reserve','hv_jit_reset',
+                    'hv_enter','hv_run'}
+          assert required <= symbols, f'Missing WinJIT native symbols: {required - symbols}'
+          print('PASS: Android W^X and full translator entry symbols present')
+          PY
+          "$C" --target=aarch64-linux-android30 -shared \
+            -Wl,--no-undefined -Wl,-z,relro -Wl,-z,now \
+            -Wl,--whole-archive /tmp/winjit-core-out/libwinjit-core-android-aarch64.a \
+            -Wl,--no-whole-archive -ldl -pthread \
+            -o /tmp/winjit-core-out/libwinjit-core-android-aarch64.so
+          test -s /tmp/winjit-core-out/libwinjit-core-android-aarch64.so
+          "$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" \
+            -h /tmp/winjit-core-out/libwinjit-core-android-aarch64.so \
+            | tee /tmp/winjit-core-out/ELF.txt
+          grep -F 'AArch64' /tmp/winjit-core-out/ELF.txt
+          sha256sum /tmp/winjit-core-out/libwinjit-core-android-aarch64.so \
+            | tee -a /tmp/winjit-core-out/SHA256.txt
+          echo 'NDK CORE LINK PASS. Full Android W^X JIT host added; still NOT linked to QEMU, Android runtime or Windows guest NOT verified.' >> /tmp/winjit-core-out/STATUS.txt
       - name: Upload native core evidence only, not an installable APK
         if: always()
         uses: actions/upload-artifact@v4
