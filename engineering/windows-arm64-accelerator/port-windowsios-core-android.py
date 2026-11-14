@@ -84,6 +84,38 @@ patch(core/"dispatch.c",
         }
         pthread_cond_timedwait(&p->wake_cv, &p->wake_mu, &ts);''')
 
+# CI-only diagnostic of the very first Linux MMU control-register writes.
+# The Linux boot gate enables WINJIT_TRACE_SYSREG; ordinary execution does not
+# emit guest register values. The bounded trace is inserted only into the pinned,
+# disposable upstream checkout. Do not reinterpret bad writes as successful boot.
+sysreg_msr_anchor = """    uint32_t reg = (insn >> 5) & 0xffff;
+    int rt = insn & 0x1f;
+    if (cpu->m->log >= 3)
+        fprintf(stderr, "msr S%u_%u_C%u_C%u_%u = %llx pc %llx el%u\\n", """
+sysreg_msr_probe = r"""    uint32_t reg = (insn >> 5) & 0xffff;
+    int rt = insn & 0x1f;
+    /* A kernel MMU write currently receives host-stack-like values.
+     * Capture the source *before* the helper writes it to identify
+     * register corruption, not merely the later translation fault.
+     * This is bounded and opt-in; no guest RAM or disk bytes are logged. */
+    static __thread unsigned winjit_trace_mmu_writes;
+    if (winjit_trace_mmu_writes < 12 &&
+        getenv("WINJIT_TRACE_SYSREG") &&
+        (reg == R(3, 0, 1, 0, 0) || reg == R(3, 0, 2, 0, 2) ||
+         reg == R(3, 0, 10, 2, 0))) {
+        ++winjit_trace_mmu_writes;
+        fprintf(stderr,
+                "winjit-msr-source[%u] pc=0x%llx insn=0x%08x rt=x%d "
+                "src=0x%llx el=%u\\n",
+                winjit_trace_mmu_writes, (unsigned long long)pc,
+                insn, rt,
+                (unsigned long long)(rt == 31 ? 0 : cpu->x[rt]),
+                cpu->el);
+    }
+    if (cpu->m->log >= 3)
+        fprintf(stderr, "msr S%u_%u_C%u_C%u_%u = %llx pc %llx el%u\\n", """
+patch(core/"sysreg.c", sysreg_msr_anchor, sysreg_msr_probe)
+
 # The entry assembly uses Mach-O leading underscores for symbols.
 # Rename ONLY symbol identifiers in an isolated checkout; do not rewrite
 # instructions, hard-coded CPU register offsets, or guest ABI.
