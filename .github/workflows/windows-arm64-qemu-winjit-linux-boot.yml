@@ -173,7 +173,7 @@ jobs:
             exit 1
           fi
           set +e
-          LD_LIBRARY_PATH=/tmp/winjit-lib \
+          WINJIT_TRACE_SYSREG=1 LD_LIBRARY_PATH=/tmp/winjit-lib \
           timeout --signal=TERM --kill-after=3s 75s \
           gdb --quiet --batch -ex 'set pagination off' -ex run \
             -ex 'thread apply all bt 20' --args \
