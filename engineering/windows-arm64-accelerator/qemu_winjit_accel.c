@@ -286,6 +286,40 @@ static void *winjit_cpu_thread(void *opaque)
                          (unsigned long long)hv->far_el1,
                          hv->halted, hv->off,
                          qatomic_read(&cpu->interrupt_request));
+            error_report("winjit: translation registers ttbr0=0x%llx "
+                         "ttbr1=0x%llx tcr=0x%llx mair=0x%llx "
+                         "vbar=0x%llx cpacr=0x%llx ram_regions=%u",
+                         (unsigned long long)hv->ttbr0_el1,
+                         (unsigned long long)hv->ttbr1_el1,
+                         (unsigned long long)hv->tcr_el1,
+                         (unsigned long long)hv->mair_el1,
+                         (unsigned long long)hv->vbar_el1,
+                         (unsigned long long)hv->cpacr_el1,
+                         s->machine->nram);
+            /* Bound diagnostics to the last 16 translation/exceptions;
+             * no guest memory, VM disk data, or private files are emitted. */
+            uint64_t n = s->machine->stats.nrecent;
+            for (uint64_t i = n > 16 ? n - 16 : 0; i < n; i++) {
+                error_report("winjit: recent block[%llu] pc|el=0x%llx",
+                             (unsigned long long)i,
+                             (unsigned long long)
+                             s->machine->stats.recent[i & 15]);
+            }
+            uint32_t ne = s->machine->stats.nelchg;
+            for (uint32_t i = ne > 16 ? ne - 16 : 0; i < ne; i++) {
+                const uint32_t idx = i & 15;
+                error_report("winjit: exception[%u] from=0x%llx "
+                             "to=0x%llx spsr=0x%llx kind=%u el=%u",
+                             i,
+                             (unsigned long long)
+                             s->machine->stats.elchg[idx].from,
+                             (unsigned long long)
+                             s->machine->stats.elchg[idx].to,
+                             (unsigned long long)
+                             s->machine->stats.elchg[idx].spsr,
+                             s->machine->stats.elchg[idx].kind,
+                             s->machine->stats.elchg[idx].el);
+            }
             winjit_stop_unsafe(cpu, "unhandled WinJIT exception or halt");
             continue;
         }
