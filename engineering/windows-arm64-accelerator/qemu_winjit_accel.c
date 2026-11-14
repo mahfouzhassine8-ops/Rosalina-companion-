@@ -230,11 +230,23 @@ static void *winjit_cpu_thread(void *opaque)
             winjit_stop_unsafe(cpu, "memory map or MMIO error");
             continue;
         }
-        if (cpu->interrupt_request) {
-            /* IRQ/GIC signal delivery has not yet been verified. */
-            winjit_stop_unsafe(cpu, "unverified interrupt routing");
+        /*
+         * QEMU software GICv2 asserts the CPU's physical IRQ/FIQ request
+         * bits. The WinJIT dispatcher consumes irq_line/fiq_line with DAIF
+         * masking, so mirror only those two architectural input levels.
+         * EXITTB is a scheduling hint. All other interrupt requests (reset,
+         * debug, VIRQ, VFIQ, NMI, etc.) are unsupported and fail closed.
+         * IRQ delivery and EOI are not yet qualified for Windows release.
+         */
+        int pending = qatomic_read(&cpu->interrupt_request);
+        const int supported = CPU_INTERRUPT_HARD | CPU_INTERRUPT_FIQ |
+                              CPU_INTERRUPT_EXITTB;
+        if (pending & ~supported) {
+            winjit_stop_unsafe(cpu, "unverified virtual IRQ, reset, debug or NMI");
             continue;
         }
+        hv->pc_state->irq_line = !!(pending & CPU_INTERRUPT_HARD);
+        hv->pc_state->fiq_line = !!(pending & CPU_INTERRUPT_FIQ);
 
         WinjitA64State snap = {0};
         if (winjit_qemu_capture_arm64(ARM_CPU(cpu), &snap) != WINJIT_CPU_OK ||
