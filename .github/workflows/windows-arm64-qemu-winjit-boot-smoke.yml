@@ -599,6 +599,88 @@ jobs:
           echo 'PASS: WinJIT guest memory loads and sysreg writes matched TCG' \
             >> /tmp/winjit-test-out/STATUS.txt
 
+      - name: Differential-test QEMU generic timer IRQ and WFI wakeup through GICv2
+        run: |
+          set -euo pipefail
+          cat > /tmp/winjit-test-out/timer.s <<'ASM'
+          .text
+          .global _start
+          _start:
+              mov x11, #0x09000000
+              mov x12, #0x08010000
+              mov x13, #0x08000000
+              adr x0, vectors
+              msr vbar_el1, x0
+              mov w0, #1
+              str w0, [x13]
+              str w0, [x12]
+              mov w0, #255
+              str w0, [x12, #4]
+              mov w0, #0x40000000
+              str w0, [x13, #0x100]
+              mrs x0, cntfrq_el0
+              lsr x0, x0, #4
+              msr cntp_tval_el0, x0
+              mov x0, #1
+              msr cntp_ctl_el0, x0
+              isb
+              msr daifclr, #2
+          wait:
+              wfi
+              b wait
+          .balign 2048
+          vectors:
+              .space 0x280
+              b irq_handler
+              .space 0x400-0x284
+          irq_handler:
+              ldr w14, [x12, #0xc]
+              and w0, w14, #0x3ff
+              cmp w0, #30
+              b.ne bad_timer
+              mov x0, #0
+              msr cntp_ctl_el0, x0
+              str w14, [x12, #0x10]
+              mov w0, #84
+              strb w0, [x11]
+              mov w0, #73
+              strb w0, [x11]
+              mov w0, #77
+              strb w0, [x11]
+              mov w0, #69
+              strb w0, [x11]
+              mov w0, #82
+              strb w0, [x11]
+              mov w0, #10
+              strb w0, [x11]
+          timer_idle:
+              b timer_idle
+          bad_timer:
+              mov w0, #70
+              strb w0, [x11]
+              b timer_idle
+          ASM
+          clang -c /tmp/winjit-test-out/timer.s -o /tmp/winjit-test-out/timer.o
+          ld.lld -Ttext=0 -o /tmp/winjit-test-out/timer.elf /tmp/winjit-test-out/timer.o
+          objcopy -O binary /tmp/winjit-test-out/timer.elf /tmp/winjit-test-out/timer.bin
+          cd /tmp/winjit-qemu
+          for ENGINE in tcg winjit; do
+            set +e
+            LD_LIBRARY_PATH=/tmp/winjit-lib timeout --signal=TERM --kill-after=2s 8s \
+              ./build/qemu-system-aarch64 -accel "$ENGINE" \
+              -machine virt,gic-version=2,secure=off,virtualization=off \
+              -cpu cortex-a53 -smp 1 -m 128M -bios /tmp/winjit-test-out/timer.bin \
+              -nographic -monitor none -serial stdio \
+              > "/tmp/winjit-test-out/timer-$ENGINE.log" 2>&1
+            RESULT=$?
+            set -e
+            cat "/tmp/winjit-test-out/timer-$ENGINE.log"
+            test "$RESULT" -eq 124
+            grep -Fx TIMER "/tmp/winjit-test-out/timer-$ENGINE.log"
+            if grep -Eiq '(stopped safely|unhandled guest exit|Aborted|core dumped|SIGSEGV|assertion.*failed)' "/tmp/winjit-test-out/timer-$ENGINE.log"; then exit 1; fi
+          done
+          echo 'PASS: real QEMU timer IRQ30, GICv2 acknowledge/EOI and WFI wakeup matched TCG' >> /tmp/winjit-test-out/STATUS.txt
+
       - name: Match production Windows Mode CPU/RAM profile on a disposable microguest
         run: |
           set -euo pipefail
@@ -797,5 +879,7 @@ jobs:
             /tmp/winjit-test-out/id-tcg.log
             /tmp/winjit-test-out/id-winjit.log
             /tmp/winjit-test-out/id-comparison.txt
+            /tmp/winjit-test-out/timer-tcg.log
+            /tmp/winjit-test-out/timer-winjit.log
             /tmp/winjit-test-out/accel-help.txt
           if-no-files-found: warn
