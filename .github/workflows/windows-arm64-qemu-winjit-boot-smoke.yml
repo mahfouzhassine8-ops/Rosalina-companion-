@@ -563,6 +563,62 @@ jobs:
           echo 'PASS: WinJIT guest memory loads and sysreg writes matched TCG' \
             >> /tmp/winjit-test-out/STATUS.txt
 
+      - name: Match production Windows Mode CPU/RAM profile on a disposable microguest
+        run: |
+          set -euo pipefail
+          # 7.1.14 Fold logs use -M virt -cpu max -smp 4 -m 6144.
+          # We MUST not claim that Cortex-A53/1-vCPU/512MB smoke success
+          # demonstrates production profile compatibility.
+          # Only use a synthetic ROM here, never the installed Windows disk.
+          # GICv2 is explicitly retained because the current research
+          # accelerator lacks verified GICv3 support. This is still NOT the
+          # actual full Windows profile (UEFI, NVMe, display, USB, GIC vary).
+          cd /tmp/winjit-qemu
+          set +e
+          timeout --signal=TERM --kill-after=2s 12s \
+            ./build/qemu-system-aarch64 -accel tcg \
+            -machine virt,gic-version=2,secure=off,virtualization=off \
+            -cpu max -smp 4 -m 6144 \
+            -bios /tmp/winjit-test-out/guest.bin \
+            -nographic -monitor none -serial stdio \
+            > /tmp/winjit-test-out/profile-tcg.log 2>&1
+          TCG_EXIT=$?
+          set -e
+          cat /tmp/winjit-test-out/profile-tcg.log
+          printf 'PROFILE_TCG_EXIT=%s\n' "$TCG_EXIT" >> /tmp/winjit-test-out/STATUS.txt
+          if [ "$TCG_EXIT" -ne 124 ] ||
+             ! grep -Fxq 'OK' /tmp/winjit-test-out/profile-tcg.log; then
+            echo 'FAIL: production-like test profile itself does not boot under TCG' \
+              >> /tmp/winjit-test-out/STATUS.txt
+            exit 1
+          fi
+          set +e
+          LD_LIBRARY_PATH=/tmp/winjit-lib \
+          timeout --signal=TERM --kill-after=3s 14s \
+            gdb --quiet --batch -ex run -ex 'thread apply all bt 12' --args \
+            ./build/qemu-system-aarch64 -accel winjit \
+            -machine virt,gic-version=2,secure=off,virtualization=off \
+            -cpu max -smp 4 -m 6144 \
+            -bios /tmp/winjit-test-out/guest.bin \
+            -nographic -monitor none -serial stdio \
+            > /tmp/winjit-test-out/profile-winjit.log 2>&1
+          WINJIT_EXIT=$?
+          set -e
+          cat /tmp/winjit-test-out/profile-winjit.log
+          printf 'PROFILE_WINJIT_EXIT=%s\n' "$WINJIT_EXIT" >> /tmp/winjit-test-out/STATUS.txt
+          if [ "$WINJIT_EXIT" -ne 124 ] ||
+             ! grep -Fxq 'OK' /tmp/winjit-test-out/profile-winjit.log ||
+             grep -Eiq '(Program received signal SIG|Aborted|core dumped|assertion.*failed|SIGSEGV|unhandled guest exit)' \
+               /tmp/winjit-test-out/profile-winjit.log; then
+            echo 'FAIL: WinJIT diverges from TCG with 4 vCPU, 6GB RAM and CPU=max' \
+              >> /tmp/winjit-test-out/STATUS.txt
+            exit 1
+          fi
+          echo 'PASS: WinJIT synthetic ROM executes with 4 vCPU, CPU=max, 6GB RAM' \
+            >> /tmp/winjit-test-out/STATUS.txt
+          echo 'NOT VERIFIED: Windows UEFI, NVMe, graphics, GICv3, installed disk, Fold' \
+            >> /tmp/winjit-test-out/STATUS.txt
+
       - name: Publish ONLY native boot evidence, NOT Android APK
         if: always()
         uses: actions/upload-artifact@v4
@@ -578,5 +634,7 @@ jobs:
             /tmp/winjit-test-out/sysreg-winjit.log
             /tmp/winjit-test-out/loadsys-tcg.log
             /tmp/winjit-test-out/loadsys-winjit.log
+            /tmp/winjit-test-out/profile-tcg.log
+            /tmp/winjit-test-out/profile-winjit.log
             /tmp/winjit-test-out/accel-help.txt
           if-no-files-found: warn
