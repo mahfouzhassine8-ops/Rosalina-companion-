@@ -20,9 +20,16 @@ Select WinJIT (experimental) only with that disposable configuration while
 stopped. Test writes are temporary (-snapshot). Select TCG to reverse the option.
 The original VM continues to use TCG even if WinJIT was enabled for the test VM.
 
-Known pending final gates: full Linux userspace boot, CPU-feature/timer fidelity,
-production -cpu max / 4 vCPU / 6 GiB compatibility, UEFI/NVMe/Windows desktop,
-interrupts/reset/storage/display, and physical Galaxy Fold upgrade/runtime.
+Passed in the current source engine: Cortex-A53 MIDR/PFR0/CNTFRQ parity with
+TCG; Linux kernel + userspace at Cortex-A53 / 1 vCPU / 512 MiB; real guest
+loads/stores above 4 GiB with 4 vCPUs and 6 GiB allocated. These tests use
+synthetic ROMs or disposable Linux media, without accessing Windows disks.
+Linux evidence: Actions run 43565914734. Native source provenance is included.
+
+Known pending final gates: full TCG -cpu max feature parity (WinJIT currently
+uses a conservative A57 baseline), full production guest/4-vCPU compatibility,
+UEFI/NVMe/Windows desktop, interrupt/reset/storage/display qualification, and
+physical Galaxy Fold upgrade/runtime.
 The evidence reports actual results. Synthetic guest execution is not Windows
 compatibility proof. No Windows image or licensed Windows content is included.
 
