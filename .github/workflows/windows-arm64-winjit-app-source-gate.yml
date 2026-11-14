@@ -1,0 +1,86 @@
+name: Windows Mode - in-place WinJIT runtime source gate (NO APK)
+on:
+  push:
+    branches: [windows-arm64-qemu-accel-research]
+    paths:
+      - '.github/workflows/windows-arm64-winjit-app-source-gate.yml'
+      - 'engineering/windows-arm64-accelerator/stage_winjit_android_option.py'
+      - 'engineering/windows-arm64-accelerator/inplace_upgrade_gate.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  protected-source-android-upgrade:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Confirm research-only scope and signed 7.1.14 branch SHA
+        run: |
+          set -euo pipefail
+          git fetch -q --depth=1 origin windows-mode-android-research
+          test "$(git rev-parse FETCH_HEAD)" = 68c0b948b89ab03c5f5b010a2e35b99e69339e1d
+          git diff --name-only FETCH_HEAD HEAD > /tmp/paths.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/paths.txt').read_text().splitlines()
+          assert p and all(x.startswith('engineering/windows-arm64-accelerator/')
+                or x.startswith('.github/workflows/windows-arm64-') for x in p), p
+          print('PASS: protected Windows Mode release source remains untouched')
+          PY
+      - name: Reproduce existing Windows Mode 7.1.14 Java source in isolated upstream checkout
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --branch 7.1.4 https://github.com/rhn-1k/QubeVM.git /tmp/upstream-staging
+          python3 -m py_compile windows-mode-source-repairs.py windows-mode-ui-repairs.py \
+            windows-mode-performance-repairs.py windows-mode-setup-display-repairs.py \
+            windows-mode-desktop-boot-repairs.py windows-mode-boot-benchmark-repairs.py
+          for f in \
+            windows-mode-source-repairs.py \
+            windows-mode-ui-repairs.py \
+            windows-mode-performance-repairs.py \
+            windows-mode-setup-display-repairs.py \
+            windows-mode-desktop-boot-repairs.py \
+            windows-mode-boot-benchmark-repairs.py; do
+            python3 "$f" /tmp/upstream-staging
+          done
+      - name: Stage ONLY existing-package WinJIT opt-in and 70115 upgrade identity (no build)
+        run: |
+          set -euo pipefail
+          python3 -m py_compile engineering/windows-arm64-accelerator/stage_winjit_android_option.py \
+            engineering/windows-arm64-accelerator/inplace_upgrade_gate.py
+          python3 engineering/windows-arm64-accelerator/stage_winjit_android_option.py /tmp/upstream-staging
+          python3 engineering/windows-arm64-accelerator/inplace_upgrade_gate.py \
+            stage --disposable-upstream /tmp/upstream-staging
+          python3 engineering/windows-arm64-accelerator/test_inplace_upgrade_gate.py
+      - name: Audit exact edit surface, preserve storage, licensing and unrelated packages
+        run: |
+          set -euo pipefail
+          git -C /tmp/upstream-staging status --short | tee /tmp/staged-winjit-source.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          base=Path('/tmp/upstream-staging')
+          p=(base/'qube-android-arm/build.gradle').read_text()
+          m=(base/'qube-android-arm/src/main/AndroidManifest.xml').read_text()
+          vm=(base/'qube-android-lib/src/main/java/com/max2idea/android/qube/jni/VMExecutor.java').read_text()
+          menu=(base/'qube-android-lib/src/main/java/com/max2idea/android/qube/main/QubeActivity.java').read_text()
+          assert 'applicationId = "com.fold.windowsmode.research"' in p
+          assert 'android:versionCode="70115"' in m
+          assert 'android:versionName="7.1.15-winjit-candidate"' in m
+          assert 'WindowsWinjitMode.shouldUse' in vm
+          assert 'paramsList.add(tcgParams)' in vm
+          assert 'paramsList.add("winjit")' in vm
+          assert 'WINDOWS_WINJIT_MODE' in menu
+          assert 'showWindowsWinjitMode()' in menu
+          print('PASS: research-only Java opt-in, original package, and higher version code')
+          print('WARNING: NO WinJIT Windows guest boot or Android APK verified')
+          PY
+          printf '%s\n' 'NO APK CREATED; RELEASE BLOCKED UNTIL WINDOWS ARM64 BOOT/COMPATIBILITY PASS' \
+              >> /tmp/staged-winjit-source.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: winjit-windows-mode-70115-inplace-source-gate-NO-APK
+          path: /tmp/staged-winjit-source.txt
+          if-no-files-found: error
