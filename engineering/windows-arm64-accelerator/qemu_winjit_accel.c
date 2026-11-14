@@ -72,6 +72,12 @@ typedef struct WinjitState {
 static bool winjit_allowed;
 static WinjitState *runtime;
 
+/* QEMU virt may select software GICv2 for this research backend only. */
+bool winjit_accel_enabled(void)
+{
+    return winjit_allowed;
+}
+
 static bool winjit_load(WinjitState *s)
 {
     s->library = dlopen("libwinjit-core-android-aarch64.so",
