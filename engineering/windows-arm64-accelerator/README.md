@@ -1,3 +1,17 @@
+# Current owner directive and signed TEST deliverable (14 November 2026)
+
+The governing instruction is [issue #2](https://github.com/mahfouzhassine8-ops/Rosalina-companion-/issues/2). It authorizes an immediate signed **TEST** APK after native compile/link/load, dependency checks and basic real QEMU guest execution. Full Linux/Windows/Fold acceptance gates apply to a validated final release. Older “NO APK until Windows boots” directions in the historical notes below are superseded by this explicit owner override.
+
+A real same-app signed candidate was published from packaging commit `9d2d54f30dbf6f8cde34d22ea486cf70faaf9cea`: [run 43565659417, artifact 14101774379](https://github.com/mahfouzhassine8-ops/Rosalina-companion-/actions/runs/43565659417/artifacts/14101774379). Package `com.fold.windowsmode.research`, versionCode `70115`, versionName `7.1.15-winjit-candidate`; original signer SHA-256 `a40da80a59d170caa950cf15c18c454d47a39b26989d8b640ecd745ba71bf5dc`. APK SHA-256 `3755c9fb19254a4c2055b27ba0bff246ae8288f1e7e04c59ea2076196dd27a41`.
+
+This first candidate contains Android QEMU built at `0eeaf45` and translator built at `18aac3c`, including the ELF helper-branch x16/x17 preservation fix. Its real QEMU ROM/EL0/MMU/TCR/MAIR guest gates passed; CPU ID/timer parity and full Linux boot had not passed. Later source corrections are not retroactively part of that immutable artifact.
+
+Default TCG and the protected app identity/settings remain intact. WinJIT requires explicit opt-in and a separate test VM with disk/media and explicit UEFI VARS inside the app's `WinJIT-disposable` directory. Canonical-path checks reject escapes and the original Windows disk; shared folders and extra QEMU arguments are disallowed for WinJIT. Test writes use `-snapshot`. See [TEST-CANDIDATE-README.txt](TEST-CANDIDATE-README.txt).
+
+The candidate workflow verifies source provenance, native dependencies, exact packaged ELF bytes, actual Android package/version/certificate, and publishes the APK plus proof. Java guard tests execute the staged code against disposable files. No installed Windows disk or live firmware variables were accessed. The protected 7.1.14 branch remains `68c0b948b89ab03c5f5b010a2e35b99e69339e1d`; Infinity and Cobra are outside scope.
+
+## Historical research notes (not current release instructions)
+
 # Windows Mode: ARM64 accelerator research (source-only)
 
 **Stage 0: native packaging audit and real-device boot profiling. NO NEW APK.**
