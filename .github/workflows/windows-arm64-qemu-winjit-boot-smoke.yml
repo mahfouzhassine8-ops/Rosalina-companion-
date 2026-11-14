@@ -1,0 +1,168 @@
+name: Windows ARM64 QEMU - WinJIT actual system guest boot micro-smoke (NO APK)
+on:
+  push:
+    branches: [windows-arm64-qemu-accel-research]
+    paths:
+      - '.github/workflows/windows-arm64-qemu-winjit-boot-smoke.yml'
+      - 'engineering/windows-arm64-accelerator/qemu_winjit_accel.c'
+      - 'engineering/windows-arm64-accelerator/qemu_arm_snapshot.c'
+      - 'engineering/windows-arm64-accelerator/qemu_phys_io.c'
+      - 'engineering/windows-arm64-accelerator/jit_region_android.c'
+      - 'engineering/windows-arm64-accelerator/port-windowsios-core-android.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qemu-arm64-winjit-microguest:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Protect Windows Mode 7.1.14 and installed Windows storage
+        run: |
+          set -euo pipefail
+          git fetch -q --no-tags --depth=1 origin windows-mode-android-research
+          test "$(git rev-parse FETCH_HEAD)" = 68c0b948b89ab03c5f5b010a2e35b99e69339e1d
+          git diff --name-only FETCH_HEAD HEAD > /tmp/research-change-paths.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          paths=Path('/tmp/research-change-paths.txt').read_text().splitlines()
+          assert paths and all(
+              p.startswith('engineering/windows-arm64-accelerator/')
+              or p.startswith('.github/workflows/windows-arm64-')
+              for p in paths
+          ), paths
+          print('PASS: protected app source unchanged; no Windows storage accessed')
+          PY
+      - name: Install ARM64 Linux QEMU development prerequisites
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang lld binutils git python3 python3-venv \
+            meson ninja-build pkg-config libglib2.0-dev libpixman-1-dev \
+            libfdt-dev libslirp-dev zlib1g-dev libffi-dev libcapstone-dev
+      - name: Pin QEMU 11.1.3 and upstream WindowsiOS ARM64 translator
+        run: |
+          set -euo pipefail
+          git clone -q --depth 1 --branch v11.1.3 https://github.com/qemu/qemu.git /tmp/winjit-qemu
+          git init -q /tmp/winjit-core
+          git -C /tmp/winjit-core remote add origin https://github.com/ammaarreshi/WindowsiOS.git
+          git -C /tmp/winjit-core -c advice.detachedHead=false fetch -q --depth=1 origin 0071d6975287fd720b9046dfd3bd80b6f2aa765e
+          git -C /tmp/winjit-core checkout -q FETCH_HEAD
+          test "$(git -C /tmp/winjit-core rev-parse HEAD)" = 0071d6975287fd720b9046dfd3bd80b6f2aa765e
+          python3 engineering/windows-arm64-accelerator/port-windowsios-core-android.py /tmp/winjit-core
+      - name: Build full native WinJIT ARM64 translator shared library on Linux
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/winjit-obj /tmp/winjit-test-out /tmp/winjit-lib
+          SRC=/tmp/winjit-core
+          for f in "$SRC"/core/*.c; do
+            n=$(basename "$f" .c)
+            EXTRA=""
+            if [ "$n" = mmu ]; then EXTRA=-mgeneral-regs-only; fi
+            clang -std=gnu11 -O2 -fPIC -D_GNU_SOURCE \
+              -Werror=implicit-function-declaration -I "$SRC/core" -I "$SRC/host" \
+              $EXTRA -c "$f" -o "/tmp/winjit-obj/$n.o"
+          done
+          clang -fPIC -c "$SRC/host/enter.S" -o /tmp/winjit-obj/enter.o
+          for n in jit_region_android winjit_cpu_bridge winjit_phys_bus; do
+            clang -std=gnu11 -O2 -fPIC -D_GNU_SOURCE \
+              -I "$SRC/core" -I "$SRC/host" -I engineering/windows-arm64-accelerator \
+              -c "engineering/windows-arm64-accelerator/$n.c" -o "/tmp/winjit-obj/$n.o"
+          done
+          clang -shared -fPIC -Wl,--no-undefined -Wl,-z,relro -Wl,-z,now \
+            /tmp/winjit-obj/*.o -lm -pthread \
+            -o /tmp/winjit-lib/libwinjit-core-android-aarch64.so
+          test -s /tmp/winjit-lib/libwinjit-core-android-aarch64.so
+          readelf -h /tmp/winjit-lib/libwinjit-core-android-aarch64.so | grep -F AArch64
+      - name: Compile full QEMU system emulator with actual -accel winjit vCPU backend
+        timeout-minutes: 30
+        run: |
+          set -euo pipefail
+          Q=/tmp/winjit-qemu
+          cp engineering/windows-arm64-accelerator/qemu_arm_snapshot.c "$Q/target/arm/winjit_qemu_snapshot.c"
+          cp engineering/windows-arm64-accelerator/qemu_phys_io.c "$Q/target/arm/winjit_qemu_phys_io.c"
+          cp engineering/windows-arm64-accelerator/qemu_winjit_accel.c "$Q/target/arm/winjit_qemu_accel.c"
+          cp engineering/windows-arm64-accelerator/winjit_cpu_bridge.h "$Q/target/arm/winjit_cpu_bridge.h"
+          cp engineering/windows-arm64-accelerator/winjit_phys_bus.h "$Q/target/arm/winjit_phys_bus.h"
+          mkdir -p "$Q/target/arm/winjit_pinned"
+          cp /tmp/winjit-core/core/cpu.h /tmp/winjit-core/core/machine.h \
+             /tmp/winjit-core/core/dispatch.h /tmp/winjit-core/host/jit_region.h \
+             "$Q/target/arm/winjit_pinned/"
+          python3 - "$Q/target/arm/winjit_pinned/machine.h" "$Q/target/arm/meson.build" <<'PY'
+          from pathlib import Path
+          import sys
+          m=Path(sys.argv[1])
+          s=m.read_text()
+          assert s.count('#include <TargetConditionals.h>')==1
+          m.write_text(s.replace('#include <TargetConditionals.h>','#define TARGET_OS_IPHONE 0'))
+          p=Path(sys.argv[2])
+          s=p.read_text()
+          anchor="target_common_system_arch += {'arm': arm_common_system_ss}"
+          assert s.count(anchor)==1
+          new="arm_common_system_ss.add(when: 'TARGET_AARCH64', if_true: files('winjit_qemu_snapshot.c', 'winjit_qemu_phys_io.c', 'winjit_qemu_accel.c'))\n"
+          p.write_text(s.replace(anchor,new+anchor))
+          PY
+          cd "$Q"
+          ./configure --target-list=aarch64-softmmu --disable-docs \
+            --disable-gtk --disable-sdl --disable-vnc --disable-werror \
+            --disable-debug-info --enable-slirp
+          make -j4 qemu-system-aarch64 2>&1 | tee /tmp/winjit-test-out/qemu-linux-build.log
+          test -x ./qemu-system-aarch64
+          ./qemu-system-aarch64 -accel help | tee /tmp/winjit-test-out/accel-help.txt
+          grep -Fq winjit /tmp/winjit-test-out/accel-help.txt
+
+      - name: Boot ROM microguest through real QEMU -accel winjit and verify UART
+        run: |
+          set -euo pipefail
+          cat > /tmp/winjit-test-out/guest.s <<'ASM'
+          .section .text
+          .global _start
+          _start:
+              movz x1, #0x0000
+              movk x1, #0x0900, lsl #16
+              movz w0, #'O'
+              strb w0, [x1]
+              movz w0, #'K'
+              strb w0, [x1]
+              movz w0, #10
+              strb w0, [x1]
+          forever:
+              b forever
+          ASM
+          clang -c /tmp/winjit-test-out/guest.s -o /tmp/winjit-test-out/guest.o
+          ld.lld -Ttext=0 -o /tmp/winjit-test-out/guest.elf /tmp/winjit-test-out/guest.o
+          objcopy -O binary /tmp/winjit-test-out/guest.elf /tmp/winjit-test-out/guest.bin
+          cd /tmp/winjit-qemu
+          set +e
+          LD_LIBRARY_PATH=/tmp/winjit-lib:$LD_LIBRARY_PATH \
+          timeout 15s ./qemu-system-aarch64 -accel winjit \
+            -machine virt,secure=off,virtualization=off -cpu cortex-a53 \
+            -smp 1 -m 128M -bios /tmp/winjit-test-out/guest.bin \
+            -nographic -monitor none -serial stdio \
+            > /tmp/winjit-test-out/guest.log 2>&1
+          EXIT=$?
+          set -e
+          cat /tmp/winjit-test-out/guest.log
+          echo "GUEST_EXIT=$EXIT" | tee /tmp/winjit-test-out/STATUS.txt
+          if ! grep -Fq 'OK' /tmp/winjit-test-out/guest.log; then
+            echo 'FAIL: actual QEMU WinJIT guest UART output unverified' >> /tmp/winjit-test-out/STATUS.txt
+            exit 1
+          fi
+          echo 'PASS: real QEMU -accel winjit executed AArch64 microguest UART' >> /tmp/winjit-test-out/STATUS.txt
+          echo 'NOT VERIFIED: Android Fold, Windows guest, QEMU GIC interrupts, DMA, migration, thermal, stability' >> /tmp/winjit-test-out/STATUS.txt
+
+      - name: Publish ONLY native boot evidence, NOT Android APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-winjit-linux-aarch64-actual-microguest-boot-evidence
+          path: |
+            /tmp/winjit-test-out/STATUS.txt
+            /tmp/winjit-test-out/guest.log
+            /tmp/winjit-test-out/accel-help.txt
+          if-no-files-found: warn
