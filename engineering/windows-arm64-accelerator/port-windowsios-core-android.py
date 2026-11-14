@@ -23,6 +23,38 @@ core=root/"core"
 entry=root/"host/enter.S"
 assert (core/"cpu.h").is_file() and entry.is_file(), "Pinned WindowsiOS source checkout missing"
 
+# Versioned, per-vCPU QEMU system-register callbacks. Keep the upstream HvCpu
+# layout unchanged: host/enter.S relies on its original byte offsets.
+(core/"winjit_cpu_bridge.h").write_text(
+    (Path(__file__).resolve().parent/"winjit_cpu_bridge.h").read_text())
+patch(core/"sysreg.c", '#include "sysreg.h"',
+      '#include "sysreg.h"\n#include "winjit_cpu_bridge.h"')
+patch(core/"sysreg.c",
+      'static int read_reg(HvCpu *cpu, uint32_t reg, uint64_t *v) {',
+      '''static int read_reg(HvCpu *cpu, uint32_t reg, uint64_t *v) {
+    int bridged = winjit_qemu_sysreg_read(cpu, reg, v);
+    if (bridged) return bridged > 0 ? 0 : -1;''')
+patch(core/"sysreg.c",
+      'static int write_reg(HvCpu *cpu, uint32_t reg, uint64_t v) {',
+      '''static int write_reg(HvCpu *cpu, uint32_t reg, uint64_t v) {
+    int bridged = winjit_qemu_sysreg_write(cpu, reg, v);
+    if (bridged) return bridged > 0 ? 0 : -1;''')
+# Upstream inlines host CNTVCT reads. A QEMU guest must instead use the
+# virtual counter, virtual offset, frequency and timer IRQs of its machine.
+patch(core/"translate.c",
+      '''    uint32_t reg = (insn >> 5) & 0xffff;
+    int el1 = (e->flags & HV_BLOCK_EL1) != 0, spx = (e->flags & HV_BLOCK_SPX) != 0;''',
+      '''    uint32_t reg = (insn >> 5) & 0xffff;
+    if ((reg >> 14) == 3 && ((reg >> 11) & 7) == 3 &&
+        ((reg >> 7) & 15) == 14) return 0; /* QEMU timer helper, never host CNTVCT */
+    int el1 = (e->flags & HV_BLOCK_EL1) != 0, spx = (e->flags & HV_BLOCK_SPX) != 0;''')
+patch(core/"dispatch.c",
+      '''        case HV_EXIT_WFI:
+            if (wait_for_interrupt(cpu) != 0) return HV_EXIT_WFI;''',
+      '''        case HV_EXIT_WFI:
+            if (one) return HV_EXIT_WFI; /* QEMU schedules timer/IRQ wakeup */
+            if (wait_for_interrupt(cpu) != 0) return HV_EXIT_WFI;''')
+
 clock=core/"android_hv_clock.h"
 assert not clock.exists()
 clock.write_text(r'''/* SPDX-License-Identifier: GPL-2.0-or-later

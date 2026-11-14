@@ -222,10 +222,16 @@ static void *winjit_cpu_thread(void *opaque)
     qemu_guest_random_seed_thread_part2(cpu->random_seed);
 
     do {
+        /* Run one block under the BQL, then let the QEMU I/O thread run
+         * timers, devices and other vCPUs. Keeping the BQL for the entire
+         * guest lifetime starves the very timer callbacks we forward. */
+        bql_unlock();
+        bql_lock();
         qemu_process_cpu_events(cpu);
         if (!cpu_can_run(cpu)) {
             continue;
         }
+        cpu->halted = false; /* qemu_process_cpu_events woke a WFI CPU */
         s->started = true;
         if (s->failed || s->fn.bus_failures(&s->bus)) {
             winjit_stop_unsafe(cpu, "memory map or MMIO error");
@@ -294,7 +300,7 @@ static void *winjit_cpu_thread(void *opaque)
             winjit_stop_unsafe(cpu, "QEMU physical MMIO transaction failure");
             continue;
         }
-        if (result != HV_EXIT_BRANCH) {
+        if (result != HV_EXIT_BRANCH && result != HV_EXIT_WFI) {
             /*
              * Emit bounded, non-sensitive state at the FIRST unsupported
              * architectural exit. A Linux boot without early guest UART
@@ -357,6 +363,12 @@ static void *winjit_cpu_thread(void *opaque)
             winjit_qemu_restore_arm64(ARM_CPU(cpu), &snap) != WINJIT_CPU_OK) {
             winjit_stop_unsafe(cpu, "unsupported translated state");
             continue;
+        }
+        if (result == HV_EXIT_WFI) {
+            /* QEMU owns the generic timers and IRQ wakeup. Never wait in
+             * the upstream Apple dispatcher while holding QEMU's BQL. */
+            ARM_CPU(cpu)->env.halt_reason = HALT_WFI;
+            cpu->halted = true;
         }
     } while (!cpu->unplug || cpu_can_run(cpu));
 

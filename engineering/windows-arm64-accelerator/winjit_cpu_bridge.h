@@ -6,10 +6,20 @@
 #define WINJIT_CPU_BRIDGE_H
 #include <stdint.h>
 
-#define WINJIT_CPU_ABI_VERSION 2U
+#define WINJIT_CPU_ABI_VERSION 3U
 #define WINJIT_CPU_OK 0
 #define WINJIT_CPU_UNSUPPORTED (-1)
 #define WINJIT_CPU_INVALID (-2)
+
+/* Called on the owning QEMU vCPU thread while the BQL is held. Return 0 for
+ * translator-owned registers, 1 on success, -1 for an unsupported access.
+ * Hooks keep CPU identification and generic timer state in QEMU, without
+ * changing the pinned HvCpu layout used by the entry assembly. */
+typedef struct WinjitQemuSysregs {
+    void *opaque;
+    int (*read)(void *, uint32_t, uint64_t *);
+    int (*write)(void *, uint32_t, uint64_t);
+} WinjitQemuSysregs;
 
 /* EL0t, EL1t and EL1h AArch64 states are supported; reject EL2/EL3.
  * QEMU's MTE/SVE/SME, EL2 traps, debug state and GIC remain separate gates. */
@@ -28,6 +38,7 @@ typedef struct WinjitA64State {
     uint64_t elr_el1, spsr_el1, sp_el0, sp_el1;
     uint64_t esr_el1, far_el1;
     uint64_t cntkctl_el1;
+    WinjitQemuSysregs sysregs;
 } WinjitA64State;
 
 /* WinJIT HvCpu comes from pinned WindowsiOS core/cpu.h. No QEMU internals
@@ -35,5 +46,7 @@ typedef struct WinjitA64State {
 struct HvCpu;
 int winjit_cpu_from_qemu_state(struct HvCpu *dst, const WinjitA64State *src);
 int winjit_cpu_to_qemu_state(WinjitA64State *dst, const struct HvCpu *src);
+int winjit_qemu_sysreg_read(struct HvCpu *, uint32_t, uint64_t *);
+int winjit_qemu_sysreg_write(struct HvCpu *, uint32_t, uint64_t);
 
 #endif

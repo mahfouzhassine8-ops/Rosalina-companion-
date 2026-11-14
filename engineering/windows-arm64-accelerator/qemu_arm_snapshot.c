@@ -7,7 +7,70 @@
 #include "qemu/osdep.h"
 #include "cpu.h"
 #include "internals.h"
+#include "cpregs.h"
 #include "winjit_cpu_bridge.h"
+
+static bool winjit_qemu_owned_sysreg(uint32_t reg)
+{
+    unsigned op0 = reg >> 14, op1 = (reg >> 11) & 7;
+    unsigned crn = (reg >> 7) & 15, crm = (reg >> 3) & 15;
+    /* ID/cache registers, CSSELR, and the EL0 generic timer views. Do not
+     * forward translator MMU state or unrelated QEMU/TCG helpers. */
+    return op0 == 3 && (crn == 0 ||
+        (op1 == 3 && crn == 14 && (crm == 0 || crm == 2 || crm == 3)));
+}
+
+static const ARMCPRegInfo *winjit_qemu_reg(ARMCPU *cpu, uint32_t reg)
+{
+    return get_arm_cp_reginfo(cpu->cp_regs, ENCODE_AA64_CP_REG(
+        reg >> 14, (reg >> 11) & 7, (reg >> 7) & 15, (reg >> 3) & 15, reg & 7));
+}
+
+static int winjit_qemu_sysreg_get(void *opaque, uint32_t reg, uint64_t *value)
+{
+    if (!winjit_qemu_owned_sysreg(reg)) {
+        return 0;
+    }
+    ARMCPU *cpu = opaque;
+    const ARMCPRegInfo *ri = winjit_qemu_reg(cpu, reg);
+    if (!ri || (ri->type & ARM_CP_SPECIAL_MASK)) {
+        return -1;
+    }
+    /* Use guest accessors, not raw migration accessors: timer CTL needs
+     * synthesized ISTATUS and counter reads use QEMU's virtual timebase. */
+    if (ri->type & ARM_CP_CONST) {
+        *value = ri->resetvalue;
+    } else if (ri->readfn) {
+        *value = ri->readfn(&cpu->env, ri);
+    } else if (ri->fieldoffset) {
+        *value = raw_read(&cpu->env, ri);
+    } else {
+        return -1;
+    }
+    return 1;
+}
+
+static int winjit_qemu_sysreg_set(void *opaque, uint32_t reg, uint64_t value)
+{
+    if (!winjit_qemu_owned_sysreg(reg)) {
+        return 0;
+    }
+    ARMCPU *cpu = opaque;
+    const ARMCPRegInfo *ri = winjit_qemu_reg(cpu, reg);
+    if (!ri || (ri->type & ARM_CP_SPECIAL_MASK) || !(ri->access & PL1_W)) {
+        return -1;
+    }
+    if (ri->type & ARM_CP_CONST) {
+        return 1;
+    } else if (ri->writefn) {
+        ri->writefn(&cpu->env, ri, value);
+    } else if (ri->fieldoffset) {
+        raw_write(&cpu->env, ri, value);
+    } else {
+        return -1;
+    }
+    return 1;
+}
 
 int winjit_qemu_capture_arm64(ARMCPU *cpu, WinjitA64State *dest)
 {
@@ -63,6 +126,11 @@ int winjit_qemu_capture_arm64(ARMCPU *cpu, WinjitA64State *dest)
     tmp.esr_el1 = env->cp15.esr_el[1];
     tmp.far_el1 = env->cp15.far_el[1];
     tmp.cntkctl_el1 = env->cp15.c14_cntkctl;
+    tmp.sysregs = (WinjitQemuSysregs) {
+        .opaque = cpu,
+        .read = winjit_qemu_sysreg_get,
+        .write = winjit_qemu_sysreg_set,
+    };
     *dest = tmp;
     return WINJIT_CPU_OK;
 }

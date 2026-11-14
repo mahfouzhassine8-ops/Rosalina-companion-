@@ -10,6 +10,24 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int model_read(void *opaque, uint32_t reg, uint64_t *value)
+{
+    if (reg == 0xc000) { /* MIDR */
+        *value = *(uint64_t *)opaque;
+        return 1;
+    }
+    return reg == 0xffff ? -1 : 0;
+}
+
+static int model_write(void *opaque, uint32_t reg, uint64_t value)
+{
+    if (reg != 0xdf10) { /* CNTP_TVAL */
+        return -1;
+    }
+    *(uint64_t *)opaque = value;
+    return 1;
+}
+
 static void assert_equivalent(const WinjitA64State *a, const WinjitA64State *b)
 {
     assert(a->abi_version == b->abi_version);
@@ -63,6 +81,10 @@ int main(void)
     a.esr_el1 = 0xdead;
     a.far_el1 = 0x100000;
     a.cntkctl_el1 = 0x3;
+    uint64_t model_value = 0x410fd034;
+    a.sysregs = (WinjitQemuSysregs) {
+        .opaque = &model_value, .read = model_read, .write = model_write,
+    };
     hv->m = (struct HvMachine *)(uintptr_t)0x1234; /* preserve non-reg pointers */
     hv->pc_state = (struct HvPerCpu *)(uintptr_t)0x5678;
     assert(winjit_cpu_from_qemu_state(hv, &a) == WINJIT_CPU_OK);
@@ -71,6 +93,19 @@ int main(void)
     assert(hv->pc_state == (struct HvPerCpu *)(uintptr_t)0x5678);
     assert(winjit_cpu_to_qemu_state(&b, hv) == WINJIT_CPU_OK);
     assert_equivalent(&a, &b);
+    uint64_t value = 0;
+    assert(winjit_qemu_sysreg_read(hv, 0xc000, &value) == 1);
+    assert(value == 0x410fd034);
+    assert(winjit_qemu_sysreg_read(hv, 0xc100, &value) == 0);
+    assert(winjit_qemu_sysreg_read(hv, 0xffff, &value) == -1);
+    assert(winjit_qemu_sysreg_write(hv, 0xdf10, 1234) == 1);
+    assert(model_value == 1234);
+    assert(winjit_qemu_sysreg_write(hv, 0xc000, 0) == -1);
+    assert(b.sysregs.opaque == &model_value && b.sysregs.read == model_read);
+    HvCpu *other = calloc(1, sizeof(*other));
+    assert(other);
+    assert(winjit_qemu_sysreg_read(other, 0xc000, &value) == 0);
+    free(other);
 
     /* Both stack-select forms must round-trip exactly. */
     a.pstate = 0x300003c4ULL;

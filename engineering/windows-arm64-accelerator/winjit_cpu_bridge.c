@@ -7,6 +7,24 @@
 
 #include <stddef.h>
 
+/* Each QEMU vCPU imports its snapshot on the same thread that enters the
+ * translator and its helpers. No process-global CPU model or host timer leaks
+ * into another vCPU; standalone native tests have no installed hooks. */
+static _Thread_local struct HvCpu *sysreg_cpu;
+static _Thread_local WinjitQemuSysregs sysregs;
+
+int winjit_qemu_sysreg_read(struct HvCpu *cpu, uint32_t reg, uint64_t *value)
+{
+    return cpu == sysreg_cpu && sysregs.read
+        ? sysregs.read(sysregs.opaque, reg, value) : 0;
+}
+
+int winjit_qemu_sysreg_write(struct HvCpu *cpu, uint32_t reg, uint64_t value)
+{
+    return cpu == sysreg_cpu && sysregs.write
+        ? sysregs.write(sysregs.opaque, reg, value) : 0;
+}
+
 #define NZCV 0xf0000000ULL
 #define DAIF 0x3c0ULL
 #define PSTATE_EXTRA ((1ULL << 12) | (1ULL << 22) | (1ULL << 23) | \
@@ -36,6 +54,8 @@ int winjit_cpu_from_qemu_state(struct HvCpu *dst, const WinjitA64State *src)
     if (result != WINJIT_CPU_OK) {
         return result;
     }
+    sysreg_cpu = dst;
+    sysregs = src->sysregs;
 
     /* Do not clear HvCpu: machine pointers, cache generations, TLB and IRQ
      * wires are initialized by the WinJIT machine and are not CPU registers. */
@@ -89,6 +109,7 @@ int winjit_cpu_to_qemu_state(WinjitA64State *dst, const struct HvCpu *src)
 
     dst->abi_version = WINJIT_CPU_ABI_VERSION;
     dst->aarch64 = 1;
+    dst->sysregs = src == sysreg_cpu ? sysregs : (WinjitQemuSysregs){0};
     for (unsigned i = 0; i < 31; ++i) {
         dst->x[i] = src->x[i];
     }
