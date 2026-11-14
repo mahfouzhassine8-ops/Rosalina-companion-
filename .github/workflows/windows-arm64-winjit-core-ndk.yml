@@ -7,6 +7,8 @@ on:
       - 'engineering/windows-arm64-accelerator/port-windowsios-core-android.py'
       - 'engineering/windows-arm64-accelerator/jit_region_android.c'
       - 'engineering/windows-arm64-accelerator/test_jit_region_android.c'
+      - 'engineering/windows-arm64-accelerator/inplace_upgrade_gate.py'
+      - 'engineering/windows-arm64-accelerator/test_inplace_upgrade_gate.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -63,6 +65,11 @@ jobs:
             engineering/windows-arm64-accelerator/test_jit_region_android.c \
             -o /tmp/test-jit-cache
           /tmp/test-jit-cache
+      - name: Direct-upgrade package ID/signature/version regression gate (NO APK)
+        run: |
+          set -euo pipefail
+          python3 -m py_compile engineering/windows-arm64-accelerator/inplace_upgrade_gate.py
+          python3 engineering/windows-arm64-accelerator/test_inplace_upgrade_gate.py
       - name: Compile entire WindowsiOS ARM64 core and entry assembly with Android NDK
         run: |
           set -euo pipefail
