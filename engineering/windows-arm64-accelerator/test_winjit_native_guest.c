@@ -4,6 +4,7 @@
  * No QEMU, Windows guest image, installation, UEFI VARS or APK involved.
  */
 #include "cpu.h"
+#include "dispatch.h"
 #include "machine.h"
 #include "winjit_phys_bus.h"
 #include <assert.h>
