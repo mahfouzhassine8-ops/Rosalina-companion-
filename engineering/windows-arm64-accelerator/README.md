@@ -43,6 +43,17 @@ Investigate an alternative direct AArch64 translator as a separate QEMU accelera
 - QubeVM v7.1.4: https://github.com/rhn-1k/QubeVM/tree/7.1.4
 - WindowsiOS source: https://github.com/ammaarreshi/WindowsiOS ; review core/translate.c, core/mmu.c, core/machine.c, core/cpu.h, host/enter.S, host/jit_region.c and host/winvm.c.
 
+
+## Verified progress on the research branch (2026-11-13)
+
+- QEMU 11.1.3 Android ARM64 native **source build PASSED**: Actions 43520669820.
+- WindowsiOS translated ARM64/MMU core and entry assembly **COMPILED** on Android NDK, and an isolated fully linked ARM64 **libwinjit-core-android-aarch64.so** was produced with no undefined native symbols: Actions 43548034462.
+- Linux smoke test for the new Android-style **dual RW/RX memfd code cache PASSED**. This is W^X, not a root/SELinux bypass; actual Fold executable-memory policy and native guest execution remain unverified.
+- An in-place upgrade **package identity gate PASSED** (same `com.fold.windowsmode.research`, required protected signer fingerprint, candidate versionCode `70115`, and rejection of the mistaken `com.fold.windowsmode.sourcenative` duplicate). This is SOURCE-PREPARATION TESTING ONLY, not a signed upgrade APK.
+- The previously built `sourcenative` test APK (Actions 43531348059) used stock QEMU and did **not** contain active WinJIT acceleration. Do not treat that duplicate app as the direct upgrade.
+- **Critical missing integration:** no QEMU `-accel winjit` implementation, lifecycle/CPUARMState synchronization, mapped QEMU RAM/MMIO and DMA invalidation, GIC/timers/interrupts, system register fidelity, or UEFI/Linux/Windows boot verification under WinJIT. The linked core library cannot replace QEMU's native accelerator by being placed in APK jniLibs.
+- **Release gate:** do not produce or publish an in-place accelerated APK until WinJIT actually runs a guest under QEMU, passes UEFI and licensed Windows ARM64 desktop/compatibility checks on a safe disk overlay with copied UEFI VARS, and the signed APK passes package/signer/version checks. Preserve the original Windows Mode 7.1.14, signed identity, installed Windows and user data.
+
 ## Strict protection
 
 No installed-Windows disk or firmware access, no disabling Defender, no root, no KVM, no SELinux bypass, no edits to release scripts, packaged APK, signing, app settings or unrelated projects. CI stage is read-only and emits only a source-audit report, NOT an APK.
