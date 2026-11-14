@@ -36,7 +36,8 @@ jobs:
             p.startswith('engineering/windows-arm64-accelerator/')
             or p in ('.github/workflows/windows-arm64-accel-audit.yml',
                      '.github/workflows/windows-arm64-native-qemu-source.yml',
-                     '.github/workflows/windows-arm64-winjit-core-ndk.yml')
+                     '.github/workflows/windows-arm64-winjit-core-ndk.yml',
+                     '.github/workflows/windows-arm64-source-native-research-apk.yml')
             for p in names
           ), 'Protected Windows Mode source, APK or settings were touched'
           print('PASS: Windows Mode 7.1.14 release files exactly preserved')
