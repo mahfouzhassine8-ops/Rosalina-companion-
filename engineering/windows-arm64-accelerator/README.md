@@ -63,6 +63,14 @@ Investigate an alternative direct AArch64 translator as a separate QEMU accelera
 - **Passed** Android WinJIT core compilation and regression tests, run 43557455819, and native translator regression run 43557458948. Direct-upgrade source checks passed in run 43556353079; no APK signed.
 - **NOT VERIFIED:** UEFI/Linux/Windows ARM64 boot, Windows desktop/application compatibility, GIC interrupts and timers, DMA invalidation, transition to EL0, Android Fold runtime and actual APK in-place install. Successful microguest execution is not Windows compatibility evidence. Release remains blocked, and the original Windows Mode 7.1.14/disk/signing identity stays protected.
 
+## Further integration gates (AArch64 EL0 and software GICv2)
+
+- EL0t CPU-state import/export and QEMU state snapshot now support both EL0 and EL1; the ABI was bumped from v1 to v2 so older native libraries cannot silently be mistaken for the new contract. EL2/EL3 remain intentionally rejected.
+- Real QEMU 11.1.3 \`-accel winjit\` on ARM64 Linux PASSED a user-mode exception-return microguest (EL1 \`ERET\` → EL0, UART \`USER\`, no crash, intentional timeout) in Actions run **43558338602**. This is an actual guest-execution result, not Windows boot.
+- A narrow experimental QEMU GICv2 physical IRQ/FIQ level bridge was added. Its Android ARM64 source build PASSED in run **43558439732**; actual GIC/timer interrupt behavior under Linux or Windows is NOT verified.
+- An actual Linux ARM64 kernel plus initramfs \`LINUX-READY\` boot acceptance workflow was added (\`.github/workflows/windows-arm64-qemu-winjit-linux-boot.yml\`). A test only passes if Linux userspace starts, QEMU does not abort, and the run stays stable. This never accesses any Windows disk.
+- **Never issue a direct-upgrade APK on the strength of EL0 or Linux alone.** The final acceptance still requires a verified licensed Windows ARM64 boot and compatible desktop/apps, a separate disk overlay/copy of UEFI VARS, Android/Fold runtime checks, and the original package/signature update identity.
+
 ## Strict protection
 
 No installed-Windows disk or firmware access, no disabling Defender, no root, no KVM, no SELinux bypass, no edits to release scripts, packaged APK, signing, app settings or unrelated projects. CI stage is read-only and emits only a source-audit report, NOT an APK.
