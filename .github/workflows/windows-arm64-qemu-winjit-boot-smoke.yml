@@ -45,7 +45,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential clang lld binutils git python3 python3-venv \
             meson ninja-build pkg-config libglib2.0-dev libpixman-1-dev \
-            libfdt-dev libslirp-dev zlib1g-dev libffi-dev libcapstone-dev
+            libfdt-dev libslirp-dev zlib1g-dev libffi-dev libcapstone-dev gdb
       - name: Pin QEMU 11.1.3 and upstream WindowsiOS ARM64 translator
         run: |
           set -euo pipefail
@@ -144,8 +144,15 @@ jobs:
           objcopy -O binary /tmp/winjit-test-out/guest.elf /tmp/winjit-test-out/guest.bin
           cd /tmp/winjit-qemu
           set +e
+          # Run under native ARM64 GDB to capture the first crash and
+          # prevent the earlier false green (UART said OK but QEMU aborted 134).
           LD_LIBRARY_PATH=/tmp/winjit-lib:${LD_LIBRARY_PATH:-} \
-          timeout 15s ./build/qemu-system-aarch64 -accel winjit \
+          timeout --signal=TERM --kill-after=3s 22s \
+          gdb --quiet --batch \
+            -ex 'set pagination off' \
+            -ex 'handle SIGPIPE nostop noprint pass' \
+            -ex run -ex 'thread apply all bt 20' --args \
+            ./build/qemu-system-aarch64 -accel winjit \
             -machine virt,gic-version=2,secure=off,virtualization=off -cpu cortex-a53 \
             -smp 1 -m 128M -bios /tmp/winjit-test-out/guest.bin \
             -nographic -monitor none -serial stdio \
@@ -154,11 +161,21 @@ jobs:
           set -e
           cat /tmp/winjit-test-out/guest.log
           echo "GUEST_EXIT=$EXIT" | tee /tmp/winjit-test-out/STATUS.txt
+          if grep -Eiq '(Program received signal SIG|Aborted|core dumped|assertion.*failed|SIGSEGV)' /tmp/winjit-test-out/guest.log; then
+            echo 'FAIL: guest emitted data but QEMU crashed; no valid boot pass' >> /tmp/winjit-test-out/STATUS.txt
+            exit 1
+          fi
           if ! grep -Fxq 'OK' /tmp/winjit-test-out/guest.log; then
             echo 'FAIL: actual QEMU WinJIT guest UART output unverified' >> /tmp/winjit-test-out/STATUS.txt
             exit 1
           fi
-          echo 'PASS: real QEMU -accel winjit executed AArch64 microguest UART' >> /tmp/winjit-test-out/STATUS.txt
+          # Guest is an intentional infinite loop; stable timeout is expected.
+          # A clean exit is also acceptable; abort or other exit is NOT.
+          if [ "$EXIT" -ne 124 ] && [ "$EXIT" -ne 0 ]; then
+            echo "FAIL: unexpected guest process termination $EXIT" >> /tmp/winjit-test-out/STATUS.txt
+            exit 1
+          fi
+          echo 'PASS: real QEMU -accel winjit emitted UART and did not crash' >> /tmp/winjit-test-out/STATUS.txt
           echo 'NOT VERIFIED: Android Fold, Windows guest, QEMU GIC interrupts, DMA, migration, thermal, stability' >> /tmp/winjit-test-out/STATUS.txt
 
       - name: Publish ONLY native boot evidence, NOT Android APK
