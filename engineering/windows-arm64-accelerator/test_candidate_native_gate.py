@@ -44,6 +44,7 @@ required = {
     'Verify 4KB EL1 page table and MMU enable in real QEMU WinJIT',
     'Differential-test TCR/MAIR sysreg writes via stolen and normal GPRs',
     'Differential-test guest memory loads into ARM64 TCR and MAIR',
+    'Differential-test QEMU generic timer IRQ and WFI wakeup through GICv2',
 }
 jobs = api('actions/runs/' + os.environ['SMOKE_RUN'] + '/jobs?per_page=100')['jobs']
 assert len(jobs) == 1

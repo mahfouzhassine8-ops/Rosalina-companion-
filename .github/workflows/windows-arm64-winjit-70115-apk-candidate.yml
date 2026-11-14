@@ -12,11 +12,11 @@ on:
       core_run:
         description: Successful Android WinJIT core native build run
         required: true
-        default: '43565914719'
+        default: '43566851695'
       smoke_run:
         description: Real ARM64 QEMU guest run with basic integration gates passed
         required: true
-        default: '43565914757'
+        default: '43566851599'
 permissions:
   contents: read
   actions: read
@@ -27,8 +27,8 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       QEMU_RUN: ${{ inputs.qemu_run || '43565914758' }}
-      CORE_RUN: ${{ inputs.core_run || '43565914719' }}
-      SMOKE_RUN: ${{ inputs.smoke_run || '43565914757' }}
+      CORE_RUN: ${{ inputs.core_run || '43566851695' }}
+      SMOKE_RUN: ${{ inputs.smoke_run || '43566851599' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,6 +55,7 @@ jobs:
           # Package as soon as the current Android native builds finish.
           gh run watch "$QEMU_RUN" -R "$GITHUB_REPOSITORY" --exit-status --interval 30
           gh run watch "$CORE_RUN" -R "$GITHUB_REPOSITORY" --exit-status --interval 30
+          gh run watch "$SMOKE_RUN" -R "$GITHUB_REPOSITORY" --interval 30
           python3 engineering/windows-arm64-accelerator/test_candidate_native_gate.py
           gh run download "$QEMU_RUN" -R "$GITHUB_REPOSITORY" --name windows-mode-qemu-winjit-vcpu-source-native-gate --dir /tmp/native-qemu
           gh run download "$CORE_RUN" -R "$GITHUB_REPOSITORY" --name windows-arm64-winjit-core-android-source-compile --dir /tmp/native-winjit
