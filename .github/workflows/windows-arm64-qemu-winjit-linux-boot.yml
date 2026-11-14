@@ -124,7 +124,7 @@ jobs:
       - name: Boot Linux AArch64 kernel and initramfs through real WinJIT (NO WINDOWS)
         run: |
           set -euo pipefail
-          KERNEL=$(find /boot -maxdepth 1 -name 'vmlinuz-*' -type f | sort -V | tail -1)
+          KERNEL=$(find /boot -maxdepth 1 -name 'vmlinuz-*-generic' -type f | sort -V | tail -1)
           test -n "$KERNEL" && test -s "$KERNEL"
           file "$KERNEL" | tee /tmp/linux-kernel-filetype.txt
           od -An -tx1 -N32 "$KERNEL" | tee /tmp/linux-kernel-header.txt
