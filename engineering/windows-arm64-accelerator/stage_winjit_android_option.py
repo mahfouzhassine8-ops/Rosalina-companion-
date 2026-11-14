@@ -37,6 +37,8 @@ mode.write_text(r'''package com.max2idea.android.qube.main;
 
 import android.content.Context;
 import com.max2idea.android.qube.machine.Machine;
+import java.io.File;
+import java.io.IOException;
 
 public final class WindowsWinjitMode {
     private static final String PREF = "windows_mode_winjit_runtime";
@@ -56,7 +58,46 @@ public final class WindowsWinjitMode {
     }
     public static boolean shouldUse(Context context, Machine machine) {
         return isTargetWindowsVM(context, machine)
-                && machine.getEnableKVM() == 0 && enabled(context);
+                && machine.getEnableKVM() == 0 && enabled(context)
+                && hasDisposableStorage(context, machine);
+    }
+    private static boolean empty(String path) {
+        return path == null || path.trim().isEmpty() || "None".equalsIgnoreCase(path);
+    }
+    private static boolean disposable(File root, String path, boolean required)
+            throws IOException {
+        if (empty(path)) return !required;
+        File file = new File(path);
+        // Reject SAF/URI paths, aliases out of the test directory, device paths,
+        // and implicit Default VARS. Never authorize the existing Windows VM.
+        return file.isAbsolute() && file.isFile()
+                && file.getCanonicalPath().startsWith(root.getCanonicalPath() + File.separator);
+    }
+    public static boolean hasDisposableStorage(Context context, Machine machine) {
+        if (context == null || machine == null || context.getExternalFilesDir(null) == null)
+            return false;
+        File root = new File(context.getExternalFilesDir(null), "WinJIT-disposable");
+        if (!empty(machine.getExtraParams()) || !empty(machine.getSharedFolderPath()))
+            return false;
+        try {
+            if (!root.getCanonicalFile().getParentFile().equals(
+                    context.getExternalFilesDir(null).getCanonicalFile())) return false;
+            if (!disposable(root, machine.getHdaImagePath(), true)) return false;
+            String[] paths = {machine.getHdbImagePath(), machine.getHdcImagePath(),
+                    machine.getHddImagePath(), machine.getCdImagePath(), machine.getFdaImagePath(),
+                    machine.getFdbImagePath(), machine.getUsbImagePath(), machine.getKernel(),
+                    machine.getInitRd()};
+            for (String path : paths) if (!disposable(root, path, false)) return false;
+            if ("UEFI".equalsIgnoreCase(machine.getBiosType())) {
+                if (!disposable(root, machine.getBiosVars(), true)) return false;
+                String code = machine.getBiosCode();
+                if (!empty(code) && !"Default".equalsIgnoreCase(code)
+                        && !disposable(root, code, true)) return false;
+            } else if (!disposable(root, machine.getBios(), true)) return false;
+            return true;
+        } catch (IOException | SecurityException e) {
+            return false;
+        }
     }
 }
 ''')
@@ -70,6 +111,7 @@ patch(executor,
       '''            if (WindowsWinjitMode.shouldUse(
                     QubeApplication.getInstance(), getMachine())) {
                 paramsList.add("winjit");
+                paramsList.add("-snapshot"); // Disposable writes only; do not commit test changes.
                 Log.w(TAG, "EXPERIMENTAL Windows WinJIT selected on user-supplied "
                         + "test VM. Boot and compatibility NOT YET VERIFIED.");
             } else {
@@ -114,12 +156,21 @@ patch(activity,
         boolean test = WindowsWinjitMode.enabled(this);
         new MaterialAlertDialogBuilder(this)
                 .setTitle("Windows 11 ARM64 — Execution Engine")
-                .setMessage("WinJIT is experimental. Use only a separate copy "
-                        + "of your Windows VM disk and UEFI VARS. It has not "
-                        + "passed Windows boot compatibility. Stable TCG "
-                        + "remains available at all times. Existing VM "
-                        + "configurations and storage are not changed.")
+                .setMessage("TEST CANDIDATE — WinJIT/Windows boot not yet verified. "
+                        + "WinJIT requires a disposable VM with a separate disk copy "
+                        + "and UEFI VARS in Android/data/com.fold.windowsmode.research/"
+                        + "files/WinJIT-disposable/. All attached media must be there; "
+                        + "shared folders and extra QEMU arguments must be empty. "
+                        + "Test writes are temporary. Existing Windows storage "
+                        + "continues to use TCG. This build is NOT DEVICE-VERIFIED.")
                 .setSingleChoiceItems(modes, test ? 1 : 0, (dialog, which) -> {
+                    if (which == 1 && !WindowsWinjitMode.hasDisposableStorage(this, getMachine())) {
+                        WindowsWinjitMode.setEnabled(this, false);
+                        dialog.dismiss();
+                        ToastUtils.toastShort(this,
+                                "WinJIT blocked: configure a separate disposable disk and VARS first. TCG retained.");
+                        return;
+                    }
                     WindowsWinjitMode.setEnabled(this, which == 1);
                     dialog.dismiss();
                     ToastUtils.toastShort(this, which == 1
@@ -142,4 +193,4 @@ assert 'getEnableKVM() == 0' in mode.read_text()
 assert 'getBoolean(ENABLED, false)' in mode.read_text()
 for bad in ('setHdaImagePath(', 'setCdImagePath(', 'setCpuNum(', 'setMemory('):
     assert bad not in mode.read_text(), bad
-print("PASS: reversible Windows-only opt-in, original TCG default. NO APK RELEASE AUTHORIZED.")
+print("PASS: reversible WinJIT opt-in, original TCG default; disposable storage required for TEST candidate.")
