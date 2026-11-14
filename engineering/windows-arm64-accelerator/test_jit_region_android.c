@@ -16,6 +16,10 @@ int main(void) {
     const uint32_t op[] = {0xd503201f, 0xd65f03c0, 0x14000000};
     hv_jit_write(&region, code, op, sizeof(op));
     hv_jit_finish(&region, code, 3);
+    /* Upstream translate.c legitimately calls hv_jit_write with zero
+     * pool size. This must not abort or modify existing guest code. */
+    hv_jit_write(&region, code, NULL, 0);
+    hv_jit_write(&region, code + region.capacity, NULL, 0);
     assert(memcmp(code, op, sizeof(op)) == 0);
     uint32_t patch = 0xd503201f;
     hv_jit_write(&region, code + 1, &patch, sizeof(patch));
