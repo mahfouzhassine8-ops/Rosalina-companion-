@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * QEMU 11.1.3 AArch64 system CPU -> WinJIT ABI v1 state snapshot.
+ * QEMU 11.1.3 AArch64 EL0/EL1 system CPU -> WinJIT ABI v1 snapshot.
  * Executes NO guest instructions and changes NO QEMU guest register.
  * This must be called only with a quiescent vCPU under appropriate locks.
  * Missing IRQ/GIC/timers, device and migration fidelity still block release.
@@ -19,9 +19,9 @@ int winjit_qemu_capture_arm64(ARMCPU *cpu, WinjitA64State *dest)
         return WINJIT_CPU_UNSUPPORTED;
     }
     uint64_t pstate = pstate_read(env);
-    /* The current native WinJIT core synchronizer supports only EL1
-     * with no unmodeled PSTATE bits. No speculative EL2/EL3 fallback. */
-    if ((pstate & 0xe) != 0x4 ||
+    /* EL0t, EL1t and EL1h only. EL2/EL3 fail closed. */
+    if (((pstate & 0xf) != 0 && (pstate & 0xf) != 4 &&
+         (pstate & 0xf) != 5) ||
         (pstate & ~(0xf0000000ULL | 0x3c0ULL |
                     (1ULL << 12) | (1ULL << 22) |
                     (1ULL << 23) | (1ULL << 24) |
@@ -84,8 +84,11 @@ int winjit_qemu_restore_arm64(ARMCPU *cpu, const WinjitA64State *src)
         (1ULL << 24) | (1ULL << 25) | 0xfULL;
     CPUARMState *env = &cpu->env;
     uint64_t old = pstate_read(env);
-    if (!env->aarch64 || (old & 0xe) != 0x4 ||
-        (src->pstate & 0xe) != 0x4 ||
+    const uint64_t mode = src->pstate & 0xf;
+    const uint64_t prior_mode = old & 0xf;
+    if (!env->aarch64 ||
+        (prior_mode != 0 && prior_mode != 4 && prior_mode != 5) ||
+        (mode != 0 && mode != 4 && mode != 5) ||
         (src->pstate & ~flags) != 0) {
         return WINJIT_CPU_UNSUPPORTED;
     }
