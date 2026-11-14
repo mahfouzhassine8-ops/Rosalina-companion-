@@ -6,12 +6,12 @@
 #define WINJIT_CPU_BRIDGE_H
 #include <stdint.h>
 
-#define WINJIT_CPU_ABI_VERSION 1U
+#define WINJIT_CPU_ABI_VERSION 2U
 #define WINJIT_CPU_OK 0
 #define WINJIT_CPU_UNSUPPORTED (-1)
 #define WINJIT_CPU_INVALID (-2)
 
-/* Only EL1 AArch64 state is currently mappable; fail closed on EL0/EL2/EL3.
+/* EL0t, EL1t and EL1h AArch64 states are supported; reject EL2/EL3.
  * QEMU's MTE/SVE/SME, EL2 traps, debug state and GIC remain separate gates. */
 typedef struct WinjitA64State {
     uint32_t abi_version;
