@@ -1,0 +1,204 @@
+name: Windows Mode - SOURCE-NATIVE QEMU 11.1.3 Isolated Research APK (UNACCELERATED)
+on:
+  push:
+    branches: [windows-arm64-qemu-accel-research]
+    paths: ['.github/workflows/windows-arm64-source-native-research-apk.yml']
+  workflow_dispatch:
+jobs:
+  build-android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Check out scoped Windows Mode repair script
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify protected 7.1.14 release and isolate research workflow
+        run: |
+          set -euo pipefail
+          git fetch -q --no-tags --depth=1 origin windows-mode-android-research
+          test "$(git rev-parse FETCH_HEAD)" = 68c0b948b89ab03c5f5b010a2e35b99e69339e1d
+          git diff --name-only FETCH_HEAD HEAD > /tmp/research-changes.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          paths=Path('/tmp/research-changes.txt').read_text().splitlines()
+          allowed={'.github/workflows/windows-arm64-accel-audit.yml',
+                   '.github/workflows/windows-arm64-native-qemu-source.yml',
+                   '.github/workflows/windows-arm64-winjit-core-ndk.yml',
+                   '.github/workflows/windows-arm64-source-native-research-apk.yml'}
+          assert paths and all(p.startswith('engineering/windows-arm64-accelerator/') or p in allowed for p in paths), paths
+          print('PASS: protected Windows Mode 7.1.14 untouched')
+          PY
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+      - name: Retrieve GPL source at release tag
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 7.1.4 https://github.com/rhn-1k/QubeVM.git upstream
+          cd upstream
+          git rev-parse HEAD | tee /tmp/qube-source-commit.txt
+      - name: Rehydrate complete Android ARM64 QEMU runtime from pinned upstream release
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 'https://github.com/rhn-1k/QubeVM/releases/download/7.1.4/qube-arm-q11.1.3-android-arm64-v8a-release.apk' -o /tmp/upstream-qube.apk
+          mkdir -p /tmp/qube-extracted
+          unzip -oq /tmp/upstream-qube.apk 'lib/arm64-v8a/*' -d /tmp/qube-extracted
+          mkdir -p upstream/qube-android-arm/src/main/jniLibs/arm64-v8a upstream/qube-android-lib/src/main/jniLibs/arm64-v8a
+          cp /tmp/qube-extracted/lib/arm64-v8a/libqemu-system-aarch64.so upstream/qube-android-arm/src/main/jniLibs/arm64-v8a/
+          for so in /tmp/qube-extracted/lib/arm64-v8a/*.so; do
+            if [ "$(basename "$so")" != libqemu-system-aarch64.so ]; then
+              cp "$so" upstream/qube-android-lib/src/main/jniLibs/arm64-v8a/
+            fi
+          done
+          test -s upstream/qube-android-arm/src/main/jniLibs/arm64-v8a/libqemu-system-aarch64.so
+          test -s upstream/qube-android-lib/src/main/jniLibs/arm64-v8a/libqube.so
+      - name: Replace upstream binary with SHA-pinned QEMU 11.1.3 compiled from source (NOT ACCELERATED)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/source-native-engine
+          gh run download 43520669820 --repo "$GITHUB_REPOSITORY" --name windows-mode-qemu-native-source-gate --dir /tmp/source-native-engine
+          SOURCE_LIB=/tmp/source-native-engine/libqemu-system-aarch64.so
+          test -s "$SOURCE_LIB"
+          echo '083d8a20ec392f256eddf2c360820e1e641b2b4b16c6f23d5094425980e1bd1e  /tmp/source-native-engine/libqemu-system-aarch64.so' | sha256sum -c -
+          readelf -h "$SOURCE_LIB" | grep -F 'AArch64'
+          cp "$SOURCE_LIB" upstream/qube-android-arm/src/main/jniLibs/arm64-v8a/libqemu-system-aarch64.so
+          echo 'SOURCE NATIVE QEMU: PASS; NEW WINJIT ACCELERATOR: NOT INTEGRATED'
+      - name: Restore QEMU 11.1.3 ROMs and keyboard maps from matching upstream source
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --filter=blob:none --sparse --branch v11.1.3 https://github.com/qemu/qemu.git /tmp/qemu-rom-source
+          git -C /tmp/qemu-rom-source sparse-checkout set pc-bios
+          ROMS="upstream/qube-android-lib/src/main/assets/roms"
+          mkdir -p "$ROMS/keymaps"
+          find /tmp/qemu-rom-source/pc-bios -maxdepth 1 -type f \( -name '*.rom' -o -name '*.bin' -o -name '*.img' -o -name '*.rsrc' \) -exec cp -f {} "$ROMS/" \;
+          cp -af /tmp/qemu-rom-source/pc-bios/keymaps/. "$ROMS/keymaps/"
+          echo 11.1.3 > upstream/qube-android-lib/src/main/assets/QEMU_VERSION
+          test -s "$ROMS/efi-e1000.rom"
+          test -s "$ROMS/efi-virtio.rom"
+          test -s "$ROMS/keymaps/en-us"
+          test -s "$ROMS/QUBE_ARM_EFI.fd"
+          test -s "$ROMS/QUBE_ARM_VARS.fd"
+          test -s upstream/qube-android-lib/src/main/assets/QEMU_VERSION
+          echo "QEMU BIOS files: $(find "$ROMS" -maxdepth 1 -type f | wc -l)"
+          echo "QEMU keyboard layouts: $(find "$ROMS/keymaps" -maxdepth 1 -type f | wc -l)"
+          echo "QEMU BIOS source: https://github.com/qemu/qemu/tree/v11.1.3/pc-bios"
+          sha256sum "$ROMS/efi-e1000.rom" "$ROMS/keymaps/en-us"
+      - name: Isolate package ID and clearly label derivative as research build
+        run: |
+          set -euo pipefail
+          cd upstream
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('qube-android-arm/build.gradle')
+          s=p.read_text()
+          assert 'applicationId = "com.qubevm.arm"' in s
+          p.write_text(s.replace('applicationId = "com.qubevm.arm"', 'applicationId = "com.fold.windowsmode.sourcenative"'))
+          manifest=Path('qube-android-arm/src/main/AndroidManifest.xml')
+          m=manifest.read_text()
+          assert 'android:versionCode="70104"' in m, 'Do not change an unknown baseline versionCode'
+          m=m.replace('android:versionCode="70104"', 'android:versionCode="70114"')
+          m=m.replace('android:versionName="7.1.4-arm"', 'android:versionName="7.1.14-source-native"')
+          manifest.write_text(m)
+          p=Path('qube-android-arm/src/main/res/values/strings.xml')
+          s=p.read_text().replace('>QubeVM ARM<','>Windows Mode (Source-Native Test)<').replace('>Qube ARM<','>Windows Mode Test<')
+          p.write_text(s)
+          for f in Path('.').rglob('build.gradle'):
+              old=f.read_text()
+              new=old.replace('compileSdk = 37', 'compileSdk = 36').replace('targetSdk = 37', 'targetSdk = 35')
+              if new!=old: f.write_text(new)
+          PY
+          {
+             echo 'Windows Mode Android — engine-integrated experimental build'
+             echo 'NOT YET TESTED BOOTING WINDOWS 11 ARM64 ON GALAXY FOLD.'
+             echo 'This is a derivative of QubeVM GPL-3.0, not an independently implemented QEMU VM manager.'
+             echo 'Original upstream: https://github.com/rhn-1k/QubeVM'
+             printf 'Upstream source commit: '
+             cat /tmp/qube-source-commit.txt
+             echo 'Includes QEMU and its GPL-licensed dependencies from upstream v7.1.4 release, and QEMU firmware/keymaps from v11.1.3.'
+             echo 'Source is available at the upstream repository and source commit above.'
+             echo 'Test signing uses the public upstream Android test key, NOT production identity.'
+             echo '7.1.14-source-native preserves signed 7.1.13: existing Fold portrait view, immersive display, touch/IME, OOBE and Desktop Fix shortcuts, installed-Windows boot, Fast CPU, NAT, NVMe and UEFI. Adds Windows-only opt-in 4-versus-2 vCPU runtime trial (default 4, saved Machine unchanged) and read-only host/QMP boot report. No automatic guest commands, no guest disk/media changes, no new GPU or CPU flags.'
+             echo 'Native QEMU ARM64 is rebuilt from source without any WinJIT acceleration. CPU trial changes only QEMU runtime -smp with user consent, keeping the saved four-core baseline. Boot report timestamps QEMU start and first framebuffer update, while wallpaper and taskbar require manual marking. QMP info jit/query-blockstats are read-only cumulative counters; they do not reveal Windows processes. Fast TCG gain is unverified. Physical Fold testing required.'
+             echo 'User reported ~60+ seconds to wallpaper and absent Windows taskbar. A QEMU 11.1.3 source check found implementation-defined pointer authentication already default, so no speculative pauth flag added. First measured performance variable is 2 versus 4 virtual CPUs; opt-in only. Taskbar recovery remains via Desktop Fix. QCOW2 shared storage, UEFI and guest hardware drivers untouched.'
+             echo 'No Windows media is included. Same Android ID and public test-key certificate, higher versionCode; existing QCOW2, VM and settings not altered by this workflow.'
+          } > /tmp/WINDOWS_MODE_BUILD_NOTICE.txt
+      - name: Preserve 70113; add reversible Win11 CPU comparison and QMP measurements
+        run: |
+          set -euo pipefail
+          test -s windows-mode-source-repairs.py
+          python3 -m py_compile windows-mode-source-repairs.py windows-mode-ui-repairs.py windows-mode-performance-repairs.py windows-mode-setup-display-repairs.py windows-mode-desktop-boot-repairs.py windows-mode-boot-benchmark-repairs.py
+          python3 windows-mode-source-repairs.py upstream
+          python3 windows-mode-ui-repairs.py upstream
+          python3 windows-mode-performance-repairs.py upstream
+          python3 windows-mode-setup-display-repairs.py upstream
+          python3 windows-mode-desktop-boot-repairs.py upstream
+          python3 windows-mode-boot-benchmark-repairs.py upstream
+          python3 - <<'PY'
+          from pathlib import Path
+          matches=[p for p in Path('upstream').rglob('VMExecutor.java') if 'com.fold.windowsmode.research' in p.read_text()]
+          assert len(matches)==1, 'Expected single package-scoped 7.1.14 install-media guard'
+          p=matches[0]
+          p.write_text(p.read_text().replace('com.fold.windowsmode.research','com.fold.windowsmode.sourcenative'))
+          print('PASS: isolated APK retains Windows setup ISO guard')
+          PY
+      - name: Confirm Android environment and provision missing SDKs
+        run: |
+          set -euo pipefail
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "JAVA_HOME=$JAVA_HOME"
+          java -version
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"
+      - name: Build signed experimental ARM64 APK
+        run: |
+          set -euo pipefail
+          cd upstream
+          gradle --no-daemon --stacktrace :qube-android-arm:assembleRelease -PqemuVersion=11.1.3
+          find qube-android-arm/build/outputs/apk -type f -name '*.apk' -ls
+          APK=$(find qube-android-arm/build/outputs/apk -type f -name '*.apk' | head -n1)
+          test -n "$APK"
+          python3 - "$APK" <<'PY'
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as z:
+              required = ('assets/roms/efi-e1000.rom', 'assets/roms/efi-virtio.rom',
+                          'assets/roms/keymaps/en-us', 'assets/QEMU_VERSION',
+                          'lib/arm64-v8a/libqemu-system-aarch64.so')
+              for name in required:
+                  assert name in z.namelist(), f"Missing critical QEMU resource: {name}"
+                  assert z.getinfo(name).file_size > 0, f"Zero-sized QEMU resource: {name}"
+                  print("VERIFIED", name, z.getinfo(name).file_size)
+          PY
+          ACTUAL_SHA=$(unzip -p "$APK" lib/arm64-v8a/libqemu-system-aarch64.so | sha256sum | cut -d' ' -f1)
+          test "$ACTUAL_SHA" = 083d8a20ec392f256eddf2c360820e1e641b2b4b16c6f23d5094425980e1bd1e
+          echo 'VERIFIED: APK contains precisely source-built ARM64 QEMU'
+          SDK_TOOLS=$(find "$ANDROID_HOME/build-tools" -maxdepth 1 -type d | sort -V | tail -n 1)
+          "$SDK_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/windows-mode-signature.txt
+          grep -q 'a40da80a59d170caa950cf15c18c454d47a39b26989d8b640ecd745ba71bf5dc' /tmp/windows-mode-signature.txt
+          "$SDK_TOOLS/aapt" dump badging "$APK" | grep -E "^(package:|sdkVersion:|targetSdkVersion:|native-code:|application-label:)" | tee /tmp/windows-mode-badging.txt
+          grep -q "name='com.fold.windowsmode.sourcenative' versionCode='70114'" /tmp/windows-mode-badging.txt
+          mkdir -p /tmp/windowsmode-out
+          cp "$APK" /tmp/windowsmode-out/WindowsMode-QEMU-SOURCENATIVE-UNACCELERATED-70114.apk
+          cp COPYING /tmp/windowsmode-out/QubeVM-GPL-3.0-LICENSE.txt
+          cp /tmp/WINDOWS_MODE_BUILD_NOTICE.txt /tmp/windowsmode-out/BUILD_NOTICE.txt
+          cp /tmp/windows-mode-signature.txt /tmp/windowsmode-out/SIGNATURE_VERIFY.txt
+          cp /tmp/windows-mode-badging.txt /tmp/windowsmode-out/PACKAGE_VERIFY.txt
+          sha256sum /tmp/windowsmode-out/WindowsMode-QEMU-SOURCENATIVE-UNACCELERATED-70114.apk > /tmp/windowsmode-out/APK-SHA256.txt
+          printf '%s\n' 'RESEARCH APK: QEMU 11.1.3 compiled from source. WinJIT core is NOT linked; this build provides NO new acceleration.' 'Installed Windows and protected Windows Mode 7.1.14 are untouched. Separate application ID; do not select your only Windows disk for unverified guest tests.' 'No physical Fold or Windows guest boot/compatibility test has passed for this research build.' 'QEMU source build: https://github.com/mahfouzhassine8-ops/Rosalina-companion-/actions/runs/43520669820' > /tmp/windowsmode-out/READ-ME-FIRST.txt
+      - name: Upload isolated source-native UNACCELERATED research APK and licensing
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-mode-arm64-source-native-unaccelerated-70114-test-apk
+          path: /tmp/windowsmode-out/
+          if-no-files-found: error
