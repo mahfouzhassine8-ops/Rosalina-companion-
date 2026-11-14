@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Selected AArch64 EL1 CPU state conversion between QEMU snapshot and HvCpu.
+ * Selected AArch64 EL0/EL1 CPU state conversion between QEMU snapshot and HvCpu.
  * Incomplete accelerator states fail closed. No guest execution is enabled.
  */
 #include "winjit_cpu_bridge.h"
@@ -19,8 +19,9 @@ static int state_supported(uint32_t is_aarch64, uint64_t pstate)
     if (is_aarch64 != 1 || (pstate & ~SUPPORTED_PSTATE) != 0) {
         return WINJIT_CPU_UNSUPPORTED;
     }
-    /* EL1t and EL1h only; EL0/EL2/EL3 support is not yet implemented. */
-    if ((pstate & 0xeULL) != 0x4ULL) {
+    /* EL0t, EL1t, EL1h only. EL2/EL3 and invalid EL0h reject safely. */
+    uint64_t mode = pstate & PSTATE_MODE;
+    if (mode != 0 && mode != 4 && mode != 5) {
         return WINJIT_CPU_UNSUPPORTED;
     }
     return WINJIT_CPU_OK;
@@ -46,7 +47,7 @@ int winjit_cpu_from_qemu_state(struct HvCpu *dst, const WinjitA64State *src)
     }
     dst->sp = src->sp;
     dst->pc = src->pc;
-    dst->el = 1;
+    dst->el = (uint32_t)((src->pstate >> 2) & 3);
     dst->spsel = (uint32_t)(src->pstate & 1);
     dst->nzcv = src->pstate & NZCV;
     dst->daif = src->pstate & DAIF;
@@ -79,7 +80,8 @@ int winjit_cpu_to_qemu_state(WinjitA64State *dst, const struct HvCpu *src)
     if (!dst || !src) {
         return WINJIT_CPU_INVALID;
     }
-    if (src->el != 1 || src->spsel > 1 ||
+    if ((src->el != 0 && src->el != 1) || src->spsel > 1 ||
+        (src->el == 0 && src->spsel != 0) ||
         (src->nzcv & ~NZCV) || (src->daif & ~DAIF) ||
         (src->pstate_extra & ~PSTATE_EXTRA)) {
         return WINJIT_CPU_UNSUPPORTED;
@@ -96,7 +98,7 @@ int winjit_cpu_to_qemu_state(WinjitA64State *dst, const struct HvCpu *src)
     }
     dst->sp = src->sp;
     dst->pc = src->pc;
-    dst->pstate = (1ULL << 2) | (uint64_t)src->spsel |
+    dst->pstate = ((uint64_t)src->el << 2) | (uint64_t)src->spsel |
                   src->nzcv | src->daif | src->pstate_extra;
     dst->fpcr = src->fpcr;
     dst->fpsr = src->fpsr;
