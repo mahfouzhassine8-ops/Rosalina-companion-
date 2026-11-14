@@ -123,6 +123,15 @@ s=entry.read_text()
 n=s.count("_hv_")
 if n < 10: raise RuntimeError(f"Unexpected upstream assembly: only {n} _hv_ symbols")
 s=re.sub(r"\b_hv_([A-Za-z0-9_]+)\b",r"hv_\1",s)
+# AArch64 ELF permits a branch to a default-visibility global to go through
+# its PLT. That stub uses IP0/IP1 (x16/x17) before helper_entry can save the
+# live guest registers. Darwin's direct branch did not have this ELF behavior.
+# Keep the exported entry point, but bind this intra-assembly tail branch to
+# a local label so neither interposition nor a PLT can corrupt guest state.
+assert s.count("hv_helper_entry:\n") == 1
+assert s.count("    b hv_helper_entry\n") == 1
+s=s.replace("hv_helper_entry:\n", "hv_helper_entry:\n.Lwinjit_helper_entry:\n")
+s=s.replace("    b hv_helper_entry\n", "    b .Lwinjit_helper_entry\n")
 entry.write_text(s)
 print(f"PORT host/enter.S: {n} original Darwin symbol references renamed for ELF")
 
