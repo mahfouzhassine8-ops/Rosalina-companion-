@@ -158,7 +158,7 @@ public class MainActivity extends Activity {
 
     private void openNotificationSettings() {
         try {
-            startActivity(new Intent(Settings.ACTION_NOTIFICATION_SETTINGS));
+            startActivity(new Intent("android.settings.NOTIFICATION_SETTINGS"));
         } catch (Exception ex) {
             startActivity(new Intent(Settings.ACTION_SETTINGS));
         }
