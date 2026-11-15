@@ -127,9 +127,10 @@ for required in ("showWindowsOfflineAccount();", 'sendSetupHmpKey("shift-f10")',
                  "Windows may block this method"):
     if required not in patched:
         raise RuntimeError(f"New offline-account step missing: {required}")
-if patched.count('typeSetupCommand("start ms-cxh:localonly")') != 2:
-    # One in the new two-step method, one in existing Setup Tools.
-    raise RuntimeError("Unexpected extra local-account commands in generated UI")
+if patched.count('typeSetupCommand("start ms-cxh:localonly")') != 1:
+    # The earlier unguarded typing path must be gone; existing Setup Tools
+    # stores the command separately and is intentionally not modified.
+    raise RuntimeError("Unexpected local-account direct-typing shortcuts")
 if "setHdaImagePath(" in offline_method or "setBiosVars(" in offline_method or "shutdown /r" in offline_method:
     raise RuntimeError("Offline account flow must not mutate disk/VM or restart Windows")
 target.write_text(patched)
