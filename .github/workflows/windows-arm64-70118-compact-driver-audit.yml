@@ -1,0 +1,57 @@
+name: Windows Mode 7.1.18 - audited compact Win11 ARM64 driver media (NO APK)
+on:
+  push:
+    branches: [windows-mode-70118-bundled-arm64-drivers]
+    paths:
+      - '.github/workflows/windows-arm64-70118-compact-driver-audit.yml'
+      - 'engineering/windows-arm64-accelerator/build_compact_arm64_iso.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit-compact-driver-disc:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install ISO extract and build tooling
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq p7zip-full genisoimage
+          python3 -m py_compile engineering/windows-arm64-accelerator/build_compact_arm64_iso.py
+      - name: Download exact Fedora VirtIO ISO used by Vectras and verify source checksum
+        run: |
+          set -euo pipefail
+          URL='https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/virtio-win-0.1.285-1/virtio-win-0.1.285.iso'
+          curl -fL --retry 3 --connect-timeout 30 --max-time 1200 "$URL" -o /tmp/virtio-win-0.1.285.iso
+          echo 'e14cf2b94492c3e925f0070ba7fdfedeb2048c91eea9c5a5afb30232a3976331  /tmp/virtio-win-0.1.285.iso' | sha256sum -c -
+      - name: Build and inventory compact unchanged Windows 11 ARM64-only ISO
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/windows-arm64-compact
+          python3 engineering/windows-arm64-accelerator/build_compact_arm64_iso.py \
+            --source-iso /tmp/virtio-win-0.1.285.iso \
+            --compact-iso /tmp/windows-arm64-compact/windows-arm64-virtio-drivers.iso \
+            --manifest /tmp/windows-arm64-compact/DRIVER-MANIFEST.json
+          sha256sum /tmp/windows-arm64-compact/windows-arm64-virtio-drivers.iso > /tmp/windows-arm64-compact/DRIVER-ISO-SHA256.txt
+          7z l /tmp/windows-arm64-compact/windows-arm64-virtio-drivers.iso > /tmp/windows-arm64-compact/DRIVER-ISO-CONTENTS.txt
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('/tmp/windows-arm64-compact/DRIVER-MANIFEST.json').read_text())
+          assert m['driver_files']>0
+          assert all(m['family_present'].values()),m['family_present']
+          assert m['driver_disc_bytes']<100_000_000, 'Compact driver media should be under 100 MB'
+          assert not m['native_gpu_driver_verified'] and not m['physical_fold_verified']
+          print('PASS compact driver ISO:',m['driver_disc_bytes'],'bytes;',m['driver_files'],'driver files')
+          PY
+      - name: Publish compact ISO and driver provenance (NO APK, NO Windows disk)
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-mode-70118-compact-arm64-drivers-SOURCE-AUDIT
+          path: /tmp/windows-arm64-compact/
+          if-no-files-found: error
+          retention-days: 30
