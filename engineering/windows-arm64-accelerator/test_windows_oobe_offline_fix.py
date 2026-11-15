@@ -16,7 +16,7 @@ assert "isWindowsTarget()" in flow
 assert flow.index('sendSetupHmpKey("shift-f10")') < flow.index('typeSetupCommand("start ms-cxh:localonly")')
 assert flow.index("CMD visible - type command") < flow.index('typeSetupCommand("start ms-cxh:localonly")')
 assert "No CMD - stop" in flow
-assert "does NOT prove" in flow
+assert "DOES NOT prove" in flow
 assert "guest result UNVERIFIED" in flow
 assert "Setup Tools > Offline fallback" in flow
 assert "setHdaImagePath" not in flow and "setCdImagePath" not in flow
