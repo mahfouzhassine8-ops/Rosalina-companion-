@@ -130,8 +130,7 @@ if not native_only:
     patch(vmexecutor,
     """            if (getMachine().getTcgBuffer() > 0) {
                 tcgParams += ",tb-size=" + getMachine().getTcgBuffer();
-            }
-            paramsList.add(tcgParams);""",
+            }""",
     """            if (getMachine().getTcgBuffer() > 0) {
                 tcgParams += ",tb-size=" + getMachine().getTcgBuffer();
             } else if (WindowsCpuMode.shouldForceMultiThread(
@@ -140,8 +139,7 @@ if not native_only:
                 // Bounded to 128 MiB to avoid growing the Fold's RSS excessively.
                 tcgParams += ",tb-size=128";
                 Log.i(TAG, "Windows Fast MTTCG: 128 MiB translation cache (runtime-only)");
-            }
-            paramsList.add(tcgParams);""")
+            }""")
 
 n = qge.read_text()
 j = jni.read_text()
