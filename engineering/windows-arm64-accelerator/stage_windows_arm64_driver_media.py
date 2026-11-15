@@ -99,7 +99,8 @@ public final class WindowsArm64DriverMedia {
     }
 
     public static String attachedPath(Context c, Machine m) {
-        if (!supported(c, m) || !attachEnabled(c) || !isVerified(c))
+        if (!supported(c, m) || !attachEnabled(c) || !isVerified(c)
+                || WindowsWinjitMode.shouldUse(c, m))
             return null;
         File f = isoFile(c);
         if (f == null) return null;
