@@ -88,7 +88,10 @@ public final class WindowsSetupRecovery {
                         + "export the VM disk manually before repair");
             resolved = s;
         }
-        File f = new File(resolved).getCanonicalFile();
+        File raw = new File(resolved);
+        if (Files.isSymbolicLink(raw.toPath()))
+            throw new IOException("Linked VM source is not accepted for verified backup");
+        File f = raw.getCanonicalFile();
         if (!f.isFile() || !f.canRead() || Files.isSymbolicLink(f.toPath()))
             throw new IOException("VM source file unavailable or unsafe: " + f.getName());
         return f;
