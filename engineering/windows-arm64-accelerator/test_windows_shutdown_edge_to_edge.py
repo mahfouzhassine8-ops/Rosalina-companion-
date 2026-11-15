@@ -62,12 +62,13 @@ for view in [(1600, 1500), (1080, 2340), (2340, 1080), (1600, 910),
             assert -1e-9 <= mapped_y <= h+1e-9
 
 # Never auto-rewrite disks, stored hardware, CPU mode, firmware, or guest config.
-stage = (Path(__file__).parent / "stage_windows_shutdown_edge_to_edge.py").read_text()
+# Scan the staged Java result rather than the Python staging script itself:
+# staging contains literal forbidden-name assertions (text, not live code).
 for forbidden in [
     'setHdaImagePath(', 'setCpuNum(', 'setMemory(', 'setCdImagePath(',
     'setBiosVars(', 'machineExecutor.stopvm(', 'MachineAction.RESET_VM',
 ]:
-    assert forbidden not in stage
+    assert forbidden not in activity, f"Unexpected guest modification in display activity: {forbidden}"
 assert 'WindowsWinjitMode.shouldUse' in executor
 assert 'tcg,thread' in executor or 'tcgParams' in executor
 print("PASS: Windows-only graceful ACPI power, reversible fullscreen, Fold geometry, storage guards")
