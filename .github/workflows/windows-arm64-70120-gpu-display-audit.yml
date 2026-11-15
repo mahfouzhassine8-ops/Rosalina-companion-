@@ -27,7 +27,8 @@ jobs:
             --name windows-mode-70119-compact-arm64-drivers-SOURCE-AUDIT \
             --dir /tmp/wmgpu
           test -s /tmp/wmgpu/windows-arm64-virtio-drivers.iso
-          (cd /tmp/wmgpu && sha256sum -c DRIVER-ISO-SHA256.txt)
+          EXPECTED=$(awk '{print $1}' /tmp/wmgpu/DRIVER-ISO-SHA256.txt)
+          printf '%s  %s\n' "$EXPECTED" /tmp/wmgpu/windows-arm64-virtio-drivers.iso | sha256sum -c -
           7z e -y -so /tmp/wmgpu/windows-arm64-virtio-drivers.iso viogpudo.inf > /tmp/wmgpu/viogpudo.inf || \
             7z e -y -so /tmp/wmgpu/windows-arm64-virtio-drivers.iso \
               'viogpudo/w11/ARM64/viogpudo.inf' > /tmp/wmgpu/viogpudo.inf
