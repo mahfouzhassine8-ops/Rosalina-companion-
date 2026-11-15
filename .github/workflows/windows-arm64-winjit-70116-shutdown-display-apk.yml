@@ -1,0 +1,237 @@
+name: Windows Mode 7.1.16 signed WinJIT / safe shutdown / Fold edge-to-edge signed TEST candidate
+on:
+  push:
+    branches: [windows-mode-70116-shutdown-adaptive-display]
+    paths:
+      - '.github/workflows/windows-arm64-winjit-70116-shutdown-display-apk.yml'
+      - 'engineering/windows-arm64-accelerator/**'
+  pull_request:
+    branches: [windows-arm64-qemu-accel-research]
+    paths:
+      - '.github/workflows/windows-arm64-winjit-70116-shutdown-display-apk.yml'
+      - 'engineering/windows-arm64-accelerator/**'
+  workflow_dispatch:
+    inputs:
+      qemu_run:
+        description: Successful Android QEMU native build run
+        required: true
+        default: '43565914758'
+      core_run:
+        description: Successful Android WinJIT core native build run
+        required: true
+        default: '43566851695'
+      smoke_run:
+        description: Real ARM64 QEMU guest run with basic integration gates passed
+        required: true
+        default: '43566851599'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  signed-test-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      QEMU_RUN: ${{ inputs.qemu_run || '43565914758' }}
+      CORE_RUN: ${{ inputs.core_run || '43566851695' }}
+      SMOKE_RUN: ${{ inputs.smoke_run || '43566851599' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Protect original 7.1.14 release identity and source
+        run: |
+          set -euo pipefail
+          git fetch -q --depth=1 origin windows-mode-android-research
+          test "$(git rev-parse FETCH_HEAD)" = 68c0b948b89ab03c5f5b010a2e35b99e69339e1d
+          git diff --name-only FETCH_HEAD HEAD > /tmp/research.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          changed=Path('/tmp/research.txt').read_text().splitlines()
+          assert changed and all(p.startswith('engineering/windows-arm64-accelerator/')
+                 or p.startswith('.github/workflows/windows-arm64-')
+                 for p in changed), changed
+          print('PASS: protected application code and signing workflow untouched')
+          PY
+      - name: Require real native integration gates and record source provenance
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/windowsmode-out /tmp/native-qemu /tmp/native-winjit /tmp/protected-apk
+          # Package as soon as the current Android native builds finish.
+          gh run watch "$QEMU_RUN" -R "$GITHUB_REPOSITORY" --exit-status --interval 30
+          gh run watch "$CORE_RUN" -R "$GITHUB_REPOSITORY" --exit-status --interval 30
+          gh run watch "$SMOKE_RUN" -R "$GITHUB_REPOSITORY" --interval 30
+          python3 engineering/windows-arm64-accelerator/test_candidate_native_gate.py
+          gh run download "$QEMU_RUN" -R "$GITHUB_REPOSITORY" --name windows-mode-qemu-winjit-vcpu-source-native-gate --dir /tmp/native-qemu
+          gh run download "$CORE_RUN" -R "$GITHUB_REPOSITORY" --name windows-arm64-winjit-core-android-source-compile --dir /tmp/native-winjit
+          gh run download "$SMOKE_RUN" -R "$GITHUB_REPOSITORY" --name qemu-winjit-linux-aarch64-actual-microguest-boot-evidence --dir /tmp/windowsmode-out/guest-evidence
+          gh run download 43428370564 -R "$GITHUB_REPOSITORY" --name windows-mode-arm64-bootbench-70114-apk --dir /tmp/protected-apk
+          readelf -h /tmp/native-qemu/libqemu-system-aarch64.so | grep -F AArch64
+          readelf -h /tmp/native-winjit/libwinjit-core-android-aarch64.so | grep -F AArch64
+          strings /tmp/native-qemu/libqemu-system-aarch64.so > /tmp/qemu-strings.txt
+          grep -Fx 'libwinjit-core-android-aarch64.so' /tmp/qemu-strings.txt
+          grep -F 'winjit: RESEARCH accelerator loaded' /tmp/qemu-strings.txt
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+      - name: Retrieve pinned disposable QubeVM source
+        run: |
+          set -euo pipefail
+          git clone -q --depth=1 --branch 7.1.4 https://github.com/rhn-1k/QubeVM.git upstream
+          test "$(git -C upstream rev-parse HEAD)" = 0264df6320a76234b47c9df923acb889b709e032
+      - name: Rehydrate complete Android ARM64 QEMU runtime from pinned upstream release
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 'https://github.com/rhn-1k/QubeVM/releases/download/7.1.4/qube-arm-q11.1.3-android-arm64-v8a-release.apk' -o /tmp/upstream-qube.apk
+          mkdir -p /tmp/qube-extracted
+          unzip -oq /tmp/upstream-qube.apk 'lib/arm64-v8a/*' -d /tmp/qube-extracted
+          mkdir -p upstream/qube-android-arm/src/main/jniLibs/arm64-v8a upstream/qube-android-lib/src/main/jniLibs/arm64-v8a
+          cp /tmp/qube-extracted/lib/arm64-v8a/libqemu-system-aarch64.so upstream/qube-android-arm/src/main/jniLibs/arm64-v8a/
+          for so in /tmp/qube-extracted/lib/arm64-v8a/*.so; do
+            if [ "$(basename "$so")" != libqemu-system-aarch64.so ]; then
+              cp "$so" upstream/qube-android-lib/src/main/jniLibs/arm64-v8a/
+            fi
+          done
+          test -s upstream/qube-android-arm/src/main/jniLibs/arm64-v8a/libqemu-system-aarch64.so
+          test -s upstream/qube-android-lib/src/main/jniLibs/arm64-v8a/libqube.so
+      - name: Restore QEMU 11.1.3 ROMs and keyboard maps from matching upstream source
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --filter=blob:none --sparse --branch v11.1.3 https://github.com/qemu/qemu.git /tmp/qemu-rom-source
+          git -C /tmp/qemu-rom-source sparse-checkout set pc-bios
+          ROMS="upstream/qube-android-lib/src/main/assets/roms"
+          mkdir -p "$ROMS/keymaps"
+          find /tmp/qemu-rom-source/pc-bios -maxdepth 1 -type f \( -name '*.rom' -o -name '*.bin' -o -name '*.img' -o -name '*.rsrc' \) -exec cp -f {} "$ROMS/" \;
+          cp -af /tmp/qemu-rom-source/pc-bios/keymaps/. "$ROMS/keymaps/"
+          echo 11.1.3 > upstream/qube-android-lib/src/main/assets/QEMU_VERSION
+          test -s "$ROMS/efi-e1000.rom"
+          test -s "$ROMS/efi-virtio.rom"
+          test -s "$ROMS/keymaps/en-us"
+          test -s "$ROMS/QUBE_ARM_EFI.fd"
+          test -s "$ROMS/QUBE_ARM_VARS.fd"
+          test -s upstream/qube-android-lib/src/main/assets/QEMU_VERSION
+          echo "QEMU BIOS files: $(find "$ROMS" -maxdepth 1 -type f | wc -l)"
+          echo "QEMU keyboard layouts: $(find "$ROMS/keymaps" -maxdepth 1 -type f | wc -l)"
+          echo "QEMU BIOS source: https://github.com/qemu/qemu/tree/v11.1.3/pc-bios"
+          sha256sum "$ROMS/efi-e1000.rom" "$ROMS/keymaps/en-us"
+      - name: Stage same-app upgrade with original TCG default and disposable-storage guard
+        run: |
+          set -euo pipefail
+          for script in windows-mode-source-repairs.py windows-mode-ui-repairs.py windows-mode-performance-repairs.py windows-mode-setup-display-repairs.py windows-mode-desktop-boot-repairs.py windows-mode-boot-benchmark-repairs.py; do
+            python3 "$script" upstream
+          done
+          python3 -m py_compile engineering/windows-arm64-accelerator/stage_windows_shutdown_edge_to_edge.py engineering/windows-arm64-accelerator/test_windows_shutdown_edge_to_edge.py engineering/windows-arm64-accelerator/inplace_70116_upgrade_gate.py engineering/windows-arm64-accelerator/test_inplace_70116_upgrade_gate.py
+          python3 engineering/windows-arm64-accelerator/stage_winjit_android_option.py upstream
+          python3 engineering/windows-arm64-accelerator/stage_windows_shutdown_edge_to_edge.py upstream
+          python3 engineering/windows-arm64-accelerator/test_windows_shutdown_edge_to_edge.py upstream
+          python3 engineering/windows-arm64-accelerator/inplace_70116_upgrade_gate.py stage --disposable-upstream upstream
+          python3 engineering/windows-arm64-accelerator/test_inplace_70116_upgrade_gate.py
+          python3 engineering/windows-arm64-accelerator/test_winjit_storage_guard.py upstream
+          cp /tmp/native-qemu/libqemu-system-aarch64.so upstream/qube-android-arm/src/main/jniLibs/arm64-v8a/
+          cp /tmp/native-winjit/libwinjit-core-android-aarch64.so upstream/qube-android-arm/src/main/jniLibs/arm64-v8a/
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          app=Path('upstream/qube-android-arm')
+          strings=app/'src/main/res/values/strings.xml'
+          strings.write_text(strings.read_text().replace('>QubeVM ARM<','>Windows Mode (QubeVM-based test)<').replace('>Qube ARM<','>Windows Mode Test<'))
+          # AGP otherwise strips the newly compiled translator, changing the
+          # verified ELF bytes. Preserve both scoped engines byte-for-byte.
+          gradle=app/'build.gradle'
+          with gradle.open('a') as f:
+              f.write('\nandroid { packaging { jniLibs { keepDebugSymbols += ["**/libqemu-system-aarch64.so", "**/libwinjit-core-android-aarch64.so"] } } }\n')
+          for f in Path('upstream').rglob('build.gradle'):
+              s=f.read_text()
+              s=s.replace('compileSdk = 37','compileSdk = 36').replace('targetSdk = 37','targetSdk = 35')
+              f.write_text(s)
+          PYCODE
+          python3 engineering/windows-arm64-accelerator/verify_test_candidate_native.py upstream /tmp/protected-apk/WindowsMode-QEMU-BOOTBENCH-70114.apk /tmp/windowsmode-out
+      - name: Build original-identity signed ARM64 TEST APK
+        run: |
+          set -euo pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"
+          cd upstream
+          gradle --no-daemon --stacktrace :qube-android-arm:assembleRelease -PqemuVersion=11.1.3
+      - name: Preserve exact WinJIT ELF bytes after Android Gradle stripping, then re-sign original identity
+        run: |
+          set -euo pipefail
+          TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          APK=$(find upstream/qube-android-arm/build/outputs/apk/release -type f -name '*.apk' | head -n 1)
+          test -s "$APK"
+          CORE=lib/arm64-v8a/libwinjit-core-android-aarch64.so
+          SOURCE=/tmp/native-winjit/libwinjit-core-android-aarch64.so
+          test -s "$SOURCE"
+          TMPDIR=$(mktemp -d)
+          mkdir -p "$TMPDIR/lib/arm64-v8a"
+          cp "$SOURCE" "$TMPDIR/$CORE"
+          APK_REAL=$(realpath "$APK")
+          # Android Gradle strips debug information from the WinJIT library.
+          # Restore the EXACT source-built library before re-signing; merely
+          # checking for a .so filename falsely passed in the previous build.
+          if unzip -Z -1 "$APK" | grep -Fxq "$CORE"; then
+            zip -qd "$APK" "$CORE"
+          fi
+          (cd "$TMPDIR" && zip -q -0 "$APK_REAL" "$CORE")
+          "$TOOLS/zipalign" -P 16 -f 4 "$APK" /tmp/windowsmode-70116-native-aligned.apk
+          "$TOOLS/apksigner" sign \
+            --ks upstream/keystore/testkey.keystore \
+            --ks-key-alias androidtestkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out /tmp/windowsmode-70116-native-resigned.apk \
+            /tmp/windowsmode-70116-native-aligned.apk
+          cp /tmp/windowsmode-70116-native-resigned.apk "$APK"
+          "$TOOLS/zipalign" -c -P 16 -v 4 "$APK"
+          "$TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/windowsmode-out/NATIVE-REPACK-SIGNATURE.txt
+          python3 - "$APK" <<'PY'
+          import sys,zipfile
+          from pathlib import Path
+          native=Path('/tmp/native-winjit/libwinjit-core-android-aarch64.so').read_bytes()
+          with zipfile.ZipFile(sys.argv[1]) as z:
+              assert z.read('lib/arm64-v8a/libwinjit-core-android-aarch64.so')==native
+          print('PASS: EXACT native WinJIT byte-for-byte library inside signed APK')
+          PY
+      - name: Verify actual APK package, signer, ABI and exact native payload
+        run: |
+          set -euo pipefail
+          TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          mapfile -t APKS < <(find upstream/qube-android-arm/build/outputs/apk/release -type f -name '*.apk')
+          test "${#APKS[@]}" -eq 1
+          APK="${APKS[0]}"
+          "$TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/windowsmode-out/SIGNATURE_VERIFY.txt
+          "$TOOLS/aapt" dump badging "$APK" | tee /tmp/windowsmode-out/PACKAGE_VERIFY.txt
+          python3 engineering/windows-arm64-accelerator/inplace_70116_upgrade_gate.py verify --aapt-output /tmp/windowsmode-out/PACKAGE_VERIFY.txt --apksigner-output /tmp/windowsmode-out/SIGNATURE_VERIFY.txt
+          "$TOOLS/apksigner" verify --verbose --print-certs /tmp/protected-apk/WindowsMode-QEMU-BOOTBENCH-70114.apk > /tmp/windowsmode-out/PROTECTED_SIGNATURE_VERIFY.txt
+          python3 - "$APK" <<'PYCODE'
+          import hashlib, sys, zipfile
+          from pathlib import Path
+          with zipfile.ZipFile(sys.argv[1]) as z:
+              for name, path in [('libqemu-system-aarch64.so','/tmp/native-qemu'),('libwinjit-core-android-aarch64.so','/tmp/native-winjit')]:
+                  assert z.read('lib/arm64-v8a/'+name) == (Path(path)/name).read_bytes(), name
+              for name in ['assets/roms/efi-e1000.rom','assets/roms/efi-virtio.rom','assets/roms/QUBE_ARM_EFI.fd','assets/roms/QUBE_ARM_VARS.fd','assets/roms/keymaps/en-us','assets/QEMU_VERSION']:
+                  assert z.getinfo(name).file_size > 0, name
+              assert all(n.startswith('lib/arm64-v8a/') for n in z.namelist() if n.startswith('lib/') and n.endswith('.so'))
+          PYCODE
+          cp "$APK" /tmp/windowsmode-out/WindowsMode-7.1.16-WinJIT-TEST-NOT-DEVICE-VERIFIED.apk
+          cp upstream/COPYING /tmp/windowsmode-out/QubeVM-GPL-3.0-LICENSE.txt
+          (cd /tmp/windowsmode-out && sha256sum WindowsMode-7.1.16-WinJIT-TEST-NOT-DEVICE-VERIFIED.apk > APK-SHA256.txt)
+          cp engineering/windows-arm64-accelerator/TEST-CANDIDATE-70116-README.txt /tmp/windowsmode-out/READ-ME-FIRST.txt
+          cp engineering/windows-arm64-accelerator/WINDOWS-ARM64-GUEST-DRIVER-DISPLAY-MANIFEST.md /tmp/windowsmode-out/DRIVER-DISPLAY-MANIFEST.md
+          git rev-parse HEAD > /tmp/windowsmode-out/PACKAGING-SOURCE-COMMIT.txt
+          git -C upstream diff --binary > /tmp/windowsmode-out/ANDROID-SOURCE-CHANGES.patch
+          tar -czf /tmp/windowsmode-out/accelerator-source.tar.gz engineering/windows-arm64-accelerator
+      - name: Publish downloadable signed TEST APK and verification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-mode-70116-winjit-signed-TEST-NOT-DEVICE-VERIFIED
+          path: /tmp/windowsmode-out/
+          if-no-files-found: error
+          retention-days: 30
