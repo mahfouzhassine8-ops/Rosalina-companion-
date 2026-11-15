@@ -45,7 +45,7 @@ for forbidden in ['setHdaImagePath(', 'setBiosVars(', 'setCpuNum(',
                   'setMemory(', 'diskpart', 'renameTo(source', 'RandomAccessFile']:
     assert forbidden not in r,forbidden
 assert 'start ms-cxh:localonly' in keys # Prior offline button remains.
-assert 'QubeOfflineAccount' in keys
+assert 'showWindowsOfflineAccount()' in keys
 assert 'showWindowsDesktopRecovery()' in keys
 print("PASS: separate immutable source snapshots of VM disk and UEFI with verify/space/stop gates")
 print("PASS: read-only OOBE registry queries and user-initiated Audit Mode after backup")
