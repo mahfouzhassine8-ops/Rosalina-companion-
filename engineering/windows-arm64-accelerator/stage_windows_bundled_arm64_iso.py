@@ -202,7 +202,7 @@ patch(ui,
                     + "753 MB original ISO remains optional. The disc is attached "
                     + "as a second READ-ONLY USB optical drive on NEXT boot. "
                     + "The NVMe boot disk, UEFI and selected installer stay intact. "
-                    + "Drivers do not install themselves: only packages matching "
+                    + "Windows does not auto-install drivers: only packages matching "
                     + "virtual PCI/USB hardware should be selected in Windows. "
                     + "Compact ISO: " + (compactReady ? "verified" : "not prepared")
                     + "; optional attachment " + (attached ? "enabled." : "disabled."))''')
