@@ -109,8 +109,8 @@ jobs:
           python3 -m py_compile engineering/windows-arm64-accelerator/stage_qge_fold_gpu_bridge.py
           python3 engineering/windows-arm64-accelerator/stage_qge_fold_gpu_bridge.py /tmp/qube-native
           python3 -m py_compile engineering/windows-arm64-accelerator/stage_windows_boot_performance.py
-          python3 engineering/windows-arm64-accelerator/stage_windows_boot_performance.py /tmp/qube-native
-          python3 engineering/windows-arm64-accelerator/test_windows_boot_performance.py /tmp/qube-native
+          python3 engineering/windows-arm64-accelerator/stage_windows_boot_performance.py /tmp/qube-native --native-only
+          python3 engineering/windows-arm64-accelerator/test_windows_boot_performance.py /tmp/qube-native --native-only
           grep -F 'qemu_console_lookup_by_device_name("winvgpu"' /tmp/qube-native/qube-android-lib/src/main/jni/qemu-addons/11.1.3/ui/qge.c
           grep -F 'aio_bh_schedule_oneshot(qemu_get_aio_context()' /tmp/qube-native/qube-android-lib/src/main/jni/qemu-addons/11.1.3/ui/qge.c
           grep -F 'nativeRequestFoldGpuDisplay' /tmp/qube-native/qube-android-lib/src/main/jni/qube/qge-jni.c
