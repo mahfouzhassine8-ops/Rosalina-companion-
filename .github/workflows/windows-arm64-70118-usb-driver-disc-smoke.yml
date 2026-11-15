@@ -1,0 +1,82 @@
+name: Windows Mode 7.1.18 - native QEMU USB driver disc smoke (NO Windows disk)
+on:
+  push:
+    branches: [windows-mode-70118-bundled-arm64-drivers]
+    paths: ['.github/workflows/windows-arm64-70118-usb-driver-disc-smoke.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  qemu-device-config:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install QEMU ARM64 command-line emulator
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-system-arm
+          command -v qemu-system-aarch64
+      - name: Fetch verified compact VirtIO ISO from completed source audit
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/windows-driver-iso
+          gh run download 43670731257 -R "$GITHUB_REPOSITORY" \
+            --name windows-mode-70118-compact-arm64-drivers-SOURCE-AUDIT \
+            --dir /tmp/windows-driver-iso
+          test -s /tmp/windows-driver-iso/windows-arm64-virtio-drivers.iso
+          echo '7e47ccd85896ffb3e73d122d9022ed7f71da0045872a2152f37369ee492fca91  /tmp/windows-driver-iso/windows-arm64-virtio-drivers.iso' | sha256sum -c -
+      - name: Preflight QEMU ARM64 device initialization with read-only USB CDROM
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,os,socket,subprocess,tempfile,time
+          iso=Path('/tmp/windows-driver-iso/windows-arm64-virtio-drivers.iso')
+          with tempfile.TemporaryDirectory() as temp:
+              sock=f'{temp}/qmp.sock'
+              args=['qemu-system-aarch64','-machine','virt','-cpu','cortex-a57',
+                    '-m','512M','-smp','2','-nodefaults','-display','none',
+                    '-serial','none','-monitor','none','-S',
+                    '-device','qemu-xhci,id=xhci',
+                    '-drive',f'if=none,id=wmarm64virtio,media=cdrom,format=raw,readonly=on,file={iso}',
+                    '-device','usb-storage,drive=wmarm64virtio,bootindex=99',
+                    '-qmp',f'unix:{sock},server=on,wait=off']
+              p=subprocess.Popen(args,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+              try:
+                  deadline=time.monotonic()+15
+                  while time.monotonic()<deadline and not os.path.exists(sock):
+                      if p.poll() is not None:
+                          raise RuntimeError(f'QEMU device start failed: {p.communicate()[1]}')
+                      time.sleep(.1)
+                  assert os.path.exists(sock),'QMP socket not created by QEMU'
+                  with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as s:
+                      s.settimeout(6)
+                      s.connect(sock)
+                      f=s.makefile('rwb',buffering=0)
+                      greet=json.loads(f.readline())
+                      assert 'QMP' in greet
+                      f.write(b'{"execute":"qmp_capabilities"}\n')
+                      assert 'return' in json.loads(f.readline())
+                      f.write(b'{"execute":"query-block"}\n')
+                      answer=json.loads(f.readline())
+                      assert 'return' in answer,answer
+                      blocks=answer['return']
+                      matches=[x for x in blocks if 'wmarm64virtio' in json.dumps(x)]
+                      assert matches,f'Driver disc not registered: {blocks}'
+                      assert all(x.get('inserted',{}).get('ro',False) for x in matches),matches
+                      f.write(b'{"execute":"quit"}\n')
+                  rc=p.wait(timeout=10)
+                  assert rc==0,f'Unexpected QEMU exit {rc}: {p.stderr.read()}'
+                  print('PASS: QEMU ARM64 initializes read-only USB driver CDROM, query-block reports RO, QMP controlled quit')
+              finally:
+                  if p.poll() is None:
+                      p.kill()
+                      p.wait(timeout=5)
+          PY
