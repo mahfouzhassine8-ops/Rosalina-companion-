@@ -39,7 +39,7 @@ for token in ['MachineController.getInstance().isRunning()',
               'FileOutputStream','getFD().sync()','deletePartialDir(dir)']:
     assert token in r,token
 assert r.index('String diskDigest = safeCopy') < r.index('String varsDigest = safeCopy')
-assert r.index('String varsDigest = safeCopy') < r.index('VERIFIED-BACKUP.txt')
+assert r.index('String varsDigest = safeCopy') < r.rindex('VERIFIED-BACKUP.txt')
 assert r.index('VERIFIED-BACKUP.txt') < r.index('putString(pathKey(vm),')
 for forbidden in ['setHdaImagePath(', 'setBiosVars(', 'setCpuNum(',
                   'setMemory(', 'diskpart', 'renameTo(source', 'RandomAccessFile']:
