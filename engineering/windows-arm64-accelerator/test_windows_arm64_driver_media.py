@@ -19,8 +19,8 @@ for name,value in re.findall(r"private static final int (WINDOWS_[A-Z0-9_]+)\s*=
     assert int(value) not in values.values(),f"Menu ID collision: {name}={value}: {values}"
     values[name]=int(value)
 assert values["WINDOWS_INSTALLED_BOOT"]==18
-assert values["WINDOWS_WINJIT_MODE"]==19
-assert values["WINDOWS_ARM64_DRIVERS"]==20
+assert values["WINDOWS_WINJIT_MODE"]==21
+assert values["WINDOWS_ARM64_DRIVERS"]==22
 
 # The original 7.1.16 safe shutdown and display path are preserved.
 assert "confirmWindowsGracefulShutdown();" in screen
