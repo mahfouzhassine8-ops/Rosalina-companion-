@@ -161,11 +161,11 @@ patch(qge,
         } else if (item.getItemId() == R.id.itemWindowsGpuLab) {
             showWindowsGpuLabPreview();''')
 patch(qge,
-'''            menu.removeItem(R.id.itemWindowsRendering);
+'''            menu.removeItem(R.id.itemWindowsBootReport);
         }
 
         int maxMenuItemsShown''',
-'''            menu.removeItem(R.id.itemWindowsRendering);
+'''            menu.removeItem(R.id.itemWindowsBootReport);
         }
         if (!WindowsDisposableGpuLab.shouldAttach(this,
                 MachineController.getInstance().getMachine()))
