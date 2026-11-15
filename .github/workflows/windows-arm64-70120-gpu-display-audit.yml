@@ -33,7 +33,7 @@ jobs:
             7z e -y -so /tmp/wmgpu/windows-arm64-virtio-drivers.iso \
               'viogpudo/w11/ARM64/viogpudo.inf' > /tmp/wmgpu/viogpudo.inf
           test -s /tmp/wmgpu/viogpudo.inf
-          grep -Eiq 'PCI\\VEN_1AF4&DEV_1050' /tmp/wmgpu/viogpudo.inf
+          grep -Fqi 'PCI\\VEN_1AF4&DEV_1050' /tmp/wmgpu/viogpudo.inf
           grep -q 'FlexResolution' /tmp/wmgpu/viogpudo.inf
           grep -q 'NTARM64' /tmp/wmgpu/viogpudo.inf
           echo 'PASS: exact Fedora ARM64 viogpudo PnP IDs, FlexResolution, source checksum'
