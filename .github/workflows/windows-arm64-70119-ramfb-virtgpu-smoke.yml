@@ -1,0 +1,63 @@
+name: Windows ARM64 virtual graphics - RAMFB plus VirtIO GPU coexistence (NO Windows disk)
+on:
+  push:
+    branches: [windows-mode-70119-arm64-guest-tools]
+    paths: ['.github/workflows/windows-arm64-70119-ramfb-virtgpu-smoke.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  dual-video-qemu-init:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install QEMU system ARM64
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-system-arm
+          qemu-system-aarch64 --version
+      - name: Confirm firmware RAMFB and VirtIO GPU can initialize together without any Windows disk
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,socket,subprocess,tempfile,time
+          with tempfile.TemporaryDirectory() as t:
+              sock=f'{t}/qmp.sock'
+              cmd=['qemu-system-aarch64','-machine','virt','-cpu','cortex-a57',
+                   '-m','512M','-smp','2','-nodefaults','-display','none',
+                   '-monitor','none','-serial','none','-S',
+                   '-device','ramfb',
+                   '-device','virtio-gpu-pci,id=winvgpu',
+                   '-qmp',f'unix:{sock},server=on,wait=off']
+              proc=subprocess.Popen(cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+              try:
+                  deadline=time.monotonic()+15
+                  while time.monotonic()<deadline and not os.path.exists(sock):
+                      if proc.poll() is not None:
+                          raise RuntimeError(f'Cannot start guest RAMFB + virtio-gpu: {proc.communicate()[1]}')
+                      time.sleep(0.1)
+                  assert os.path.exists(sock)
+                  with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as s:
+                      s.settimeout(5)
+                      s.connect(sock)
+                      data=s.makefile('rwb',buffering=0)
+                      assert 'QMP' in json.loads(data.readline())
+                      data.write(b'{"execute":"qmp_capabilities"}\n')
+                      assert 'return' in json.loads(data.readline())
+                      data.write(b'{"execute":"query-pci"}\n')
+                      answer=json.loads(data.readline())
+                      assert 'return' in answer,answer
+                      assert 'winvgpu' in json.dumps(answer),f'VirtIO GPU absent from PCI query: {answer}'
+                      data.write(b'{"execute":"quit"}\n')
+                  assert proc.wait(timeout=10)==0
+                  print('PASS: RAMFB boot display and VirtIO GPU can coexist on QEMU ARM64 system bus')
+                  print('NOTE: This does NOT prove Windows UEFI GOP/viogpudo display behavior or Fold resize.')
+              finally:
+                  if proc.poll() is None:
+                      proc.kill()
+                      proc.wait(timeout=5)
+          PY

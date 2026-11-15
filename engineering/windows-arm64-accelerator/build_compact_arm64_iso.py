@@ -114,6 +114,41 @@ def main()->None:
             "E1000, RAMFB and USB hardware are unchanged by attaching the disc.\n"
             "Win11 ARM64 VirtIO GPU display compatibility and native Fold\n"
             "resolution switching are NOT established by this disc.\n")
+        # Optional user-initiated Windows guest installer. Does NOT run at boot.
+        # Microsoft pnputil /install selects matching present PnP devices; it
+        # does not force a lower-ranked or incompatible driver on other hardware.
+        installer=stage/"INSTALL-MATCHING-ARM64-DRIVERS.cmd"
+        installer.write_bytes((
+            "@echo off\r\n"
+            "setlocal EnableExtensions\r\n"
+            "title Windows Mode - Signed ARM64 VirtIO Drivers\r\n"
+            "echo Windows Mode offline Windows 11 ARM64 VirtIO driver installer\r\n"
+            "echo Only matching installed virtual devices receive a driver.\r\n"
+            "echo No boot disk controller or UEFI settings are changed by this script.\r\n"
+            "echo.\r\n"
+            "if /I not \"%PROCESSOR_ARCHITECTURE%\"==\"ARM64\" goto :wrong_arch\r\n"
+            "fltmc.exe >nul 2>&1\r\n"
+            "if errorlevel 1 goto :needs_admin\r\n"
+            "echo Checking Windows ARM64 driver signature and matching devices...\r\n"
+            "echo A log is saved to %%TEMP%%\\WindowsMode-ARM64-Drivers.log\r\n"
+            "pnputil.exe /add-driver \"%~dp0*.inf\" /subdirs /install > \"%TEMP%\\WindowsMode-ARM64-Drivers.log\" 2>&1\r\n"
+            "set \"RESULT=%ERRORLEVEL%\"\r\n"
+            "type \"%TEMP%\\WindowsMode-ARM64-Drivers.log\"\r\n"
+            "echo.\r\n"
+            "echo Finished. No force, uninstall, reboot or storage switch was requested.\r\n"
+            "echo A reboot might be requested by Windows after driver installation.\r\n"
+            "pause\r\n"
+            "exit /b %RESULT%\r\n"
+            ":wrong_arch\r\n"
+            "echo This helper is only for native Windows ARM64. No drivers installed.\r\n"
+            "pause\r\n"
+            "exit /b 2\r\n"
+            ":needs_admin\r\n"
+            "echo Right-click and choose Run as administrator, then accept Windows UAC.\r\n"
+            "echo Nothing was installed.\r\n"
+            "pause\r\n"
+            "exit /b 3\r\n"
+        ).encode("ascii"))
         # A fixed timestamp lets the resulting ISO be reproducible across CI builds.
         for file in stage.rglob("*"):
             if file.is_file():
@@ -134,6 +169,7 @@ def main()->None:
       "drivers_scope":"Windows 11 ARM64 only",
       "family_present":found,
       "driver_files":len(matched),
+      "guest_installer":"INSTALL-MATCHING-ARM64-DRIVERS.cmd",
       "total_selected_files":len(included),
       "driver_disc_sha256":sha256(a.compact_iso),
       "driver_disc_bytes":a.compact_iso.stat().st_size,
