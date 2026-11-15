@@ -2,7 +2,14 @@ name: Windows Mode 7.1.16 signed WinJIT / safe shutdown / Fold edge-to-edge sign
 on:
   push:
     branches: [windows-mode-70116-shutdown-adaptive-display]
-    paths: ['.github/workflows/windows-arm64-winjit-70116-apk-candidate.yml']
+    paths:
+      - '.github/workflows/windows-arm64-winjit-70116-shutdown-display-apk.yml'
+      - 'engineering/windows-arm64-accelerator/**'
+  pull_request:
+    branches: [windows-arm64-qemu-accel-research]
+    paths:
+      - '.github/workflows/windows-arm64-winjit-70116-shutdown-display-apk.yml'
+      - 'engineering/windows-arm64-accelerator/**'
   workflow_dispatch:
     inputs:
       qemu_run:
