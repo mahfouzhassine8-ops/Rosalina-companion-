@@ -16,10 +16,11 @@ Boot time speedup is not established until a Windows/Fold device test.
 from pathlib import Path
 import sys
 
-if len(sys.argv) != 2:
-    raise SystemExit("usage: stage_windows_boot_performance.py UPSTREAM")
+if len(sys.argv) not in (2, 3) or (len(sys.argv) == 3 and sys.argv[2] != "--native-only"):
+    raise SystemExit("usage: stage_windows_boot_performance.py UPSTREAM [--native-only]")
 
 root = Path(sys.argv[1])
+native_only = len(sys.argv) == 3
 native = root / "qube-android-lib/src/main/jni"
 java = root / "qube-android-lib/src/main/java/com/max2idea/android/qube"
 qge = native / "qemu-addons/11.1.3/ui/qge.c"
@@ -28,7 +29,7 @@ gfx = java / "jni/QubeGfx.java"
 activity = java / "main/QubeQGEActivity.java"
 vmexecutor = java / "jni/VMExecutor.java"
 
-for f in (qge, jni, gfx, activity, vmexecutor):
+for f in ((qge, jni, gfx) if native_only else (qge, jni, gfx, activity, vmexecutor)):
     if not f.is_file():
         raise RuntimeError(f"Required pinned source missing: {f}")
 
@@ -99,7 +100,8 @@ patch(gfx,
     // Copies guest frame into ARGB_8888 bitmap, returns generation counter (0 if unavailable)""")
 
 # The Windows-boot instrumentation and original draw path remain intact.
-patch(activity,
+if not native_only:
+    patch(activity,
     """        if (frameBitmap == null || w != frameBitmap.getWidth() || h != frameBitmap.getHeight()) {
             frameBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
             mSurface.setFrameBitmap(frameBitmap);
@@ -125,7 +127,7 @@ patch(activity,
 # (2+ vCPUs) to 128 MiB rather than QEMU's smaller platform default.
 # Disabling Fast through the existing CPU mode immediately restores the saved
 # TCG setting on the next boot. This never selects experimental WinJIT.
-patch(vmexecutor,
+    patch(vmexecutor,
     """            if (getMachine().getTcgBuffer() > 0) {
                 tcgParams += ",tb-size=" + getMachine().getTcgBuffer();
             }
@@ -143,19 +145,20 @@ patch(vmexecutor,
 
 n = qge.read_text()
 j = jni.read_text()
-a = activity.read_text()
-v = vmexecutor.read_text()
+a = activity.read_text() if not native_only else ""
+v = vmexecutor.read_text() if not native_only else ""
 assert n.count("int qube_gfx_peek_generation(void)") == 1
 assert j.count("Java_com_max2idea_android_qube_jni_QubeGfx_nativePeekGeneration") == 1
 assert 'dlsym(handle, "qube_gfx_peek_generation")' in j
-assert 'nativePeekGeneration()' in a and 'nativeCopyFrame(frameBitmap)' in a
-assert a.index("nativePeekGeneration()") < a.index("nativeCopyFrame(frameBitmap)")
-assert 'currentGeneration == lastGfxGeneration' in a
-assert 'tcgParams += ",tb-size=128";' in v
-assert 'getMachine().getTcgBuffer() > 0' in v
-assert 'WindowsCpuMode.shouldForceMultiThread' in v
-assert 'WindowsWinjitMode.shouldUse' in v
-assert 'setHdaImagePath' not in v and 'setBiosVars' not in v
-assert 'setCpuNum(' not in v and 'setMemory(' not in v
-print("PASS: read-only generation skips unchanged pixel copies; 128 MiB bounded Fast MTTCG cache")
+if not native_only:
+    assert 'nativePeekGeneration()' in a and 'nativeCopyFrame(frameBitmap)' in a
+    assert a.index("nativePeekGeneration()") < a.index("nativeCopyFrame(frameBitmap)")
+    assert 'currentGeneration == lastGfxGeneration' in a
+    assert 'tcgParams += ",tb-size=128";' in v
+    assert 'getMachine().getTcgBuffer() > 0' in v
+    assert 'WindowsCpuMode.shouldForceMultiThread' in v
+    assert 'WindowsWinjitMode.shouldUse' in v
+    assert 'setHdaImagePath' not in v and 'setBiosVars' not in v
+    assert 'setCpuNum(' not in v and 'setMemory(' not in v
+print("PASS: staged native generation getter" + ("" if native_only else " and Java unchanged-frame skip + 128 MiB TCG cache"))
 print("NOT PROVEN: Faster Windows boot, lower temperature, or desktop/Fold acceptance")
