@@ -108,7 +108,7 @@ jobs:
           set -euo pipefail
           git clone -q --depth 1 --branch 7.1.4 https://github.com/rhn-1k/QubeVM.git /tmp/qube
           git clone -q --depth 1 --filter=blob:none --sparse --branch v11.1.3 https://github.com/qemu/qemu.git /tmp/qemu
-          git -C /tmp/qemu sparse-checkout set include/ui ui/console.c hw/display/virtio-gpu-base.c
+          git -C /tmp/qemu sparse-checkout set include/ui ui hw/display
           python3 - <<'PY'
           from pathlib import Path
           q=Path('/tmp/qemu')
