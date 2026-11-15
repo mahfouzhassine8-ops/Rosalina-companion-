@@ -42,7 +42,7 @@ assert r.index('String diskDigest = safeCopy') < r.index('String varsDigest = sa
 assert r.index('String varsDigest = safeCopy') < r.index('VERIFIED-BACKUP.txt')
 assert r.index('VERIFIED-BACKUP.txt') < r.index('putString(pathKey(vm),')
 for forbidden in ['setHdaImagePath(', 'setBiosVars(', 'setCpuNum(',
-                  'setMemory(', 'format(', 'renameTo(source', 'RandomAccessFile']:
+                  'setMemory(', 'diskpart', 'renameTo(source', 'RandomAccessFile']:
     assert forbidden not in r,forbidden
 assert 'start ms-cxh:localonly' in keys # Prior offline button remains.
 assert 'QubeOfflineAccount' in keys
