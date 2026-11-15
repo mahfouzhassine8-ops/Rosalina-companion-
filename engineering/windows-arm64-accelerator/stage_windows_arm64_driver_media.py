@@ -366,8 +366,8 @@ patch(executor,
 # reused 18; repair that actual collision without changing either behavior.
 patch(activity,
       "    private static final int WINDOWS_WINJIT_MODE = 18;",
-      "    private static final int WINDOWS_WINJIT_MODE = 19;\n"
-      "    private static final int WINDOWS_ARM64_DRIVERS = 20;")
+      "    private static final int WINDOWS_WINJIT_MODE = 21;\n"
+      "    private static final int WINDOWS_ARM64_DRIVERS = 22;")
 patch(activity,
       """            menu.add(0, WINDOWS_WINJIT_MODE, 0, "WinJIT (experimental)")
                     .setIcon(R.drawable.settings_24px);""",
@@ -392,8 +392,8 @@ assert exe.count("addWindowsArm64DriverDisc(context, paramsList);") == 1
 assert "usb-storage,drive=wmarm64virtio,bootindex=99" in exe
 assert "readonly=on,file=" in exe
 assert 'WINDOWS_INSTALLED_BOOT = 18;' in act
-assert 'WINDOWS_WINJIT_MODE = 19;' in act
-assert 'WINDOWS_ARM64_DRIVERS = 20;' in act
+assert 'WINDOWS_WINJIT_MODE = 21;' in act
+assert 'WINDOWS_ARM64_DRIVERS = 22;' in act
 assert "WindowsArm64DriverSetup.show(this, getMachine());" in act
 assert "e14cf2b94492c3e925f0070ba7fdfedeb2048c91eea9c5a5afb30232a3976331" in media.read_text()
 assert "setHdaImagePath(" not in media.read_text()
