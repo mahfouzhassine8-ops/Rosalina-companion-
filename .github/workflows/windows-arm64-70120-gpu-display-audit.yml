@@ -1,0 +1,117 @@
+name: Windows ARM64 7.1.20 - native Fold GPU/console/EDID proof (NO APK, NO Windows disk)
+on:
+  push:
+    branches: [windows-mode-70120-native-fold-gpu-research]
+    paths: ['.github/workflows/windows-arm64-70120-gpu-display-audit.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  gpu-display-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify exact original Win11 ARM64 GPU device and driver support
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-system-arm p7zip-full
+          mkdir -p /tmp/wmgpu
+          gh run download 43672113415 -R "$GITHUB_REPOSITORY" \
+            --name windows-mode-70119-compact-arm64-drivers-SOURCE-AUDIT \
+            --dir /tmp/wmgpu
+          test -s /tmp/wmgpu/windows-arm64-virtio-drivers.iso
+          (cd /tmp/wmgpu && sha256sum -c DRIVER-ISO-SHA256.txt)
+          7z e -y -so /tmp/wmgpu/windows-arm64-virtio-drivers.iso viogpudo.inf > /tmp/wmgpu/viogpudo.inf || \
+            7z e -y -so /tmp/wmgpu/windows-arm64-virtio-drivers.iso \
+              'viogpudo/w11/ARM64/viogpudo.inf' > /tmp/wmgpu/viogpudo.inf
+          test -s /tmp/wmgpu/viogpudo.inf
+          grep -Eiq 'PCI\\VEN_1AF4&DEV_1050' /tmp/wmgpu/viogpudo.inf
+          grep -q 'FlexResolution' /tmp/wmgpu/viogpudo.inf
+          grep -q 'NTARM64' /tmp/wmgpu/viogpudo.inf
+          echo 'PASS: exact Fedora ARM64 viogpudo PnP IDs, FlexResolution, source checksum'
+      - name: Verify QEMU virtio-gpu host configuration, PCI identity, and both boot-safe consoles
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,socket,subprocess,tempfile,time
+          def rpc(stream,cmd):
+              stream.write((json.dumps(cmd)+'\n').encode())
+              for _ in range(16):
+                  result=json.loads(stream.readline())
+                  if 'return' in result or 'error' in result: return result
+              raise RuntimeError('No QMP command response')
+          with tempfile.TemporaryDirectory() as root:
+              sock=root+'/qmp.sock'
+              args=['qemu-system-aarch64','-machine','virt','-cpu','cortex-a57',
+                    '-m','512M','-smp','2','-nodefaults','-display','none',
+                    '-serial','none','-monitor','none','-S',
+                    '-device','ramfb',
+                    '-device','virtio-gpu-pci,id=winvgpu,edid=on',
+                    '-qmp',f'unix:{sock},server=on,wait=off']
+              proc=subprocess.Popen(args,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+              try:
+                  deadline=time.monotonic()+15
+                  while not os.path.exists(sock) and time.monotonic()<deadline:
+                      if proc.poll() is not None:
+                          raise RuntimeError('Cannot initialize GPU: '+proc.communicate()[1])
+                      time.sleep(.1)
+                  assert os.path.exists(sock),'QMP unavailable'
+                  with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as s:
+                      s.settimeout(6)
+                      s.connect(sock)
+                      f=s.makefile('rwb',buffering=0)
+                      greeting=json.loads(f.readline())
+                      assert 'QMP' in greeting
+                      assert 'return' in rpc(f,{"execute":"qmp_capabilities"})
+                      ret=rpc(f,{"execute":"query-pci"})
+                      assert 'return' in ret,ret
+                      found=[]
+                      def walk(obj):
+                          if isinstance(obj,dict):
+                              if isinstance(obj.get('id'),dict):
+                                  if obj['id'].get('vendor')==0x1AF4 and obj['id'].get('device')==0x1050:found.append(obj)
+                              for v in obj.values():walk(v)
+                          elif isinstance(obj,list):
+                              for v in obj:walk(v)
+                      walk(ret['return'])
+                      assert found,'VirtIO GPU PCI VEN_1AF4 DEV_1050 not detected: '+str(ret)
+                      info=rpc(f,{"execute":"human-monitor-command",
+                                  "arguments":{"command-line":"info qtree"}})
+                      assert 'return' in info,info
+                      assert 'winvgpu' in info['return'] and 'ramfb' in info['return']
+                      assert 'return' in rpc(f,{"execute":"quit"})
+                  assert proc.wait(timeout=8)==0,proc.stderr.read()
+                  print('PASS: QEMU aarch64 ramfb + virtio-gpu-pci, matching 1AF4:1050, EDID-on device')
+                  print('NOT PROVEN: Windows driver binding, guest EDID mode change or Android QGE console selection')
+              finally:
+                  if proc.poll() is None: proc.kill();proc.wait(timeout=5)
+          PY
+      - name: Verify source-level guest UI-size notification path and QGE first-console limitation
+        run: |
+          set -euo pipefail
+          git clone -q --depth 1 --branch 7.1.4 https://github.com/rhn-1k/QubeVM.git /tmp/qube
+          git clone -q --depth 1 --filter=blob:none --sparse --branch v11.1.3 https://github.com/qemu/qemu.git /tmp/qemu
+          git -C /tmp/qemu sparse-checkout set include/ui ui/console.c hw/display/virtio-gpu-base.c
+          python3 - <<'PY'
+          from pathlib import Path
+          q=Path('/tmp/qemu')
+          console=(q/'ui/console.c').read_text()
+          gpu=(q/'hw/display/virtio-gpu-base.c').read_text()
+          qge=Path('/tmp/qube/qube-android-lib/src/main/jni/qemu-addons/11.1.3/ui/qge.c').read_text()
+          assert 'qemu_console_set_ui_info(' in console
+          assert 'con->hw_ops->ui_info(con->hw, head, &con->ui_info)' in console
+          assert 'virtio_gpu_ui_info(' in gpu
+          assert 'VIRTIO_GPU_EVENT_DISPLAY' in gpu
+          assert 'qemu_console_lookup_by_index(0)' in qge
+          assert 'qemu_console_register_listener(' in qge
+          assert 'qemu_console_lookup_by_device_name' in (q/'include/ui/console.h').read_text()
+          print('PASS: QEMU has per-console UI-info resizing; stock QGE only listens to console 0')
+          print('RELEASE BLOCK: native QGE must select VirtIO GPU console and pass Fold dimensions')
+          PY
