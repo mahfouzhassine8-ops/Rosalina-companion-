@@ -121,7 +121,7 @@ if patched.count(anchor) != 1:
     raise RuntimeError("Expected one existing Setup Tools method after branch patch")
 patched = patched.replace(anchor, offline_method + anchor, 1)
 
-for required in ("showWindowsOfflineAccount();", 'sendSetupHmpKey("shift-f10")',
+for required in ("view.setOnClickListener(v -> showWindowsOfflineAccount());", 'sendSetupHmpKey("shift-f10")',
                  'typeSetupCommand("start ms-cxh:localonly")',
                  "CMD visible - type command", "No CMD - stop",
                  "Windows may block this method"):
