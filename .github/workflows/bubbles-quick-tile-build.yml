@@ -1,0 +1,55 @@
+name: Bubbles Quick Tile Android build
+on:
+  push:
+    branches: [bubbles-quick-tile-android-20261115]
+    paths:
+      - 'BubblesQuickTile/**'
+      - '.github/workflows/bubbles-quick-tile-build.yml'
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Android SDK
+        run: |
+          set -euo pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+      - name: Compile Android app
+        working-directory: BubblesQuickTile
+        run: gradle --no-daemon --stacktrace :app:assembleRelease
+      - name: Align unsigned APK and check tile manifest
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/bubbles-build
+          A="$ANDROID_HOME/build-tools/35.0.0"
+          UNSIGNED=$(find BubblesQuickTile/app/build/outputs/apk/release -name '*unsigned.apk' | head -n 1)
+          test -n "$UNSIGNED"
+          "$A/zipalign" -f -p 4 "$UNSIGNED" /tmp/bubbles-build/BubblesQuickTile-arm64-universal-unsigned.apk
+          "$A/zipalign" -c -v 4 /tmp/bubbles-build/BubblesQuickTile-arm64-universal-unsigned.apk > /tmp/bubbles-build/ALIGNMENT.txt
+          "$A/aapt" dump badging /tmp/bubbles-build/BubblesQuickTile-arm64-universal-unsigned.apk > /tmp/bubbles-build/PACKAGE.txt
+          "$A/aapt" dump xmltree /tmp/bubbles-build/BubblesQuickTile-arm64-universal-unsigned.apk AndroidManifest.xml > /tmp/bubbles-build/MANIFEST.txt
+          grep -q 'com.hassine.bubbles' /tmp/bubbles-build/PACKAGE.txt
+          grep -q 'android.service.quicksettings.action.QS_TILE' /tmp/bubbles-build/MANIFEST.txt
+          grep -q 'android.permission.WRITE_SECURE_SETTINGS' /tmp/bubbles-build/MANIFEST.txt
+          cp "$A/lib/apksigner.jar" /tmp/bubbles-build/apksigner.jar
+          cp BubblesQuickTile/README.md /tmp/bubbles-build/README.txt
+          sha256sum /tmp/bubbles-build/BubblesQuickTile-arm64-universal-unsigned.apk > /tmp/bubbles-build/UNSIGNED_SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bubbles-quick-tile-android-unsigned
+          path: /tmp/bubbles-build/
+          if-no-files-found: error
